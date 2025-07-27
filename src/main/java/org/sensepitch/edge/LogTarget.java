@@ -21,8 +21,7 @@ public interface LogTarget {
     if (ch == null) {
       return "null";
     }
-    long hash = 0xFFFFFFFFL & ch.hashCode();
-    return Long.toString(hash, 36);
+    return ch.id().asShortText();
   }
 
 
