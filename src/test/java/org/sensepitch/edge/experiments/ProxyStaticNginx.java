@@ -44,7 +44,7 @@ public class ProxyStaticNginx {
       .upstream(List.of(
         UpstreamConfig.builder()
           .host("")
-          .target("172.30.0.2:80")
+          .target("172.21.0.3:80")
           .build()
       ))
       .admission(AdmissionConfig.builder()
