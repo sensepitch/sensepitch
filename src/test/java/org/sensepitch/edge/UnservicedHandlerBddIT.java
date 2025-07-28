@@ -13,8 +13,6 @@ import static org.sensepitch.edge.UnservicedHandler.NOT_FOUND_URI;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.*;
-
-
 import net.serenitybdd.annotations.Step;
 import net.serenitybdd.annotations.Steps;
 import net.serenitybdd.junit5.SerenityJUnit5Extension;
@@ -36,79 +34,79 @@ class UnservicedHandlerBddIT {
   @Test
   void allowedHost_passesThrough() {
     steps
-      .given_a_common_example_configuration()
-      .when_request_to("bar.com", "/")
-      .then_request_is_passed_to_next_handler();
+        .given_a_common_example_configuration()
+        .when_request_to("bar.com", "/")
+        .then_request_is_passed_to_next_handler();
   }
 
   @Test
   void missingHost_resultsInBadRequestStatus() {
     steps
-      .given_a_common_example_configuration()
-      .when_request_without_host_to_uri("/")
-      .then_response_status_is(STATUS_400_BAD_REQUEST)
-      .then_location_header_is_absent()
-      .when_request_without_host_to_uri("/something")
-      .then_response_status_is(STATUS_400_BAD_REQUEST)
-      .then_location_header_is_absent();
+        .given_a_common_example_configuration()
+        .when_request_without_host_to_uri("/")
+        .then_response_status_is(STATUS_400_BAD_REQUEST)
+        .then_location_header_is_absent()
+        .when_request_without_host_to_uri("/something")
+        .then_response_status_is(STATUS_400_BAD_REQUEST)
+        .then_location_header_is_absent();
 
   }
 
   @Test
   void missingHostAfterSanitize_resultsInBadRequestStatus() {
     steps
-      .given_a_common_example_configuration()
-      .when_request_to(MISSING_HOST, "/")
-      .then_response_status_is(STATUS_400_BAD_REQUEST)
-      .then_location_header_is_absent();
+        .given_a_common_example_configuration()
+        .when_request_to(MISSING_HOST, "/")
+        .then_response_status_is(STATUS_400_BAD_REQUEST)
+        .then_location_header_is_absent();
   }
 
   @Test
   void unknownHost_resultsInBadRequestStatus() {
     steps
-      .given_a_common_example_configuration()
-      .when_request_to(UNKNOWN_HOST, "/")
-      .then_response_status_is(STATUS_400_BAD_REQUEST)
-      .then_location_header_is_absent();
+        .given_a_common_example_configuration()
+        .when_request_to(UNKNOWN_HOST, "/")
+        .then_response_status_is(STATUS_400_BAD_REQUEST)
+        .then_location_header_is_absent();
   }
 
   @Test
   void mappedHost_redirectsToMappedTarget() {
     steps
-      .given_a_common_example_configuration()
-      .when_request_to("foo.com", "/")
-      .then_response_status_is(STATUS_302_FOUND)
-      .then_location_header_is("https://www.foo.com");
+        .given_a_common_example_configuration()
+        .when_request_to("foo.com", "/")
+        .then_response_status_is(STATUS_302_FOUND)
+        .then_location_header_is("https://www.foo.com");
   }
 
   @Test
   void otherHost_redirectsToDefaultTarget() {
     steps
-      .given_a_common_example_configuration()
-      .when_request_to("other.com", "/")
-      .then_response_status_is(STATUS_302_FOUND)
-      .then_location_header_is("https://default.example");
+        .given_a_common_example_configuration()
+        .when_request_to("other.com", "/")
+        .then_response_status_is(STATUS_302_FOUND)
+        .then_location_header_is("https://default.example");
   }
 
   @Test
   void otherHostWithUri_redirectsToDefaultTarget() {
     steps
-      .given_a_common_example_configuration()
-      .when_request_to("other.com", "/anything")
-      .then_response_status_is(STATUS_302_FOUND)
-      .then_location_header_is("https://default.example" + NOT_FOUND_URI);
+        .given_a_common_example_configuration()
+        .when_request_to("other.com", "/anything")
+        .then_response_status_is(STATUS_302_FOUND)
+        .then_location_header_is("https://default.example" + NOT_FOUND_URI);
   }
 
   @Test
   void secondRequestWorks() {
     steps
-      .given_a_common_example_configuration()
-      .when_request_without_host_to_uri("/")
-      .then_response_status_is(BAD_REQUEST)
-      .then_location_header_is_absent()
-      .when_request_to("foo.com", "/")
-      .then_response_status_is(FOUND)
-      .then_location_header_is("https://www.foo.com");
+        .given_a_common_example_configuration()
+        .when_request_without_host_to_uri("/")
+        .then_response_status_is(BAD_REQUEST)
+        .then_location_header_is_absent()
+        .when_request_to("foo.com", "/")
+        .then_response_status_is(FOUND)
+        .then_location_header_is("https://www.foo.com");
   }
 
   public static class UnservicedSteps {
@@ -120,13 +118,13 @@ class UnservicedHandlerBddIT {
     private HttpResponse response;
 
     @Step(
-      "When has common configuration: " +
-      "passDomains=www.foo.com,bar.com,www.baz.com; defaultTarget=https://default.example")
+        "When has common configuration: " +
+            "passDomains=www.foo.com,bar.com,www.baz.com; defaultTarget=https://default.example")
     public UnservicedSteps given_a_common_example_configuration() {
       RedirectConfig cfg = RedirectConfig.builder()
-        .passDomains(List.of("www.foo.com", "bar.com", "www.baz.com"))
-        .defaultTarget("https://default.example")
-        .build();
+          .passDomains(List.of("www.foo.com", "bar.com", "www.baz.com"))
+          .defaultTarget("https://default.example")
+          .build();
       channel = new EmbeddedChannel(new UnservicedHandler(cfg));
       return this;
     }
