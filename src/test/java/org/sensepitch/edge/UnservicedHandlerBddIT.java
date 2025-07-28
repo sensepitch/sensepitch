@@ -1,10 +1,9 @@
 package org.sensepitch.edge;
 
-
+import static io.netty.handler.codec.http.HttpMethod.GET;
 import static io.netty.handler.codec.http.HttpResponseStatus.BAD_REQUEST;
 import static io.netty.handler.codec.http.HttpResponseStatus.FOUND;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
-import static io.netty.handler.codec.http.HttpMethod.GET;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.sensepitch.edge.SanitizeHostHandler.MISSING_HOST;
 import static org.sensepitch.edge.SanitizeHostHandler.UNKNOWN_HOST;
@@ -13,13 +12,12 @@ import static org.sensepitch.edge.UnservicedHandler.NOT_FOUND_URI;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.*;
+import java.util.List;
 import net.serenitybdd.annotations.Step;
 import net.serenitybdd.annotations.Steps;
 import net.serenitybdd.junit5.SerenityJUnit5Extension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-
-import java.util.List;
 
 @ExtendWith(SerenityJUnit5Extension.class)
 class UnservicedHandlerBddIT {
@@ -28,8 +26,7 @@ class UnservicedHandlerBddIT {
   static final HttpResponseStatus STATUS_400_BAD_REQUEST = HttpResponseStatus.BAD_REQUEST;
   static final HttpResponseStatus STATUS_302_FOUND = HttpResponseStatus.FOUND;
 
-  @Steps
-  UnservicedSteps steps;
+  @Steps UnservicedSteps steps;
 
   @Test
   void allowedHost_passesThrough() {
@@ -49,7 +46,6 @@ class UnservicedHandlerBddIT {
         .when_request_without_host_to_uri("/something")
         .then_response_status_is(STATUS_400_BAD_REQUEST)
         .then_location_header_is_absent();
-
   }
 
   @Test
@@ -118,13 +114,14 @@ class UnservicedHandlerBddIT {
     private HttpResponse response;
 
     @Step(
-        "When has common configuration: " +
-            "passDomains=www.foo.com,bar.com,www.baz.com; defaultTarget=https://default.example")
+        "When has common configuration: "
+            + "passDomains=www.foo.com,bar.com,www.baz.com; defaultTarget=https://default.example")
     public UnservicedSteps given_a_common_example_configuration() {
-      RedirectConfig cfg = RedirectConfig.builder()
-          .passDomains(List.of("www.foo.com", "bar.com", "www.baz.com"))
-          .defaultTarget("https://default.example")
-          .build();
+      RedirectConfig cfg =
+          RedirectConfig.builder()
+              .passDomains(List.of("www.foo.com", "bar.com", "www.baz.com"))
+              .defaultTarget("https://default.example")
+              .build();
       channel = new EmbeddedChannel(new UnservicedHandler(cfg));
       return this;
     }
@@ -187,4 +184,3 @@ class UnservicedHandlerBddIT {
     }
   }
 }
-
