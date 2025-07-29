@@ -1,6 +1,6 @@
-# UnservicedHandlerBddIT
+# Unserviced Handler
 
-These scenarios are critical for enforcing correct routing, access control, and error handling in edge request processing.
+src/test/resources/features/edge/UnservicedHandlerBddIT/README.md
 
 ## Logo
 
