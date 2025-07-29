@@ -17,7 +17,7 @@
     <junit.version>5.12.2</junit.version>
     <assertj.version>3.27.3</assertj.version>
     <lombok.version>1.18.38</lombok.version>
-    <serenity.version>4.2.30</serenity.version>
+    <serenity.version>4.2.34</serenity.version>
     <surefire.version>3.5.3</surefire.version>
   </properties>
 
@@ -265,7 +265,7 @@
         <artifactId>serenity-maven-plugin</artifactId>
         <version>${serenity.version}</version>
         <configuration>
-            <reports>single-page-html</reports>
+            <reports>single-page-html,navigator</reports>
         </configuration>
         <executions>
             <execution>
@@ -277,11 +277,16 @@
             </execution>
         </executions>
         <dependencies>
-            <dependency>
-                <groupId>net.serenity-bdd</groupId>
-                <artifactId>serenity-single-page-report</artifactId>
-                <version>${serenity.version}</version>
-            </dependency>
+          <dependency>
+            <groupId>net.serenity-bdd</groupId>
+            <artifactId>serenity-single-page-report</artifactId>
+            <version>${serenity.version}</version>
+          </dependency>
+          <dependency>
+            <groupId>net.serenity-bdd</groupId>
+            <artifactId>serenity-navigator-report</artifactId>
+            <version>${serenity.version}</version>
+          </dependency>
         </dependencies>
       </plugin>
       <plugin>
