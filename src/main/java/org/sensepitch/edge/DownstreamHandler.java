@@ -38,7 +38,8 @@ public class DownstreamHandler extends ChannelDuplexHandler {
 
   static final ProxyLogger DEBUG = ProxyLogger.get(DownstreamHandler.class);
 
-  private final UpstreamRouter upstreamRouter;
+  // private final UpstreamRouter upstreamRouter;
+  private final Upstream upstream;
   private final ProxyMetrics metrics;
   private Future<Channel> upstreamChannelFuture;
   private boolean requestReceived;
@@ -47,27 +48,21 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   private Runnable flushTask;
   private HttpRequest request;
 
-  public DownstreamHandler(UpstreamRouter upstreamRouter, ProxyMetrics metrics) {
-    this.upstreamRouter = upstreamRouter;
+  public DownstreamHandler(Upstream upstream, ProxyMetrics metrics) {
+    this.upstream = upstream;
     this.metrics = metrics;
   }
 
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) {
     DEBUG.traceChannelRead(ctx, msg);
-    if (msg instanceof HttpRequest) {
+    if (msg instanceof HttpRequest request) {
       if (upstreamChannelFuture != null) {
         completeWithError(ctx, new HttpResponseStatus(HttpResponseStatus.BAD_GATEWAY.code(), "pipelining not supported"));
         return;
       }
-      request = (HttpRequest) msg;
-      if (DEBUG.isTraceEnabled()) {
-        String clientIP = ((SocketChannel) ctx.channel()).remoteAddress().getAddress().getHostAddress();
-        DEBUG.trace(ctx.channel(), msg.getClass().getName() + " " + clientIP + " -> " + request.method() + " " + request.uri());
-      }
       requestReceived = true;
       DownstreamProgress.progress(ctx.channel(), "request received, selecting upstream");
-      Upstream upstream = upstreamRouter.selectUpstream(request);
       upstreamChannelFuture = upstream.connect(ctx);
       augmentHeadersAndForwardRequest(ctx, request);
     } else if (msg instanceof LastHttpContent) {
@@ -83,7 +78,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       }
     } else if (msg instanceof HttpContent) {
       upstreamChannelFuture.addListener((FutureListener<Channel>)
-        future -> forwardContent(future, (LastHttpContent) msg));
+        future -> forwardContent(future, (HttpContent) msg));
     }
   }
 

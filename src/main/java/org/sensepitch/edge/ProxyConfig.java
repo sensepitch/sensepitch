@@ -12,8 +12,9 @@ public record ProxyConfig(
   MetricsConfig metrics,
   ListenConfig listen,
   AdmissionConfig admission,
-  RedirectConfig redirect,
+  UnservicedHostConfig unservicedHost,
   IpLookupConfig ipLookup,
-  List<UpstreamConfig> upstream
+  List<UpstreamConfig> upstream,
+  List<SiteConfig> sites
 ) {
 }

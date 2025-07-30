@@ -62,9 +62,6 @@ public class AdmissionHandler extends ChannelInboundHandlerAdapter implements Ha
   LongAdder bypassRequestCounter = new LongAdder();
 
   AdmissionHandler(AdmissionConfig cfg) {
-    if (cfg == null) {
-      cfg = AdmissionConfig.builder().build();
-    }
     if (cfg.noBypass() != null) {
       noBypassCheck = new DefaultNoBypassCheck(cfg.noBypass());
     } else {
@@ -133,8 +130,7 @@ public class AdmissionHandler extends ChannelInboundHandlerAdapter implements Ha
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) {
     LOG.traceChannelRead(ctx, msg);
-    if (msg instanceof HttpRequest) {
-      HttpRequest request = (HttpRequest) msg;
+    if (msg instanceof HttpRequest request) {
       if (checkAdmissionCookie(request)) {
         passedRequestCounter.increment();
         ctx.fireChannelRead(msg);

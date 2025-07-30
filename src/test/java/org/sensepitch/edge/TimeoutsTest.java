@@ -40,13 +40,6 @@ public class TimeoutsTest {
 
   ProxyMetrics proxyMetrics = new ProxyMetrics();
 
-  UpstreamRouter upstreamRouter = new UpstreamRouter() {
-    @Override
-    public Upstream selectUpstream(HttpRequest request) {
-      return new MockUpstream();
-    }
-  };
-
   MockTicker ticker = newMockTicker();
 
   {
@@ -63,7 +56,7 @@ public class TimeoutsTest {
       new RequestLoggingHandler(new StandardOutRequestLogger()),
       new ClientTimeoutHandler(cfg, proxyMetrics),
       new HttpServerKeepAliveHandler(),
-      new DownstreamHandler(upstreamRouter, proxyMetrics)
+      new DownstreamHandler(new MockUpstream(), proxyMetrics)
     )
     .build();
 

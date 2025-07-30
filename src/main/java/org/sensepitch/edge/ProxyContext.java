@@ -8,5 +8,6 @@ import io.netty.channel.EventLoopGroup;
 public interface ProxyContext {
 
   EventLoopGroup eventLoopGroup();
+  ProxyMetrics metrics();
 
 }

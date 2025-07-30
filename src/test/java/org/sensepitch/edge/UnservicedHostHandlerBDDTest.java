@@ -1,14 +1,13 @@
 package org.sensepitch.edge;
 
 
-import static io.netty.handler.codec.http.HttpResponseStatus.BAD_REQUEST;
-import static io.netty.handler.codec.http.HttpResponseStatus.FOUND;
+import static io.netty.handler.codec.http.HttpResponseStatus.*;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 import static io.netty.handler.codec.http.HttpMethod.GET;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.sensepitch.edge.SanitizeHostHandler.MISSING_HOST;
 import static org.sensepitch.edge.SanitizeHostHandler.UNKNOWN_HOST;
-import static org.sensepitch.edge.UnservicedHandler.NOT_FOUND_URI;
+import static org.sensepitch.edge.UnservicedHostHandler.NOT_FOUND_URI;
 
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
@@ -21,14 +20,15 @@ import net.serenitybdd.junit5.SerenityJUnit5Extension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
-import java.util.List;
+import java.util.Set;
 
 @ExtendWith(SerenityJUnit5Extension.class)
-class UnservicedHandlerBDDTest {
+class UnservicedHostHandlerBDDTest {
 
   // aliases for status codes for better readability
   static final HttpResponseStatus STATUS_400_BAD_REQUEST = HttpResponseStatus.BAD_REQUEST;
-  static final HttpResponseStatus STATUS_302_FOUND = HttpResponseStatus.FOUND;
+  static final HttpResponseStatus STATUS_307_TEMPORARY_REDIRECT = HttpResponseStatus.TEMPORARY_REDIRECT;
+  static final HttpResponseStatus STATUS_308_PERMANENT_REDIRECT = HttpResponseStatus.PERMANENT_REDIRECT;
 
   @Steps
   UnservicedSteps steps;
@@ -77,7 +77,7 @@ class UnservicedHandlerBDDTest {
     steps
       .given_a_common_example_configuration()
       .when_request_to("foo.com", "/")
-      .then_response_status_is(STATUS_302_FOUND)
+      .then_response_status_is(STATUS_308_PERMANENT_REDIRECT)
       .then_location_header_is("https://www.foo.com");
   }
 
@@ -86,7 +86,7 @@ class UnservicedHandlerBDDTest {
     steps
       .given_a_common_example_configuration()
       .when_request_to("other.com", "/")
-      .then_response_status_is(STATUS_302_FOUND)
+      .then_response_status_is(STATUS_307_TEMPORARY_REDIRECT)
       .then_location_header_is("https://default.example");
   }
 
@@ -95,7 +95,7 @@ class UnservicedHandlerBDDTest {
     steps
       .given_a_common_example_configuration()
       .when_request_to("other.com", "/anything")
-      .then_response_status_is(STATUS_302_FOUND)
+      .then_response_status_is(STATUS_307_TEMPORARY_REDIRECT)
       .then_location_header_is("https://default.example" + NOT_FOUND_URI);
   }
 
@@ -107,7 +107,7 @@ class UnservicedHandlerBDDTest {
       .then_response_status_is(BAD_REQUEST)
       .then_location_header_is_absent()
       .when_request_to("foo.com", "/")
-      .then_response_status_is(FOUND)
+      .then_response_status_is(STATUS_308_PERMANENT_REDIRECT)
       .then_location_header_is("https://www.foo.com");
   }
 
@@ -120,14 +120,14 @@ class UnservicedHandlerBDDTest {
     private HttpResponse response;
 
     @Step(
-      "When has common configuration: " +
+      "Given a common configuration: " +
       "passDomains=www.foo.com,bar.com,www.baz.com; defaultTarget=https://default.example")
     public UnservicedSteps given_a_common_example_configuration() {
-      RedirectConfig cfg = RedirectConfig.builder()
-        .passDomains(List.of("www.foo.com", "bar.com", "www.baz.com"))
-        .defaultTarget("https://default.example")
+      UnservicedHostConfig cfg = UnservicedHostConfig.builder()
+        .servicedDomains(Set.of("www.foo.com", "bar.com", "www.baz.com"))
+        .defaultLocation("https://default.example")
         .build();
-      channel = new EmbeddedChannel(new UnservicedHandler(cfg));
+      channel = new EmbeddedChannel(new UnservicedHostHandler(cfg));
       return this;
     }
 

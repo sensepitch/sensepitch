@@ -15,8 +15,8 @@ import java.util.stream.Collectors;
  *
  * <p>All valid clients are expected to set a correct host header according to the host
  * they want to contact. However, clients might leave the header out or just put garbage in there.
- * We don't want to have that further polluting our systems, or, do defensive coding every time
- * the host header is used.
+ * We don't want to have that further polluting our systems, or do defensive coding every time
+ * the host header is needed.
  *
  * @see RequestLogInfo#requestHeaderHost()
  *
@@ -44,9 +44,9 @@ public class SanitizeHostHandler extends ChannelInboundHandlerAdapter {
 
   private final Set<String> servicedHosts;
 
-  public SanitizeHostHandler(Collection<String> servicedHosts) {
+  public SanitizeHostHandler(Collection<String> knownHost) {
     this.servicedHosts =
-      servicedHosts.stream().filter(s -> !SPECIAL_HOSTS.contains(s))
+      knownHost.stream().filter(s -> !SPECIAL_HOSTS.contains(s))
       .collect(Collectors.toSet());
   }
 
@@ -56,8 +56,15 @@ public class SanitizeHostHandler extends ChannelInboundHandlerAdapter {
       String host = request.headers().get(HttpHeaderNames.HOST);
       if (host == null) {
         request.headers().set(HttpHeaderNames.HOST, MISSING_HOST);
-      } else if (!servicedHosts.contains(host)) {
-        request.headers().set(HttpHeaderNames.HOST, UNKNOWN_HOST);
+      } else {
+        if (host.contains(":")) {
+          String []sa =  host.split(":");
+          host = sa[0];
+          request.headers().set(HttpHeaderNames.HOST, host);
+        }
+        if (!servicedHosts.contains(host)) {
+          request.headers().set(HttpHeaderNames.HOST, UNKNOWN_HOST);
+        }
       }
     }
     super.channelRead(ctx, msg);

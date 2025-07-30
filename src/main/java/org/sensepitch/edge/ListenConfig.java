@@ -13,8 +13,6 @@ public record ListenConfig (
   ConnectionConfig connection,
   SslConfig ssl,
   boolean letsEncrypt,
-  List<String> domains,
+  List<String> hosts,
   List<SniConfig> sni,
-  int port) {
-
-}
+  int port) { }
