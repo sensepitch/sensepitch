@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -66,9 +67,8 @@ class ProxyConstructBDDTest {
           .cert("classpath:ssl/test.crt")
           .build())
         .build())
-      .sites(List.of(
-        SiteConfig.builder()
-          .key("example.com")
+      .sites(Map.of(
+        "example.com", SiteConfig.builder()
           .build()
       ))
       .metrics(MetricsConfig.builder()
@@ -90,9 +90,8 @@ class ProxyConstructBDDTest {
           .cert("classpath:ssl/test.crt")
           .build())
         .build())
-      .sites(List.of(
-        SiteConfig.builder()
-          .key("example.com")
+      .sites(Map.of(
+        "example.com", SiteConfig.builder()
           .responseText("demo")
           .build()
       ))
@@ -115,9 +114,8 @@ class ProxyConstructBDDTest {
           .cert("classpath:ssl/test.crt")
           .build())
         .build())
-      .sites(List.of(
-        SiteConfig.builder()
-          .key("example.com")
+      .sites(Map.of(
+        "example.com", SiteConfig.builder()
           .responseText("demo")
           .protection(ProtectionConfig.builder()
             .enabled(false)

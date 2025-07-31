@@ -95,6 +95,7 @@
       <artifactId>prometheus-metrics-exporter-httpserver</artifactId>
       <version>${prometheus.version}</version>
     </dependency>
+    <!-- read and dump configuration -->
     <dependency>
       <groupId>org.yaml</groupId>
       <artifactId>snakeyaml</artifactId>
@@ -105,6 +106,7 @@
       <artifactId>commons-csv</artifactId>
       <version>1.14.0</version>
     </dependency>
+    <!-- for reading the Google JSON -->
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>

@@ -35,10 +35,10 @@ public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
   private final Map<String, TreeMap<String, Suppliers>> sitePrefixUriMatch =  new HashMap<>();
 
   public SiteSelectorHandler(ProxyContext ctx, ProxyConfig config) {
-    if (config.sites() == null) {
+    if (config.sites() == null || config.sites().isEmpty()) {
       throw new IllegalArgumentException("sites missing");
     }
-    config.sites().forEach(site -> {
+    config.sites().values().forEach(site -> {
       Supplier<ChannelHandler> proxySupplier = constructProxySupplier(ctx, site);
       Supplier<ChannelHandler> protectionSupplier = null;
       ProtectionConfig protection = site.protection();

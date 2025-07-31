@@ -15,4 +15,4 @@ public record SiteConfig (
   String upstreamRef,
   UpstreamConfig upstream,
   ProtectionConfig protection
-) { }
+) implements HasKey { }

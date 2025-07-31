@@ -1,9 +1,19 @@
 package org.sensepitch.edge;
 
 import org.junit.jupiter.api.Test;
+import org.sensepitch.edge.config.KeyInjector;
+import org.sensepitch.edge.config.RecordConstructor;
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.nodes.MappingNode;
+import org.yaml.snakeyaml.nodes.Node;
+import org.yaml.snakeyaml.nodes.NodeTuple;
+import org.yaml.snakeyaml.nodes.ScalarNode;
+import org.yaml.snakeyaml.nodes.SequenceNode;
 
+import java.io.StringReader;
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -61,6 +71,76 @@ public class ConfigTest {
     assertEquals(true, cfg.list().get(0).flag());
     assertEquals(false, cfg.list().get(1).flag());
     assertEquals(234, cfg.list().get(1).number());
+  }
+
+  @Test
+  public void readAllFieldTypesFromYaml() {
+    String yaml = """
+      number: 123
+      flag: true
+      text: hello world
+      texts:
+        - one
+        - two
+      configList:
+        - number: 123
+        - number: 456
+      configMap:
+        first:
+          number: 1001
+        second:
+          number: 1002
+    """;
+    Yaml parser = new Yaml();
+    Node root =  parser.compose(new StringReader(yaml));
+    // printNode(root, 2);
+    AllFieldTypesConfig obj = RecordConstructor.construct(AllFieldTypesConfig.class, root);
+    // System.out.println(obj);
+    assertThat(obj.number()).isEqualTo(123);
+    assertThat(obj.flag()).isEqualTo(true);
+    assertThat(obj.text()).isEqualTo("hello world");
+    assertThat(obj.texts()).hasSize(2).first().isEqualTo("one");
+    assertThat(obj.configList()).hasSize(2);
+    assertThat(obj.configList().getFirst().number()).isEqualTo(123);
+    assertThat(obj.configMap().get("second").number()).isEqualTo(1002);
+  }
+
+  @Test
+  public void injectKey() {
+    String yaml = """
+      withKeyMap:
+        first:
+          number: 1
+        second:
+          number: 2
+    """;
+    Yaml parser = new Yaml();
+    Node root =  parser.compose(new StringReader(yaml));
+    // printNode(root, 2);
+    AllFieldTypesConfig obj = RecordConstructor.construct(AllFieldTypesConfig.class, root);
+    assertThat(obj.withKeyMap().get("first").key()).isNull();
+    obj = KeyInjector.injectAllMapKeys(obj);
+    assertThat(obj.withKeyMap().get("first").key()).isEqualTo("first");
+    assertThat(obj.withKeyMap().get("second").key()).isEqualTo("second");
+    System.out.println(obj);
+  }
+
+  void printNode(Node node, int indent) {
+    String pad = " ".repeat(indent);
+    if (node instanceof MappingNode m) {
+      System.out.println(pad + "MappingNode:");
+      for (NodeTuple tuple : m.getValue()) {
+        printNode(tuple.getKeyNode(), indent + 2);
+        printNode(tuple.getValueNode(), indent + 2);
+      }
+    } else if (node instanceof SequenceNode s) {
+      System.out.println(pad + "SequenceNode:");
+      for (Node item : s.getValue()) {
+        printNode(item, indent + 2);
+      }
+    } else if (node instanceof ScalarNode sc) {
+      System.out.printf("%sScalarNode: %s (%s)%n", pad, sc.getValue(), sc.getTag());
+    }
   }
 
 }

@@ -7,12 +7,15 @@ import org.sensepitch.edge.ConnectionConfig;
 import org.sensepitch.edge.ListenConfig;
 import org.sensepitch.edge.MetricsConfig;
 import org.sensepitch.edge.PrometheusConfig;
+import org.sensepitch.edge.ProtectionConfig;
 import org.sensepitch.edge.Proxy;
 import org.sensepitch.edge.ProxyConfig;
+import org.sensepitch.edge.SiteConfig;
 import org.sensepitch.edge.SslConfig;
 import org.sensepitch.edge.UpstreamConfig;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * @author Jens Wilke
@@ -20,7 +23,6 @@ import java.util.List;
 public class ProxyStaticNginx {
 
   public static void main(String[] args) throws Exception {
-    ConnectionConfig config = ConnectionConfig.DEFAULT;
     ProxyConfig cfg = ProxyConfig.builder()
       .metrics(MetricsConfig.builder()
         .enable(true)
@@ -58,7 +60,19 @@ public class ProxyStaticNginx {
             .build()
         ))
         .build())
+      .sites(Map.of(
+          "any", SiteConfig.builder()
+            .host("*")
+            .protection(ProtectionConfig.builder().build())
+            .upstream(
+              UpstreamConfig.builder()
+                .target("172.21.0.3:80")
+                .build()
+            )
+            .build()
+        ))
       .build();
+    Proxy.dumpConfig(cfg);
     new Proxy(cfg).start();
   }
 

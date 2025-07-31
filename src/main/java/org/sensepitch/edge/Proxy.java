@@ -14,6 +14,7 @@ import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslProvider;
 import io.netty.util.DomainWildcardMappingBuilder;
 import io.netty.util.Mapping;
+import org.sensepitch.edge.config.KeyInjector;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.introspector.BeanAccess;
@@ -53,6 +54,7 @@ public class Proxy implements ProxyContext {
   private final SiteSelectorHandler siteSelectorHandler;
 
   public Proxy(ProxyConfig config) {
+    config = KeyInjector.injectAllMapKeys(config);
     if (config.listen() == null) {
       throw new IllegalArgumentException("Missing listen configuration");
     }
@@ -103,7 +105,7 @@ public class Proxy implements ProxyContext {
     }
   }
 
-  private static void dumpConfig(ProxyConfig proxyConfig) {
+  public static void dumpConfig(ProxyConfig proxyConfig) {
     DumperOptions options = new DumperOptions();
     options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
     options.setIndent(2);

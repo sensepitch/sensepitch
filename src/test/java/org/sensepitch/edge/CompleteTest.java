@@ -9,17 +9,14 @@ import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
-import io.netty.handler.codec.http.HttpServerKeepAliveHandler;
-import io.netty.util.concurrent.Ticker;
 import net.serenitybdd.annotations.Step;
 import net.serenitybdd.junit5.SerenityJUnit5Extension;
-import org.apache.http.HttpStatus;
-import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 import static io.netty.handler.codec.http.HttpMethod.GET;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
@@ -41,9 +38,8 @@ class CompleteTest {
     .unservicedHost(UnservicedHostConfig.builder()
       .defaultLocation("https://sensepitch.io")
       .build())
-    .sites(List.of(
-      SiteConfig.builder()
-        .key("example.com")
+    .sites(Map.of(
+      "example.com", SiteConfig.builder()
         .responseText("a test response")
         .protection(ProtectionConfig.builder()
           .enabled(false)
