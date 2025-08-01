@@ -7,8 +7,8 @@ import lombok.Builder;
  */
 @Builder
 public record SslConfig(
-  String key,
-  String cert
+  String keyPath,
+  String certPath
 ){
 
 }

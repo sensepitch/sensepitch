@@ -158,14 +158,14 @@ public class Proxy implements ProxyContext {
       }
     }
     if (snis != null) {
-      snis.forEach(sni -> builder.add(sni.domain(), createSslContext(sni.ssl())));
+      snis.forEach(sni -> builder.add(sni.host(), createSslContext(sni.ssl())));
     }
     return builder.build();
   }
 
   SslContext createSslContext(SslConfig cfg) {
     try {
-      return SslContextBuilder.forServer(open(cfg.cert()), open(cfg.key()))
+      return SslContextBuilder.forServer(open(cfg.certPath()), open(cfg.keyPath()))
         .clientAuth(ClientAuth.NONE)
         .sslProvider(SslProvider.OPENSSL)
         .build();
@@ -215,7 +215,7 @@ public class Proxy implements ProxyContext {
             addHttpHandlers(pipeline);
           }
         });
-      int port = config.listen().port();
+      int port = config.listen().httpsPort();
       ChannelFuture f = sb.bind(port).sync();
       System.out.println("Open SSL: " + OpenSsl.versionString());
       System.out.println("Proxy listening on port " + port);
