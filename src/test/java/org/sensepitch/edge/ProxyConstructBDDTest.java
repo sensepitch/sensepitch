@@ -5,7 +5,6 @@ import net.serenitybdd.junit5.SerenityJUnit5Extension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
-import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,6 +31,16 @@ class ProxyConstructBDDTest {
       .metrics(MetricsConfig.builder()
         .enable(false)
         .build())
+      .sites(Map.of(
+        "somesite", SiteConfig.builder()
+            .protection(ProtectionConfig.builder()
+              .enabled(false)
+              .build())
+            .upstream(UpstreamConfig.builder()
+              .target("localhost")
+              .build())
+          .build()
+      ))
       .build();
     steps
       .given_the_configuration(config)
@@ -128,7 +137,7 @@ class ProxyConstructBDDTest {
       .build();
     steps
       .given_the_configuration(config)
-      .then_expect_no_exception();
+      .then_expect_initialized_without_exception();
   }
 
   static class Steps extends ExtendableSteps<Steps> { }
@@ -165,7 +174,7 @@ class ProxyConstructBDDTest {
     }
 
     @Step
-    T then_expect_no_exception() {
+    T then_expect_initialized_without_exception() {
       assertThat(constructionFailure).isNull();
       return (T) this;
     }

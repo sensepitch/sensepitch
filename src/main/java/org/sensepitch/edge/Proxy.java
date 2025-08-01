@@ -26,6 +26,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Set;
 
 /**
@@ -42,7 +43,7 @@ public class Proxy implements ProxyContext {
   private final ConnectionConfig connectionConfig;
   private final MetricsBridge metricsBridge;
   private final AdmissionHandler admissionHandler;
-  private final SslContext sslContext;
+  // private final SslContext sslContext;
   private final Mapping<String, SslContext> sniMapping;
   private final UnservicedHostHandler unservicedHostHandler;
   // private final DownstreamHandler downstreamHandler;
@@ -73,15 +74,10 @@ public class Proxy implements ProxyContext {
     } else {
       admissionHandler = null;
     }
-    sslContext = initializeSslContext();
-    sniMapping = initializeSniMapping();
+    // sslContext = initializeSslContext();
     siteSelectorHandler = new SiteSelectorHandler(this, config);
-    Set<String> servicedHosts = siteSelectorHandler.getServicedHosts();
-    Set<String> knownHosts = new HashSet<String>();
-    knownHosts.addAll(servicedHosts);
-    if (config.listen().hosts() != null) {
-      knownHosts.addAll(config.listen().hosts());
-    }
+    var servicedHosts = siteSelectorHandler.getServicedHosts();
+    sniMapping = initializeSniMapping(config.listen(), servicedHosts);
     UnservicedHostConfig unservicedHostConfig = config.unservicedHost() != null ? config.unservicedHost() : UnservicedHostConfig.builder().build();
     if (unservicedHostConfig.servicedDomains() == null) {
       unservicedHostConfig =
@@ -90,7 +86,7 @@ public class Proxy implements ProxyContext {
           .build();
     }
     unservicedHostHandler = new UnservicedHostHandler(unservicedHostConfig);
-    sanitizeHostHandler = new SanitizeHostHandler(knownHosts);
+    sanitizeHostHandler = new SanitizeHostHandler(servicedHosts);
     requestLogger = new DistributingRequestLogger(
       new StandardOutRequestLogger(),
       metricsBridge.expose(new ExposeRequestCountPerStatusCodeHandler()));
@@ -131,39 +127,43 @@ public class Proxy implements ProxyContext {
     return new PrometheusMetricsBridge(prometheusConfig);
   }
 
-  SslContext initializeSslContext() {
-    if (config.listen().ssl() == null) {
-      return null;
+  static Mapping<String, SslContext> initializeSniMapping(ListenConfig cfg, Set<String> servicedHosts) {
+    var knownHosts = new HashSet<>(servicedHosts);
+    if (cfg.hosts() != null) {
+      knownHosts.addAll(cfg.hosts());
     }
-    return createSslContext(config.listen().ssl());
-  }
-
-  Mapping<String, SslContext> initializeSniMapping() {
-    var domains = config.listen().hosts();
-    var snis = config.listen().sni();
-    var defaultContext = initializeSslContext();
-    if (defaultContext == null && snis != null) {
-      defaultContext = createSslContext(snis.getFirst().ssl());
+    var contexts = new LinkedHashMap<String, SslContext>();
+    if (cfg.letsEncrypt()) {
+      for (String host : knownHosts) {
+        final SslConfig sslCfg = new SslConfig(
+          cfg.letsEncryptPrefix() + host + "/privkey.pem",
+          cfg.letsEncryptPrefix() + host + "/fullchain.pem");
+        contexts.put(host, createSslContext(sslCfg));
+      }
+    }
+    if (cfg.snis() != null) {
+      for (SniConfig sni : cfg.snis()) {
+        contexts.put(sni.host(), createSslContext(sni.ssl()));
+      }
+    }
+    SslContext defaultContext = null;
+    if (cfg.ssl() != null) {
+      defaultContext = createSslContext(cfg.ssl());
+    }
+    if (defaultContext == null && !contexts.isEmpty()) {
+      defaultContext = contexts.sequencedValues().getFirst();
     }
     if (defaultContext == null) {
       throw new IllegalArgumentException("SSL setup missing");
     }
     var builder = new DomainWildcardMappingBuilder<>(defaultContext);
-    if (domains != null) {
-      for (String domain : domains) {
-        String filePrefix = "/etc/letsencrypt/live/";
-        builder.add(domain, createSslContext(new SslConfig(
-          filePrefix + domain + "/privkey.pem",
-          filePrefix + domain + "/fullchain.pem")));
-      }
-    }
-    if (snis != null) {
-      snis.forEach(sni -> builder.add(sni.host(), createSslContext(sni.ssl())));
-    }
+    contexts.entrySet().forEach(entry -> {
+      builder.add(entry.getKey(), entry.getValue());
+    });
     return builder.build();
   }
 
-  SslContext createSslContext(SslConfig cfg) {
+  static SslContext createSslContext(SslConfig cfg) {
     try {
       return SslContextBuilder.forServer(open(cfg.certPath()), open(cfg.keyPath()))
         .clientAuth(ClientAuth.NONE)
@@ -172,7 +172,7 @@ public class Proxy implements ProxyContext {
     } catch (SSLException e) {
       throw new RuntimeException(e);
     } catch (IOException e) {
-      throw new IllegalArgumentException("file not found", e);
+      throw new IllegalArgumentException("IO error", e);
     }
   }
 
@@ -206,11 +206,7 @@ public class Proxy implements ProxyContext {
           protected void initChannel(SocketChannel ch) {
             final ChannelPipeline pipeline = ch.pipeline();
             pipeline.addLast(trackIngressConnectionsHandler);
-            if (sniMapping != null) {
-              pipeline.addLast(new SniHandler(sniMapping));
-            } else if (sslContext != null) {
-              pipeline.addLast(sslContext.newHandler(ch.alloc()));
-            }
+            pipeline.addLast(new SniHandler(sniMapping));
             pipeline.addLast(new HttpServerCodec());
             addHttpHandlers(pipeline);
           }

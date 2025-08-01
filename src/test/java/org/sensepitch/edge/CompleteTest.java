@@ -15,7 +15,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Map;
 
 import static io.netty.handler.codec.http.HttpMethod.GET;
@@ -51,7 +50,7 @@ class CompleteTest {
       .build())
     .build();
 
-  Steps steps = new Steps().given_the_configuration(COMMON_CONFIG);
+  Steps steps = new Steps().given_initialized_proxy_with(COMMON_CONFIG);
 
   @Test
   void testMissingHost() {
@@ -87,10 +86,10 @@ class CompleteTest {
     EmbeddedChannel ingressChannel;
     HttpResponse response;
 
-    @Override
     @Step
-    Steps given_the_configuration(ProxyConfig proxyConfig) {
-      super.given_the_configuration(proxyConfig);
+    Steps given_initialized_proxy_with(ProxyConfig proxyConfig) {
+      given_the_configuration(proxyConfig);
+      then_expect_initialized_without_exception();
       ChannelInitializer<EmbeddedChannel> channelInitializer = new ChannelInitializer<>() {
         @Override
         protected void initChannel(EmbeddedChannel ch) throws Exception {

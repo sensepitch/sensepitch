@@ -8,7 +8,5 @@ import lombok.Builder;
 @Builder
 public record SniConfig(
   String host,
-  SslConfig ssl,
-  String certificateFile,
-  String keyFile) {
+  SslConfig ssl) {
 }

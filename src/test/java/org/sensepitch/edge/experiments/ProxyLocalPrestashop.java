@@ -31,7 +31,7 @@ public class ProxyLocalPrestashop {
         .build())
       .listen(ListenConfig.builder()
         .httpsPort(7443)
-        .sni(List.of(SniConfig.builder()
+        .snis(List.of(SniConfig.builder()
           .host("ps90.packingpanic.com")
           .ssl(SslConfig.builder()
             .keyPath(System.getenv("HOME") + "/proj/local-ca/live/ps90.packingpanic.com.key")

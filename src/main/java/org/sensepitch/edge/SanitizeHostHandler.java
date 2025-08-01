@@ -44,9 +44,9 @@ public class SanitizeHostHandler extends ChannelInboundHandlerAdapter {
 
   private final Set<String> servicedHosts;
 
-  public SanitizeHostHandler(Collection<String> knownHost) {
+  public SanitizeHostHandler(Collection<String> servicedHosts) {
     this.servicedHosts =
-      knownHost.stream().filter(s -> !SPECIAL_HOSTS.contains(s))
+      servicedHosts.stream().filter(s -> !SPECIAL_HOSTS.contains(s))
       .collect(Collectors.toSet());
   }
 
