@@ -41,7 +41,7 @@ class CompleteTest {
       "example.com", SiteConfig.builder()
         .responseText("a test response")
         .protection(ProtectionConfig.builder()
-          .enabled(false)
+          .disabled(true)
           .build())
         .build()
     ))

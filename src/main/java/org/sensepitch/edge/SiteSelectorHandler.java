@@ -43,7 +43,7 @@ public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
       Supplier<ChannelHandler> protectionSupplier = null;
       ProtectionConfig protection = site.protection();
       if  (protection != null) {
-        if (!protection.enabled()) {
+        if (protection.disabled()) {
           PassThroughHandler passThroughHandler = new PassThroughHandler();
           protectionSupplier = () -> passThroughHandler;
         } else if (protection.admission() != null) {

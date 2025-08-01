@@ -7,7 +7,7 @@ import lombok.Builder;
  */
 @Builder(toBuilder = true)
 public record ProtectionConfig(
-  boolean enabled,
+  boolean disabled,
   String admissionRef,
   AdmissionConfig admission,
   CookieAdmissionConfig cookieAdmission
