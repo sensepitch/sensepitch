@@ -12,6 +12,9 @@ import io.netty.handler.codec.http.cookie.DefaultCookie;
 import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
 import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
 
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -19,37 +22,48 @@ import java.util.Set;
  *
  * @author Jens Wilke
  */
-public class CookieAdmissionHandler extends SkippingChannelInboundHandlerAdapter {
+public class CookieGateHandler extends SkippingChannelInboundHandlerAdapter {
 
-  private CookieAdmissionConfig config;
+  private final Map<String, CookieGateConfig> uri2config = new HashMap<>();
+  private final Map<String, CookieGateConfig> cookie2config = new HashMap<>();
 
-  public CookieAdmissionHandler(CookieAdmissionConfig config) {
-    this.config = config;
+  public CookieGateHandler(List<CookieGateConfig> configs) {
+    for (CookieGateConfig cfg : configs) {
+      if (cfg.accessUri() != null) {
+        uri2config.put(cfg.accessUri(), cfg);
+      }
+      if (cfg.name() == null) {
+        throw new IllegalArgumentException("Cookie name is required");
+      }
+      cookie2config.put(cfg.name(), cfg);
+    }
   }
 
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
     if (msg instanceof HttpRequest request) {
-      if (config.uri().equals(request.uri())) {
+      CookieGateConfig cfg = uri2config.get(request.uri());
+      if (cfg != null) {
         DefaultFullHttpResponse response =
           new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
             HttpResponseStatus.FOUND);
-        Cookie cookie = new DefaultCookie(config.cookieName(), "y");
+        Cookie cookie = new DefaultCookie(cfg.name(), "y");
         cookie.setHttpOnly(true);
         cookie.setSecure(true);
         cookie.setPath("/");
         cookie.setMaxAge(60 * 60 * 24 * 30);
         String encodedCookie = ServerCookieEncoder.STRICT.encode(cookie);
         response.headers().set(HttpHeaderNames.SET_COOKIE, encodedCookie);
-        response.headers().set(HttpHeaderNames.LOCATION, config.redirectLocation());
+        if (cfg.redirectLocation() != null) {
+          response.headers().set(HttpHeaderNames.LOCATION, cfg.redirectLocation());
+        }
         ctx.writeAndFlush(response);
         skipFollowingContent(ctx);
         return;
       }
       if (!isCookiePresent(request)) {
         DefaultFullHttpResponse response =
-          new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
-          HttpResponseStatus.FORBIDDEN);
+          new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.FORBIDDEN);
         response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
         ctx.writeAndFlush(response);
         skipFollowingContent(ctx);
@@ -59,14 +73,12 @@ public class CookieAdmissionHandler extends SkippingChannelInboundHandlerAdapter
     super.channelRead(ctx, msg);
   }
 
-
-
   private boolean isCookiePresent(HttpRequest request) {
     String cookieHeader = request.headers().get(HttpHeaderNames.COOKIE);
     if (cookieHeader != null) {
       Set<Cookie> cookies = ServerCookieDecoder.LAX.decode(cookieHeader);
       for (Cookie c : cookies) {
-        if (c.name().equals(config.cookieName())) {
+        if (cookie2config.containsKey(c.name())) {
           return true;
         }
       }

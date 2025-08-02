@@ -49,9 +49,8 @@ public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
         } else if (protection.admission() != null) {
           AdmissionHandler sharedAdmission = new AdmissionHandler(protection.admission());
           protectionSupplier = () -> sharedAdmission;
-        } else if (protection.cookieAdmission() != null) {
-          CookieAdmissionConfig cookieAdmissionCfg = protection.cookieAdmission();
-          protectionSupplier = () -> new CookieAdmissionHandler(cookieAdmissionCfg);
+        } else if (protection.cookieGates() != null) {
+          protectionSupplier = () -> new CookieGateHandler(protection.cookieGates());
         } else if (config.admission() != null) {
           AdmissionHandler sharedAdmission = new AdmissionHandler(config.admission());
           protectionSupplier = () -> sharedAdmission;

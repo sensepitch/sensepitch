@@ -2,6 +2,8 @@ package org.sensepitch.edge;
 
 import lombok.Builder;
 
+import java.util.List;
+
 /**
  * @author Jens Wilke
  */
@@ -10,5 +12,5 @@ public record ProtectionConfig(
   boolean disabled,
   String admissionRef,
   AdmissionConfig admission,
-  CookieAdmissionConfig cookieAdmission
+  List<CookieGateConfig> cookieGates
 ) { }
