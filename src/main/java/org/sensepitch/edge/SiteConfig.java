@@ -10,9 +10,7 @@ public record SiteConfig (
   String key,
   String host,
   String uri,
-  String responseText,
-  int responseStatusCode,
-  String upstreamRef,
+  ResponseConfig response,
   UpstreamConfig upstream,
   ProtectionConfig protection
 ) implements HasKey { }

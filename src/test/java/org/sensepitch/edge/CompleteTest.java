@@ -39,7 +39,9 @@ class CompleteTest {
       .build())
     .sites(Map.of(
       "example.com", SiteConfig.builder()
-        .responseText("a test response")
+          .response(ResponseConfig.builder()
+            .text("a test response")
+            .build())
         .protection(ProtectionConfig.builder()
           .disabled(true)
           .build())

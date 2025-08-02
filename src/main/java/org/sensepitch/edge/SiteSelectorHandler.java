@@ -82,15 +82,38 @@ public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
 
   private static Supplier<ChannelHandler> constructProxySupplier(ProxyContext ctx, SiteConfig site) {
     Upstream upstream;
-    if (site.upstream() == null) {
-      if (site.responseText() == null) {
+    if (site.upstream() == null && site.response() == null) {
         throw new IllegalArgumentException("upstream missing");
+    }
+    if (site.response() != null) {
+      ResponseConfig response = site.response();
+      HttpResponseStatus status;
+      String location;
+      if (response.permanentRedirect() != null) {
+        location = response.permanentRedirect();
+        status = HttpResponseStatus.PERMANENT_REDIRECT;
+      } else if (response.temporaryRedirect() != null) {
+        location = response.temporaryRedirect();
+        status = HttpResponseStatus.TEMPORARY_REDIRECT;
+      } else if (response.location() != null) {
+        location = response.location();
+        if (response.status() != 0) {
+          status = HttpResponseStatus.valueOf(response.status());
+        } else {
+          status = HttpResponseStatus.FOUND;
+        }
+      } else {
+        location = null;
+        if (response.status() != 0) {
+          status = HttpResponseStatus.valueOf(response.status());
+        } else {
+          status = HttpResponseStatus.OK;
+        }
       }
-      int status = site.responseStatusCode();
-      if (status == 0) {
-        status = 200;
+      String text = response.text();
+      if (text == null && location == null) {
+        throw new IllegalArgumentException("Response requires redirect location or text");
       }
-      HttpResponseStatus responseStatus = HttpResponseStatus.valueOf(status);
       upstream = ingressContext -> {
         Promise<Channel> promise = ingressContext.executor().newPromise();
         Channel ingressChannel = ingressContext.channel();
@@ -99,13 +122,16 @@ public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
             new ChannelOutboundHandlerAdapter() {
               @Override
               public void write(ChannelHandlerContext ctx1, Object msg, ChannelPromise promise) {
-                if (msg instanceof HttpRequest reqeust) {
+                if (msg instanceof HttpRequest) {
                   ByteBuf content = Unpooled.EMPTY_BUFFER;
-                  if (site.responseText() != null) {
-                    content = Unpooled.copiedBuffer(site.responseText(), StandardCharsets.US_ASCII);
+                  if (text != null) {
+                    content = Unpooled.copiedBuffer(text, StandardCharsets.US_ASCII);
                   }
-                  FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, responseStatus, content);
+                  FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status, content);
                   response.headers().set(HttpHeaderNames.CONTENT_LENGTH, content.readableBytes());
+                  if (location != null) {
+                    response.headers().set(HttpHeaderNames.LOCATION, location);
+                  }
                   ingressChannel.writeAndFlush(response);
                 }
                 ReferenceCountUtil.release(msg);

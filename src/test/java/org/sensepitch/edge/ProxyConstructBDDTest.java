@@ -101,7 +101,9 @@ class ProxyConstructBDDTest {
         .build())
       .sites(Map.of(
         "example.com", SiteConfig.builder()
-          .responseText("demo")
+            .response(ResponseConfig.builder()
+              .text("demo")
+              .build())
           .build()
       ))
       .metrics(MetricsConfig.builder()
@@ -125,7 +127,9 @@ class ProxyConstructBDDTest {
         .build())
       .sites(Map.of(
         "example.com", SiteConfig.builder()
-          .responseText("demo")
+            .response(ResponseConfig.builder()
+              .text("demo")
+              .build())
           .protection(ProtectionConfig.builder()
             .disabled(true)
             .build())
