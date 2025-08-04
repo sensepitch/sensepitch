@@ -1,6 +1,6 @@
 package org.sensepitch.edge.experiments;
 
-import org.sensepitch.edge.AdmissionConfig;
+import org.sensepitch.edge.DeflectorConfig;
 import org.sensepitch.edge.AdmissionTokenGeneratorConfig;
 import org.sensepitch.edge.BypassConfig;
 import org.sensepitch.edge.ConnectionConfig;
@@ -42,22 +42,24 @@ public class ProxyStaticNginx {
           .certPath("performance-test/ssl/nginx.crt")
           .build())
         .build())
-      .upstream(List.of(
+      .upstream(
         UpstreamConfig.builder()
           .host("")
           .target("172.21.0.3:80")
-          .build()
-      ))
-      .admission(AdmissionConfig.builder()
-        .bypass(BypassConfig.builder()
-          .uriPrefixes(List.of("/"))
           .build())
-        .tokenGenerator(List.of(
-          AdmissionTokenGeneratorConfig.builder()
-            .prefix("X")
-            .secret("secret")
-            .build()
-        ))
+      .protection(ProtectionConfig.builder()
+        .deflector(
+          DeflectorConfig.builder()
+            .bypass(BypassConfig.builder()
+              .uris(List.of("/*"))
+              .build())
+            .tokenGenerators(List.of(
+              AdmissionTokenGeneratorConfig.builder()
+                .prefix("X")
+                .secret("secret")
+                .build()
+            ))
+            .build())
         .build())
       .sites(Map.of(
           "any", SiteConfig.builder()

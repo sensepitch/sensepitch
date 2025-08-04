@@ -12,10 +12,10 @@ import java.util.Map;
 public record ProxyConfig(
   MetricsConfig metrics,
   ListenConfig listen,
-  AdmissionConfig admission,
   UnservicedHostConfig unservicedHost,
   IpLookupConfig ipLookup,
-  List<UpstreamConfig> upstream,
+  UpstreamConfig upstream,
+  ProtectionConfig protection,
   Map<String, SiteConfig> sites
 ) {
 }

@@ -31,29 +31,38 @@ import java.util.function.Supplier;
 @ChannelHandler.Sharable
 public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
 
+  private static final SiteConfig SITE_CONFIG_DEFAULT = SiteConfig.builder().build();
+  private final Upstream defaultUpstream;
   private final Map<String, Suppliers> directHostMatch = new HashMap<>();
   private final Map<String, TreeMap<String, Suppliers>> sitePrefixUriMatch =  new HashMap<>();
+
 
   public SiteSelectorHandler(ProxyContext ctx, ProxyConfig config) {
     if (config.sites() == null || config.sites().isEmpty()) {
       throw new IllegalArgumentException("sites missing");
     }
+    if (config.upstream() != null) {
+      defaultUpstream = constructUpstream(ctx, config.upstream());
+    } else {
+      defaultUpstream = null;
+    }
     config.sites().values().forEach(site -> {
       Supplier<ChannelHandler> proxySupplier = constructProxySupplier(ctx, site);
       Supplier<ChannelHandler> protectionSupplier = null;
       ProtectionConfig protection = site.protection();
-      if  (protection != null) {
-        if (protection.disabled()) {
+      if (protection == null) {
+        protection = config.protection();
+      }
+      if (protection != null) {
+        if (protection.disable()) {
           PassThroughHandler passThroughHandler = new PassThroughHandler();
           protectionSupplier = () -> passThroughHandler;
-        } else if (protection.admission() != null) {
-          AdmissionHandler sharedAdmission = new AdmissionHandler(protection.admission());
+        } else if (protection.deflector() != null) {
+          DeflectorHandler sharedAdmission = new DeflectorHandler(protection.deflector());
           protectionSupplier = () -> sharedAdmission;
         } else if (protection.cookieGates() != null) {
-          protectionSupplier = () -> new CookieGateHandler(protection.cookieGates());
-        } else if (config.admission() != null) {
-          AdmissionHandler sharedAdmission = new AdmissionHandler(config.admission());
-          protectionSupplier = () -> sharedAdmission;
+          CookieGateHandler handler = new CookieGateHandler(protection.cookieGates());
+          protectionSupplier = () -> handler;
         }
       }
       if (protectionSupplier == null) {
@@ -79,11 +88,8 @@ public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
     });
   }
 
-  private static Supplier<ChannelHandler> constructProxySupplier(ProxyContext ctx, SiteConfig site) {
+  private Supplier<ChannelHandler> constructProxySupplier(ProxyContext ctx, SiteConfig site) {
     Upstream upstream;
-    if (site.upstream() == null && site.response() == null) {
-        throw new IllegalArgumentException("upstream missing");
-    }
     if (site.response() != null) {
       ResponseConfig response = site.response();
       HttpResponseStatus status;
@@ -141,13 +147,20 @@ public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
         promise.setSuccess(upstreamChannel);
         return promise;
       };
+    } else if (site.upstream() != null) {
+      upstream = constructUpstream(ctx, site.upstream());
+    } else if (defaultUpstream != null) {
+      upstream = defaultUpstream;
     } else {
-      upstream = new DefaultUpstream(ctx, site.upstream());
+      throw new IllegalArgumentException("upstream missing");
     }
     Supplier<ChannelHandler> proxySupplier = () -> new DownstreamHandler(upstream, ctx.metrics());
     return proxySupplier;
   }
 
+  private static DefaultUpstream constructUpstream(ProxyContext ctx, UpstreamConfig cfg) {
+    return new DefaultUpstream(ctx, cfg);
+  }
 
   public Set<String> getServicedHosts() {
     Set<String> hosts = new HashSet<>();

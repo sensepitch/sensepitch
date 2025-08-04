@@ -1,12 +1,13 @@
 package org.sensepitch.edge.experiments;
 
-import org.sensepitch.edge.AdmissionConfig;
+import org.sensepitch.edge.DeflectorConfig;
 import org.sensepitch.edge.AdmissionTokenGeneratorConfig;
 import org.sensepitch.edge.GeoIp2Config;
 import org.sensepitch.edge.IpLookupConfig;
 import org.sensepitch.edge.ListenConfig;
 import org.sensepitch.edge.MetricsConfig;
 import org.sensepitch.edge.PrometheusConfig;
+import org.sensepitch.edge.ProtectionConfig;
 import org.sensepitch.edge.Proxy;
 import org.sensepitch.edge.ProxyConfig;
 import org.sensepitch.edge.SniConfig;
@@ -41,25 +42,27 @@ public class ProxyLocalPrestashop {
         .build())
       .ipLookup(IpLookupConfig.builder()
         .geoIp2(GeoIp2Config.builder()
-          .asnDb(System.getenv("HOME") + "/proj/maxmind-geolite2/GeoLite2-ASN-latest/GeoLite2-ASN.mmdb")
+          .asnDbPath(System.getenv("HOME") + "/proj/maxmind-geolite2/GeoLite2-ASN-latest/GeoLite2-ASN.mmdb")
           .build())
         .build())
-      .upstream(List.of(
+      .upstream(
         UpstreamConfig.builder()
           .host("ps90.packingpanic.com")
           // .target("172.24.0.2:80")
           .target("10.76.90.254:80")
           .build()
-      ))
-      .admission(AdmissionConfig.builder()
-        .tokenGenerator(List.of(
-          AdmissionTokenGeneratorConfig.builder()
-            .prefix("X")
-            .secret("secret")
-            .build()
-        ))
-        .build())
-      .build();
+      )
+      .protection(ProtectionConfig.builder()
+        .deflector(DeflectorConfig.builder()
+          .tokenGenerators(List.of(
+            AdmissionTokenGeneratorConfig.builder()
+              .prefix("X")
+              .secret("secret")
+              .build()
+            )
+          ).build()
+        ).build()
+      ).build();
     new Proxy(cfg).start();
   }
 

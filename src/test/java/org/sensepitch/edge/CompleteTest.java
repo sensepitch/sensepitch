@@ -43,7 +43,7 @@ class CompleteTest {
             .text("a test response")
             .build())
         .protection(ProtectionConfig.builder()
-          .disabled(true)
+          .disable(true)
           .build())
         .build()
     ))

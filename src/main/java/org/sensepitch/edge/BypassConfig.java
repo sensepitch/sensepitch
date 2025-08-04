@@ -10,9 +10,6 @@ import java.util.List;
 @Builder
 public record BypassConfig(
   DetectCrawlerConfig detectCrawler,
-  List<String> uriPrefixes,
-  List<String> uriSuffixes,
-  boolean disableDefaultSuffixes,
-  List<String> hosts,
+  List<String> uris,
   List<String> remotes
 ) { }

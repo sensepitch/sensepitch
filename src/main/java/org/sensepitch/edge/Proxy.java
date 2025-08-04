@@ -42,7 +42,6 @@ public class Proxy implements ProxyContext {
   private final ProxyConfig config;
   private final ConnectionConfig connectionConfig;
   private final MetricsBridge metricsBridge;
-  private final AdmissionHandler admissionHandler;
   // private final SslContext sslContext;
   private final Mapping<String, SslContext> sniMapping;
   private final UnservicedHostHandler unservicedHostHandler;
@@ -68,12 +67,7 @@ public class Proxy implements ProxyContext {
     this.config = config;
     metricsBridge = initializeMetrics();
     metricsBridge.expose(metrics);
-    trackIngressConnectionsHandler = metricsBridge.expose(new  TrackIngressConnectionsHandler());
-    if (config.admission() != null) {
-      admissionHandler = metricsBridge.expose(new AdmissionHandler(config.admission()));
-    } else {
-      admissionHandler = null;
-    }
+    trackIngressConnectionsHandler = metricsBridge.expose(new TrackIngressConnectionsHandler());
     // sslContext = initializeSslContext();
     siteSelectorHandler = new SiteSelectorHandler(this, config);
     var servicedHosts = siteSelectorHandler.getServicedHosts();

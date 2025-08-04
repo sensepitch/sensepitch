@@ -9,8 +9,7 @@ import java.util.List;
  */
 @Builder(toBuilder = true)
 public record ProtectionConfig(
-  boolean disabled,
-  String admissionRef,
-  AdmissionConfig admission,
+  boolean disable,
+  DeflectorConfig deflector,
   List<CookieGateConfig> cookieGates
 ) { }

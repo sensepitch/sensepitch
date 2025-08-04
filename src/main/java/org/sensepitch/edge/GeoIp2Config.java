@@ -7,6 +7,6 @@ import lombok.Builder;
  */
 @Builder
 public record GeoIp2Config(
-  String asnDb,
-  String countryDb
+  String asnDbPath,
+  String countryDbPath
 ) { }

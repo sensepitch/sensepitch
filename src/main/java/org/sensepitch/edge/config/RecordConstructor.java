@@ -1,5 +1,6 @@
 package org.sensepitch.edge.config;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
@@ -15,6 +16,7 @@ import org.yaml.snakeyaml.nodes.Node;
 import org.yaml.snakeyaml.nodes.NodeTuple;
 import org.yaml.snakeyaml.nodes.ScalarNode;
 import org.yaml.snakeyaml.nodes.SequenceNode;
+import org.yaml.snakeyaml.nodes.Tag;
 
 
 public class RecordConstructor {
@@ -37,17 +39,34 @@ public class RecordConstructor {
     throw new IllegalArgumentException("Cannot construct record of type " + targetType.getName());
   }
 
+  static Object constructEmptyRecord(Class<? extends Record> recordClass) {
+    return constructRecord(recordClass, null);
+  }
+
   static Object constructRecord(Class<? extends Record> recordClass, MappingNode node) {
     try {
-      Method builderMethod = recordClass.getMethod("builder");
-      Object builder = builderMethod.invoke(null);
-      for (NodeTuple t : node.getValue()) {
-        String key = scalarValue(t.getKeyNode());
-        Node valueNode = t.getValueNode();
-        Method setMethod = findMethod(builder.getClass(), key);
-        Type type = setMethod.getGenericParameterTypes()[0];
-        Object value = createValueObject(type, valueNode);
-        setMethod.invoke(builder, value);
+      Object builder;
+      try {
+        Field field = recordClass.getField("DEFAULT");
+        Object obj = field.get(null);
+        Method toBuilderMethod = recordClass.getMethod("toBuilder");
+        builder = toBuilderMethod.invoke(obj);
+      } catch (NoSuchFieldException e) {
+        Method builderMethod = recordClass.getMethod("builder");
+        builder = builderMethod.invoke(null);
+      }
+      if (node != null) {
+        for (NodeTuple t : node.getValue()) {
+          String key = scalarValue(t.getKeyNode());
+          Node valueNode = t.getValueNode();
+          Method setMethod = findMethod(builder.getClass(), key);
+          if (setMethod == null) {
+            throw new IllegalArgumentException("Unknown parameter in " + recordClass.getSimpleName() + ": " + key);
+          }
+          Type type = setMethod.getGenericParameterTypes()[0];
+          Object value = createValueObject(type, valueNode);
+          setMethod.invoke(builder, value);
+        }
       }
       Method buildMethod = builder.getClass().getMethod("build");
       return buildMethod.invoke(builder);
@@ -81,7 +100,17 @@ public class RecordConstructor {
         Type elementType = parameterizedType.getActualTypeArguments()[1];
         Map<String, Object> map = new LinkedHashMap<>();
         mappingNode.getValue().forEach(t ->
-          map.put(scalarValue(t.getKeyNode()), createValueObject(elementType, t.getValueNode())));
+        {
+          Object obj;
+          if (Tag.NULL.equals(t.getValueNode().getTag())) {
+            obj = constructEmptyRecord((Class) elementType);
+          } else {
+            obj = createValueObject(elementType, t.getValueNode());
+          }
+          // System.out.println(t.getKeyNode());
+          // System.out.println(t.getValueNode());
+          map.put(scalarValue(t.getKeyNode()), obj);
+        });
         return map;
       }
     }

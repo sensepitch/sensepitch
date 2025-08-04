@@ -21,11 +21,11 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
   public CombinedIpTraitsLookup(IpLookupConfig ipLookupConfig) throws IOException {
     ipAttributesLookups = new ArrayList<>();
     if (ipLookupConfig.geoIp2() != null) {
-      if (ipLookupConfig.geoIp2().asnDb() != null) {
-        addAsnLookup(new GeoIp2AsnLookup(ipLookupConfig.geoIp2().asnDb()));
+      if (ipLookupConfig.geoIp2().asnDbPath() != null) {
+        addAsnLookup(new GeoIp2AsnLookup(ipLookupConfig.geoIp2().asnDbPath()));
       }
-      if (ipLookupConfig.geoIp2().countryDb() != null) {
-        addCountryLookup(new GeoIp2CountryLookup(ipLookupConfig.geoIp2().countryDb()));
+      if (ipLookupConfig.geoIp2().countryDbPath() != null) {
+        addCountryLookup(new GeoIp2CountryLookup(ipLookupConfig.geoIp2().countryDbPath()));
       }
     }
     ipLabelLookup = readGoogleBotList();

@@ -21,7 +21,7 @@ public class DefaultBypassCheckTest {
   @Test
   public void testBypassCheck() {
     BypassConfig cfg = BypassConfig.builder()
-      .uriPrefixes(Arrays.asList("/abc", "/ok"))
+      .uris(Arrays.asList("/abc*", "/ok*"))
       .build();
     BypassCheck check = new DefaultBypassCheck(cfg);
     Channel channel = new EmbeddedChannel();

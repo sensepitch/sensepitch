@@ -1,5 +1,9 @@
 package org.sensepitch.edge;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import io.netty.buffer.UnpooledHeapByteBuf;
+import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.HttpHeaderNames;
@@ -11,6 +15,7 @@ import io.netty.handler.codec.http.cookie.Cookie;
 import io.netty.handler.codec.http.cookie.DefaultCookie;
 import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
 import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
+import io.netty.util.CharsetUtil;
 
 import java.util.HashMap;
 import java.util.List;
@@ -22,6 +27,7 @@ import java.util.Set;
  *
  * @author Jens Wilke
  */
+@ChannelHandler.Sharable
 public class CookieGateHandler extends SkippingChannelInboundHandlerAdapter {
 
   private final Map<String, CookieGateConfig> uri2config = new HashMap<>();
@@ -44,9 +50,9 @@ public class CookieGateHandler extends SkippingChannelInboundHandlerAdapter {
     if (msg instanceof HttpRequest request) {
       CookieGateConfig cfg = uri2config.get(request.uri());
       if (cfg != null) {
+        ByteBuf buf = Unpooled.copiedBuffer("welcome", CharsetUtil.UTF_8);
         DefaultFullHttpResponse response =
-          new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
-            HttpResponseStatus.FOUND);
+          new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, buf);
         Cookie cookie = new DefaultCookie(cfg.name(), "y");
         cookie.setHttpOnly(true);
         cookie.setSecure(true);
@@ -54,16 +60,13 @@ public class CookieGateHandler extends SkippingChannelInboundHandlerAdapter {
         cookie.setMaxAge(60 * 60 * 24 * 30);
         String encodedCookie = ServerCookieEncoder.STRICT.encode(cookie);
         response.headers().set(HttpHeaderNames.SET_COOKIE, encodedCookie);
-        if (cfg.redirectLocation() != null) {
-          response.headers().set(HttpHeaderNames.LOCATION, cfg.redirectLocation());
-        }
         ctx.writeAndFlush(response);
         skipFollowingContent(ctx);
         return;
       }
       if (!isCookiePresent(request)) {
         DefaultFullHttpResponse response =
-          new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.FORBIDDEN);
+          new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND);
         response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
         ctx.writeAndFlush(response);
         skipFollowingContent(ctx);

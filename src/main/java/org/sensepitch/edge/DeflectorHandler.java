@@ -3,7 +3,6 @@ package org.sensepitch.edge;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
-import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandler;
@@ -23,7 +22,6 @@ import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
 import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
 import io.netty.util.CharsetUtil;
 import io.netty.util.ReferenceCountUtil;
-import io.netty.util.ReferenceCounted;
 
 import java.net.Inet4Address;
 import java.net.SocketException;
@@ -39,9 +37,9 @@ import java.util.concurrent.atomic.LongAdder;
  * @author Jens Wilke
  */
 @ChannelHandler.Sharable
-public class AdmissionHandler extends ChannelInboundHandlerAdapter implements HasMetrics {
+public class DeflectorHandler extends ChannelInboundHandlerAdapter implements HasMetrics {
 
-  private static final ProxyLogger LOG = ProxyLogger.get(AdmissionHandler.class);
+  private static final ProxyLogger LOG = ProxyLogger.get(DeflectorHandler.class);
 
   public static final String VERIFICATION_URL = "/.sensepitch.challenge.answer";
   public static final String htmlTemplate = ResourceLoader.loadTextFile("challenge.html");
@@ -61,7 +59,7 @@ public class AdmissionHandler extends ChannelInboundHandlerAdapter implements Ha
   LongAdder passedRequestCounter = new LongAdder();
   LongAdder bypassRequestCounter = new LongAdder();
 
-  AdmissionHandler(AdmissionConfig cfg) {
+  DeflectorHandler(DeflectorConfig cfg) {
     if (cfg.noBypass() != null) {
       noBypassCheck = new DefaultNoBypassCheck(cfg.noBypass());
     } else {
@@ -89,7 +87,7 @@ public class AdmissionHandler extends ChannelInboundHandlerAdapter implements Ha
       serverIpv4Address = deriveServerIpv4Address();
     }
     AdmissionTokenGenerator firstGenerator = null;
-    for (AdmissionTokenGeneratorConfig tc : cfg.tokenGenerator()) {
+    for (AdmissionTokenGeneratorConfig tc : cfg.tokenGenerators()) {
       char prefix = tc.prefix().charAt(0);
        DefaultAdmissionTokenGenerator generator = new DefaultAdmissionTokenGenerator(serverIpv4Address, prefix, tc.secret());
        if (firstGenerator == null) { firstGenerator = generator; }
@@ -162,7 +160,7 @@ public class AdmissionHandler extends ChannelInboundHandlerAdapter implements Ha
       @Override
       public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         if (msg instanceof LastHttpContent) {
-          ctx.pipeline().replace(this, "admission", AdmissionHandler.this);
+          ctx.pipeline().replace(this, "admission", DeflectorHandler.this);
         }
         ReferenceCountUtil.release(msg);
       }

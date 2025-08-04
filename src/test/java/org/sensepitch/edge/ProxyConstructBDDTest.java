@@ -34,7 +34,7 @@ class ProxyConstructBDDTest {
       .sites(Map.of(
         "somesite", SiteConfig.builder()
             .protection(ProtectionConfig.builder()
-              .disabled(true)
+              .disable(true)
               .build())
             .upstream(UpstreamConfig.builder()
               .target("localhost")
@@ -131,7 +131,7 @@ class ProxyConstructBDDTest {
               .text("demo")
               .build())
           .protection(ProtectionConfig.builder()
-            .disabled(true)
+            .disable(true)
             .build())
           .build()
       ))

@@ -8,10 +8,10 @@ import java.util.List;
  * @author Jens Wilke
  */
 @Builder
-public record AdmissionConfig(
+public record DeflectorConfig(
   String serverIpv4Address,
   BypassConfig bypass,
   NoBypassConfig noBypass,
   DetectCrawlerConfig detectCrawler,
-  List<AdmissionTokenGeneratorConfig> tokenGenerator
+  List<AdmissionTokenGeneratorConfig> tokenGenerators
 ) { }

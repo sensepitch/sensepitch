@@ -23,24 +23,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * @author Jens Wilke
  */
-public class AdmissionHandlerTest {
+public class DeflectorHandlerTest {
 
-  private AdmissionHandler handler;
+  private DeflectorHandler handler;
   private Channel channel;
   private boolean passed;
   private Object messageWritten;
 
   @Test
   public void test() {
-    AdmissionConfig cfg = AdmissionConfig.builder()
+    DeflectorConfig cfg = DeflectorConfig.builder()
       .serverIpv4Address("127.0.0.1")
       .bypass(BypassConfig.builder()
-        .uriPrefixes(List.of("/bypass"))
+        .uris(List.of("/bypass"))
         .build())
       .noBypass(NoBypassConfig.builder()
-        .uriPrefixes(List.of("/neverBypass", "/bypass/excluded"))
+        .uris(List.of("/neverBypass", "/bypass/excluded"))
         .build())
-      .tokenGenerator(List.of(
+      .tokenGenerators(List.of(
         AdmissionTokenGeneratorConfig.builder()
           .secret("asdf")
           .prefix("X")
@@ -69,7 +69,7 @@ public class AdmissionHandlerTest {
     ;
   }
 
-  private void init(AdmissionConfig cfg) {
+  private void init(DeflectorConfig cfg) {
     ChannelOutboundHandler out = new ChannelOutboundHandlerAdapter() {
       @Override
       public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
@@ -86,7 +86,7 @@ public class AdmissionHandlerTest {
         super.channelRead(ctx, msg);
       }
     };
-    handler = new AdmissionHandler(cfg);
+    handler = new DeflectorHandler(cfg);
     channel = new EmbeddedChannel(out, handler, in);
   }
 
@@ -102,7 +102,7 @@ public class AdmissionHandlerTest {
 
   void request(HttpRequest req) {
     channel.pipeline().addLast(handler);
-    ChannelHandlerContext ctx = channel.pipeline().context(AdmissionHandler.class);
+    ChannelHandlerContext ctx = channel.pipeline().context(DeflectorHandler.class);
     messageWritten = null;
     passed = false;
     handler.channelRead(ctx, req);

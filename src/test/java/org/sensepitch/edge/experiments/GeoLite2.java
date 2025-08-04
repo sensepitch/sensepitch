@@ -26,8 +26,8 @@ public class GeoLite2 {
   public void test() throws IOException {
     IpLookupConfig cfg = IpLookupConfig.builder()
       .geoIp2(GeoIp2Config.builder()
-        .asnDb(System.getenv("HOME") + "/proj/maxmind-geolite2/GeoLite2-ASN-latest/GeoLite2-ASN.mmdb")
-        .countryDb(System.getenv("HOME") + "/proj/maxmind-geolite2/GeoLite2-Country-latest/GeoLite2-Country.mmdb")
+        .asnDbPath(System.getenv("HOME") + "/proj/maxmind-geolite2/GeoLite2-ASN-latest/GeoLite2-ASN.mmdb")
+        .countryDbPath(System.getenv("HOME") + "/proj/maxmind-geolite2/GeoLite2-Country-latest/GeoLite2-Country.mmdb")
         .build())
       .build();
     traitsLookup = new CombinedIpTraitsLookup(cfg);
