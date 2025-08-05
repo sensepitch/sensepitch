@@ -36,7 +36,7 @@ public class ProxyStaticNginx {
         .connection(ConnectionConfig.DEFAULT.toBuilder()
           .readTimeoutSeconds(3)
           .build())
-        .httpsPort(7443)
+        .httpsPort(17443)
         .ssl(SslConfig.builder()
           .keyPath("performance-test/ssl/nginx.key")
           .certPath("performance-test/ssl/nginx.crt")
@@ -44,9 +44,9 @@ public class ProxyStaticNginx {
         .build())
       .upstream(
         UpstreamConfig.builder()
-          .host("")
           .target("172.21.0.3:80")
           .build())
+      // not used
       .protection(ProtectionConfig.builder()
         .deflector(
           DeflectorConfig.builder()
@@ -64,7 +64,9 @@ public class ProxyStaticNginx {
       .sites(Map.of(
           "any", SiteConfig.builder()
             .host("*")
-            .protection(ProtectionConfig.builder().build())
+            .protection(ProtectionConfig.builder()
+              .disable(true)
+              .build())
             .upstream(
               UpstreamConfig.builder()
                 .target("172.21.0.3:80")

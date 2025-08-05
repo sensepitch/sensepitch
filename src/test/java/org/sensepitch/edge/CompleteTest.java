@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 
 import static io.netty.handler.codec.http.HttpMethod.GET;
@@ -33,6 +34,9 @@ class CompleteTest {
         .keyPath("classpath:ssl/test.key")
         .certPath("classpath:ssl/test.crt")
         .build())
+      .hosts(List.of(
+        "unserviced-domain.com"
+      ))
       .build())
     .unservicedHost(UnservicedHostConfig.builder()
       .defaultLocation("https://sensepitch.io")
@@ -71,6 +75,20 @@ class CompleteTest {
   }
 
   @Test
+  void redirectUnserviced() {
+    steps
+      .when_requesting("unserviced-domain.com", "anything")
+      .then_the_response_status_is(HttpResponseStatus.TEMPORARY_REDIRECT)
+      .then_the_response_location_header_is("https://sensepitch.io/NOT_FOUND")
+      .then_channel_closed();
+    steps
+      .when_requesting("unserviced-domain.com", "/")
+      .then_the_response_status_is(HttpResponseStatus.TEMPORARY_REDIRECT)
+      .then_the_response_location_header_is("https://sensepitch.io")
+      .then_channel_closed();
+  }
+
+  @Test
   void responding() {
     steps
       .when_requesting("example.com", "/anything")
@@ -92,18 +110,24 @@ class CompleteTest {
     Steps given_initialized_proxy_with(ProxyConfig proxyConfig) {
       given_the_configuration(proxyConfig);
       then_expect_initialized_without_exception();
-      ChannelInitializer<EmbeddedChannel> channelInitializer = new ChannelInitializer<>() {
-        @Override
-        protected void initChannel(EmbeddedChannel ch) throws Exception {
-          proxy.addHttpHandlers(ch.pipeline());
-        }
-      };
-      ingressChannel = new EmbeddedChannel(channelInitializer);
       return this;
+    }
+
+    private void newChannelIfNeeded() {
+      if (ingressChannel == null || !ingressChannel.isActive()) {
+        ChannelInitializer<EmbeddedChannel> channelInitializer = new ChannelInitializer<>() {
+          @Override
+          protected void initChannel(EmbeddedChannel ch) throws Exception {
+            proxy.addHttpHandlers(ch.pipeline());
+          }
+        };
+        ingressChannel = new EmbeddedChannel(channelInitializer);
+      }
     }
 
     @Step
     Steps when_requesting(String host, String uri) {
+      newChannelIfNeeded();
       DefaultHttpRequest req = new DefaultHttpRequest(HTTP_1_1, GET, uri);
       if (host != null) {
         req.headers().set(HttpHeaderNames.HOST, host);

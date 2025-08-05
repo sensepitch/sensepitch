@@ -80,7 +80,7 @@ public interface ProxyLogger {
         InetSocketAddress addr = (InetSocketAddress) downstream.remoteAddress();
         remoteHost = addr.getAddress().getHostAddress();
       }
-      error(downstream, "DOWNSTREAM ERROR " + msg + " "+ remoteHost + " " + cause);
+      error(downstream, "DOWNSTREAM ERROR " + msg + " "+ remoteHost + " " + cause, cause);
       // FIXME
       // downstreamOnce.report(msg + " (subsequent errors suppressed) " + cause.getMessage());
     }

@@ -80,7 +80,12 @@ public class Proxy implements ProxyContext {
           .build();
     }
     unservicedHostHandler = new UnservicedHostHandler(unservicedHostConfig);
-    sanitizeHostHandler = new SanitizeHostHandler(servicedHosts);
+    Set<String> knownHosts = new HashSet<>();
+    knownHosts.addAll(servicedHosts);
+    if (config.listen().hosts() != null) {
+      knownHosts.addAll(config.listen().hosts());
+    }
+    sanitizeHostHandler = new SanitizeHostHandler(knownHosts);
     requestLogger = new DistributingRequestLogger(
       new StandardOutRequestLogger(),
       metricsBridge.expose(new ExposeRequestCountPerStatusCodeHandler()));

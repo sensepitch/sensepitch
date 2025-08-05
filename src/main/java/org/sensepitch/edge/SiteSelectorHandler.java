@@ -36,7 +36,6 @@ public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
   private final Map<String, Suppliers> directHostMatch = new HashMap<>();
   private final Map<String, TreeMap<String, Suppliers>> sitePrefixUriMatch =  new HashMap<>();
 
-
   public SiteSelectorHandler(ProxyContext ctx, ProxyConfig config) {
     if (config.sites() == null || config.sites().isEmpty()) {
       throw new IllegalArgumentException("sites missing");
@@ -66,7 +65,7 @@ public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
         }
       }
       if (protectionSupplier == null) {
-        throw new IllegalArgumentException("Site requires protection scheme");
+        throw new IllegalArgumentException("Site requires protection scheme or explicit disable");
       }
       var suppliers = new Suppliers(protectionSupplier, proxySupplier);
       String host = site.host();

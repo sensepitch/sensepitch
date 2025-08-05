@@ -4,7 +4,6 @@ import lombok.Builder;
 
 /**
  *
- * @param host match for the requested host name
  * @param target target host with optional port number. Names are supported, however the standard
  *  *             Java DNS resolver is used
  *
@@ -12,5 +11,4 @@ import lombok.Builder;
  */
 @Builder
 public record UpstreamConfig (
-  String host,
   String target) { }

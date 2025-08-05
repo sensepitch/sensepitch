@@ -42,11 +42,11 @@ public class SanitizeHostHandler extends ChannelInboundHandlerAdapter {
 
   public static final Set<String> SPECIAL_HOSTS = Set.of(UNKNOWN_HOST, MISSING_HOST, NIL_HOST);
 
-  private final Set<String> servicedHosts;
+  private final Set<String> knownHosts;
 
-  public SanitizeHostHandler(Collection<String> servicedHosts) {
-    this.servicedHosts =
-      servicedHosts.stream().filter(s -> !SPECIAL_HOSTS.contains(s))
+  public SanitizeHostHandler(Collection<String> knownHosts) {
+    this.knownHosts =
+      knownHosts.stream().filter(s -> !SPECIAL_HOSTS.contains(s))
       .collect(Collectors.toSet());
   }
 
@@ -62,7 +62,7 @@ public class SanitizeHostHandler extends ChannelInboundHandlerAdapter {
           host = sa[0];
           request.headers().set(HttpHeaderNames.HOST, host);
         }
-        if (!servicedHosts.contains(host)) {
+        if (!knownHosts.contains(host)) {
           request.headers().set(HttpHeaderNames.HOST, UNKNOWN_HOST);
         }
       }

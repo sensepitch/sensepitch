@@ -47,7 +47,6 @@ public class ProxyLocalPrestashop {
         .build())
       .upstream(
         UpstreamConfig.builder()
-          .host("ps90.packingpanic.com")
           // .target("172.24.0.2:80")
           .target("10.76.90.254:80")
           .build()
