@@ -75,6 +75,10 @@ public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
       if (host == null) {
         throw new IllegalArgumentException("Site requires host or key");
       }
+      if (host.contains("*")) {
+        // TODO: support wildcard hosts
+        throw new IllegalArgumentException("Host wildcards are not yet supported");
+      }
       if (site.uri() == null || site.uri().equals("*") || site.uri().equals("/*")) {
         directHostMatch.put(host, suppliers);
       } else if (site.uri().endsWith("*")) {

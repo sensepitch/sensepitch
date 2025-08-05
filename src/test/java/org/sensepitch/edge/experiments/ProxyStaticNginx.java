@@ -63,7 +63,7 @@ public class ProxyStaticNginx {
         .build())
       .sites(Map.of(
           "any", SiteConfig.builder()
-            .host("*")
+            .host("localhost")
             .protection(ProtectionConfig.builder()
               .disable(true)
               .build())

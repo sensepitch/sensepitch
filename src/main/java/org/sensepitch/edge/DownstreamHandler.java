@@ -7,7 +7,6 @@ import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
-import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.DecoderException;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.FullHttpRequest;
@@ -46,7 +45,8 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   private boolean lastContentReceivedFromClient;
   private boolean sslHandshakeComplete;
   private Runnable flushTask;
-  private HttpRequest request;
+  // TODO: remove requestForDebugging
+  private HttpRequest requestForDebugging;
 
   public DownstreamHandler(Upstream upstream, ProxyMetrics metrics) {
     this.upstream = upstream;
@@ -62,6 +62,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
         return;
       }
       requestReceived = true;
+      this.requestForDebugging = request;
       DownstreamProgress.progress(ctx.channel(), "request received, selecting upstream");
       upstreamChannelFuture = upstream.connect(ctx);
       augmentHeadersAndForwardRequest(ctx, request);
@@ -87,7 +88,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     if (future.isSuccess()) {
       String remoteIp = ProxyUtil.extractRemoteIp(ctx);
       String upstreamString = DEBUG.channelId(future.resultNow());
-      String requestString = "upstream=" + upstreamString + ", " + request.headers().get(HttpHeaderNames.HOST) + " " + remoteIp + " " + request.method() + " " + request.uri();
+      String requestString = "upstream=" + upstreamString + ", " + requestForDebugging.headers().get(HttpHeaderNames.HOST) + " " + remoteIp + " " + requestForDebugging.method() + " " + requestForDebugging.uri();
       DownstreamProgress.progress(ctx.channel(), "write and flushing last content to upstream, " + requestString);
       future.resultNow().writeAndFlush(msg).addListener((ChannelFutureListener) future1 -> {
         // TODO: counter!
