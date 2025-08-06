@@ -37,7 +37,7 @@ import java.util.concurrent.atomic.LongAdder;
  * @author Jens Wilke
  */
 @ChannelHandler.Sharable
-public class DeflectorHandler extends ChannelInboundHandlerAdapter implements HasMetrics {
+public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter implements HasMetrics {
 
   private static final ProxyLogger LOG = ProxyLogger.get(DeflectorHandler.class);
 
@@ -138,34 +138,16 @@ public class DeflectorHandler extends ChannelInboundHandlerAdapter implements Ha
       } else if (request.method() == HttpMethod.GET && request.uri().startsWith(VERIFICATION_URL)) {
         handleChallengeAnswer(ctx, request);
         ReferenceCountUtil.release(request);
-        discardFollowingContent(ctx);
+        skipFollowingContent(ctx);
       } else {
         // TODO: behaviour of non GET requests?
         outputChallengeHtml(ctx.channel());
         ReferenceCountUtil.release(request);
-        discardFollowingContent(ctx);
+        skipFollowingContent(ctx);
       }
     } else {
       ctx.fireChannelRead(msg);
     }
-  }
-
-  /**
-   * Discard content messages that may follow the request until we receive
-   * a LastHttpCount message. Revert back, because we may receive new requests
-   * on the same channel (http keep alive).
-   */
-  void discardFollowingContent(ChannelHandlerContext ctx) {
-    ChannelInboundHandler inboundHandler = new ChannelInboundHandlerAdapter() {
-      @Override
-      public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-        if (msg instanceof LastHttpContent) {
-          ctx.pipeline().replace(this, "admission", DeflectorHandler.this);
-        }
-        ReferenceCountUtil.release(msg);
-      }
-    };
-    ctx.pipeline().replace(this, "discard", inboundHandler);
   }
 
   public Metrics getMetrics() {

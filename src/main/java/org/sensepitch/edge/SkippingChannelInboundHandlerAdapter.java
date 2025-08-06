@@ -27,7 +27,7 @@ public class SkippingChannelInboundHandlerAdapter extends ChannelInboundHandlerA
   public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
     if (skipContent && msg instanceof HttpContent) {
       ReferenceCountUtil.release(msg);
-      if (msg  instanceof LastHttpContent) {
+      if (msg instanceof LastHttpContent) {
         skipContent = false;
       }
       return;

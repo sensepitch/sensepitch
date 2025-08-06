@@ -132,14 +132,14 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [x] proxy headers
 - [x] pass to NGINX configuration 
 - [x] host based upstream routing
-- [x] admission: use server IP in token
-- [x] admission: make time a parameter
+- [x] pow deflection: use server IP in token
+- [x] pow deflection: make time a parameter
 - [x] make admission secret configurable
 - [x] can we use Builder in lombok?
 - [x] use keep alive / connection pool upstream
 - [x] openssl support for HTTPS
 - [x] upstream backpressure
-- [ ] POC production testing
+- [ ] upstream metrics, e.g. pool metrics
 - [ ] Logging: Netty LoggingHandler seems not to respect the origin class
 - [ ] try markdown JavaDoc, https://openjdk.org/jeps/467
 - [ ] explain PoW admission

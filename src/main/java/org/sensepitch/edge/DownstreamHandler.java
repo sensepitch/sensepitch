@@ -244,11 +244,11 @@ public class DownstreamHandler extends ChannelDuplexHandler {
    */
   @Override
   public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
+    // FIXME: sanitize headers
     if (msg instanceof HttpResponse response) {
       response.headers().remove(HttpHeaderNames.KEEP_ALIVE);
       response.headers().remove(HttpHeaderNames.CONNECTION);
     }
-    // FIXME: sanitize headers
     if (msg instanceof LastHttpContent) {
       upstreamChannelFuture = null;
       promise = promise.unvoid().addListener((ChannelFutureListener) future -> {

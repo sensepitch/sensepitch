@@ -53,7 +53,7 @@ public class DownstreamProgress {
     String text = MAP.remove(localChannelId(channel));
     if (text != null) {
       LOG.error(channel, "Channel " + localChannelId(channel) + " is inactive, but still in progress: " + text);
-      new RuntimeException().printStackTrace();
+      new Exception().printStackTrace();
     }
   }
 

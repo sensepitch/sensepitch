@@ -134,6 +134,22 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     super.write(ctx, msg, promise);
   }
 
+  @Override
+  public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+    if (request != null) {
+      error = cause;
+      try {
+        logger.logRequest(this);
+        requestCount++;
+      } catch (Throwable e) {
+        DEBUG.error(ctx.channel(), "Error logging request", e);
+      }
+      request = null;
+    }
+    super.exceptionCaught(ctx, cause);
+  }
+
+
   /**
    * Construct a mock http request in case we don't have a request, which can happen if
    * the request was malformed or receive timed out. We don't use a HttpRequest singleton,

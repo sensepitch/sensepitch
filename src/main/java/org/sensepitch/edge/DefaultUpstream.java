@@ -16,6 +16,8 @@ import io.netty.channel.pool.SimpleChannelPool;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.http.HttpClientCodec;
+import io.netty.handler.timeout.IdleStateEvent;
+import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.FutureListener;
 import io.netty.util.concurrent.Promise;
@@ -49,6 +51,13 @@ public class DefaultUpstream implements Upstream {
     ChannelPoolHandler channelHandler = new ChannelPoolHandler() {
       @Override
       public void channelReleased(Channel ch) throws Exception {
+        ch.pipeline().replace("forward", "forward",
+          new IdleStateHandler(0,9, 0) {
+          @Override
+          protected void channelIdle(ChannelHandlerContext ctx, IdleStateEvent evt) {
+            ctx.close();
+          }
+        });
       }
 
       @Override
@@ -109,15 +118,17 @@ public class DefaultUpstream implements Upstream {
 
   private Future<Channel> getPooledChannel(Channel downstream) {
     Future<Channel> future = pool.acquire(downstream.eventLoop().newPromise());
-    future.addListener((FutureListener<Channel>) future1 -> {
-      if (future1.isSuccess()) {
+    future.addListener((FutureListener<Channel>) f -> {
+      if (f.isSuccess()) {
         DownstreamProgress.progress(downstream, "upstream connection established");
-        Channel ch = future1.resultNow();
+        Channel ch = f.resultNow();
+        // make sure read is on, it can happen that its till off from previous request handling
+        ch.setOption(ChannelOption.AUTO_READ, true);
         if (LOG.isTraceEnabled()) {
-          LOG.trace(downstream, future1.resultNow(), "pool acquire complete isActive=" + ch.isActive() + " pipeline=" + ch.pipeline().names());
+          LOG.trace(downstream, f.resultNow(), "pool acquire complete isActive=" + ch.isActive() + " pipeline=" + ch.pipeline().names());
         }
-        // we need to do this in the lister call back, to set the downstream
-        future1.resultNow().pipeline().replace("forward", "forward", new ForwardHandler(downstream, pool));
+        // we need to do this in the listener call back, to set the downstream
+        ch.pipeline().replace("forward", "forward", new ForwardHandler(downstream, pool));
       }
     });
     return future;

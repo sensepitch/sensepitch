@@ -14,9 +14,12 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
+import io.netty.handler.timeout.IdleState;
+import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.handler.timeout.ReadTimeoutHandler;
 import io.netty.handler.timeout.WriteTimeoutHandler;
+import io.netty.util.ReferenceCountUtil;
 
 import java.util.NoSuchElementException;
 
@@ -72,6 +75,7 @@ public class ClientTimeoutHandler extends ReadTimeoutHandler {
    */  @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
     if (timeoutReachedClosing) {
+      ReferenceCountUtil.release(msg);
       return;
     }
     if (msg instanceof LastHttpContent) {
@@ -143,13 +147,13 @@ public class ClientTimeoutHandler extends ReadTimeoutHandler {
   /**
    * Wait until we see the response written. Add keep alive timeout header and switch to write timeout.
    */
-  static class WaitForUpstreamContentHandler extends WriteTimeoutHandler {
+  static class WaitForUpstreamContentHandler extends IdleStateHandler {
     private final ConnectionConfig config;
     private final ProxyMetrics proxyMetrics;
     private boolean closed;
 
     public WaitForUpstreamContentHandler(ConnectionConfig config, ProxyMetrics proxyMetrics) {
-      super(config.responseTimeoutSeconds());
+      super(0, config.responseTimeoutSeconds(), 0);
       this.config = config;
       this.proxyMetrics = proxyMetrics;
     }
@@ -159,22 +163,31 @@ public class ClientTimeoutHandler extends ReadTimeoutHandler {
       // Assume the first message is HttpResponse, we never see another message since we are replaced
       assert msg instanceof HttpResponse;
       //noinspection ConstantValue
+      if (closed) {
+        ReferenceCountUtil.release(msg);
+        return;
+      }
       if (msg instanceof HttpResponse reqeust) {
         upstreamStartsSending(this, config, proxyMetrics, ctx, reqeust, promise);
       } else {
         super.write(ctx, msg, promise);
       }
     }
-
-
     @Override
-    protected void writeTimedOut(ChannelHandlerContext ctx) {
+    protected final void channelIdle(ChannelHandlerContext ctx, IdleStateEvent evt) throws Exception {
+      assert evt.state() == IdleState.WRITER_IDLE;
       if (!closed) {
-        ctx.fireExceptionCaught(new UpstreamResponseTimeoutException());
-        ctx.close();
         closed = true;
+        DownstreamProgress.complete(ctx.channel());
+        FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.GATEWAY_TIMEOUT);
+        response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
+        ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+        // TODO: remove the exception
+        ctx.fireExceptionCaught(new UpstreamResponseTimeoutException());
       }
+
     }
+
   }
 
   static class OngoingWriteTimeoutHandler extends IdleStateHandler {
@@ -182,6 +195,7 @@ public class ClientTimeoutHandler extends ReadTimeoutHandler {
     private final ConnectionConfig config;
     private final boolean keepAlive;
     private final ProxyMetrics proxyMetrics;
+    private boolean closed;
 
     public OngoingWriteTimeoutHandler(ConnectionConfig config, ProxyMetrics proxyMetrics, boolean keepAlive) {
       super(0, config.writeTimeoutSeconds(), 0);
@@ -198,6 +212,10 @@ public class ClientTimeoutHandler extends ReadTimeoutHandler {
 
     @Override
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
+      if (closed) {
+        ReferenceCountUtil.release(msg);
+        return;
+      }
       if (msg instanceof LastHttpContent) {
         // if not keep alive, the connection will be closed and all handlers removed.
         if (keepAlive) {
@@ -219,8 +237,21 @@ public class ClientTimeoutHandler extends ReadTimeoutHandler {
       super.write(ctx, msg, promise);
     }
 
+    @Override
+    protected final void channelIdle(ChannelHandlerContext ctx, IdleStateEvent evt) throws Exception {
+      assert evt.state() == IdleState.WRITER_IDLE;
+      if (!closed) {
+        DownstreamProgress.complete(ctx.channel());
+        // TODO: send different marker so request logging can detect abort
+        ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT).addListener(ChannelFutureListener.CLOSE);
+        closed = true;
+      }
+    }
+
   }
 
   public static class UpstreamResponseTimeoutException extends ChannelException { }
+
+  public static class WriteTimeoutException extends ChannelException { }
 
 }

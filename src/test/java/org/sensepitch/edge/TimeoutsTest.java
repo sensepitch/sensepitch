@@ -8,6 +8,8 @@ import io.netty.channel.ChannelPromise;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.DefaultHttpRequest;
+import io.netty.handler.codec.http.DefaultHttpResponse;
+import io.netty.handler.codec.http.DefaultLastHttpContent;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
@@ -30,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * @author Jens Wilke
  */
-public class TimeoutsTest {
+class TimeoutsTest {
 
   ConnectionConfig cfg = ConnectionConfig.builder()
     .readTimeoutSeconds(10)
@@ -108,6 +110,43 @@ public class TimeoutsTest {
     assertThat(response.headers().toString()).contains("keep-alive: timeout=10");
   }
 
+  @Test
+  public void upstreamResponseTimeout() {
+    sendRequest("/no-response");
+    rattle();
+    HttpResponse response = ingressChannel.readOutbound();
+    assertThat(response).isNull();
+    ticker.advance(29, SECONDS);
+    rattle();
+    response = ingressChannel.readOutbound();
+    assertThat(response).isNull();
+    ticker.advance(1, SECONDS);
+    rattle();
+    response = ingressChannel.readOutbound();
+    assertThat(response).isNotNull();
+    assertThat(response.status().code()).isEqualTo(504);
+    assertThat(ingressChannel.isActive()).isFalse();
+  }
+
+  @Test
+  public void writeTimeout() {
+    sendRequest("/no-response-initially-send-response-later-but-no-content");
+    rattle();
+    assertThat(ingressChannel.isActive()).isTrue();
+    ticker.advance(12, SECONDS);
+    rattle();
+    assertThat(ingressChannel.isActive()).isTrue();
+    HttpResponse response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+    ingressChannel.writeAndFlush(response);
+    assertThat(ingressChannel.isActive()).isTrue();
+    ticker.advance(19, SECONDS);
+    rattle();
+    assertThat(ingressChannel.isActive()).isTrue();
+    ticker.advance(1, SECONDS);
+    rattle();
+    assertThat(ingressChannel.isActive()).isFalse();
+    ingressChannel.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT);
+  }
 
   private void sendRequest(String uri) {
     assertThat(ingressChannel.isActive()).isTrue();
@@ -143,11 +182,13 @@ public class TimeoutsTest {
           @Override
           public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
             if (msg instanceof HttpRequest reqeust) {
-              FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
-              if (reqeust.uri().contains("empty-length")) {
-                response.headers().set(HttpHeaderNames.CONTENT_LENGTH, 0);
+              if (!reqeust.uri().contains("no-response")) {
+                FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+                if (reqeust.uri().contains("empty-length")) {
+                  response.headers().set(HttpHeaderNames.CONTENT_LENGTH, 0);
+                }
+                ingressChannel.writeAndFlush(response);
               }
-              ingressChannel.writeAndFlush(response);
             }
             super.write(ctx, msg, promise);
           }
