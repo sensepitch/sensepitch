@@ -126,8 +126,7 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
   }
 
   @Override
-  public void channelRead(ChannelHandlerContext ctx, Object msg) {
-    LOG.traceChannelRead(ctx, msg);
+  public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
     if (msg instanceof HttpRequest request) {
       if (checkAdmissionCookie(request)) {
         passedRequestCounter.increment();
@@ -146,7 +145,7 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
         skipFollowingContent(ctx);
       }
     } else {
-      ctx.fireChannelRead(msg);
+      super.channelRead(ctx, msg);
     }
   }
 

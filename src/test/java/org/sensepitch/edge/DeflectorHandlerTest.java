@@ -31,7 +31,7 @@ public class DeflectorHandlerTest {
   private Object messageWritten;
 
   @Test
-  public void test() {
+  public void test() throws Exception {
     DeflectorConfig cfg = DeflectorConfig.builder()
       .serverIpv4Address("127.0.0.1")
       .bypass(BypassConfig.builder()
@@ -90,17 +90,17 @@ public class DeflectorHandlerTest {
     channel = new EmbeddedChannel(out, handler, in);
   }
 
-  void request(String uri, String userAgent) {
+  void request(String uri, String userAgent) throws Exception {
     final DefaultHttpRequest req = new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, uri);
     req.headers().add("User-Agent", userAgent);
     request(req);
   }
 
-  void request(String uri) {
+  void request(String uri) throws Exception {
     request(new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, uri));
   }
 
-  void request(HttpRequest req) {
+  void request(HttpRequest req) throws Exception {
     channel.pipeline().addLast(handler);
     ChannelHandlerContext ctx = channel.pipeline().context(DeflectorHandler.class);
     messageWritten = null;
