@@ -294,6 +294,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     // java.net.SocketException: Connection reset
     // java.net.SocketException: Connection reset 112.254.156.186 java.net.SocketException: Connection reset
     // java.net.SocketException: Connection reset 2053:c0:3700:6157:a256:3692:31aa:1235 java.net.SocketException: Connection reset
+    // FIXME: this is wrong, since we are not in the pipeline while the ssl is completed
     if (!sslHandshakeComplete) {
       // io.netty.handler.ssl.ReferenceCountedOpenSslEngine$OpenSslHandshakeException is subtype of SSLHandshakeException
       // maybe switch to catch all SSLException

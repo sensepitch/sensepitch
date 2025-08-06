@@ -9,6 +9,8 @@ import lombok.Builder;
  *
  * @author Jens Wilke
  */
-@Builder
+@Builder(toBuilder = true)
 public record UpstreamConfig (
-  String target) { }
+  String target,
+  ConnectionPoolConfig connectionPool
+) { }

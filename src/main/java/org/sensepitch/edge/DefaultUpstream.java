@@ -33,6 +33,8 @@ public class DefaultUpstream implements Upstream {
   private final SimpleChannelPool pool;
 
   public DefaultUpstream(ProxyContext ctx, UpstreamConfig cfg) {
+    ConnectionPoolConfig poolCfg =
+      cfg.connectionPool() != null ? cfg.connectionPool() : ConnectionPoolConfig.DEFAULT;
     String[] sa = cfg.target().split(":");
     int port = 80;
     String target = sa[0];
@@ -52,7 +54,7 @@ public class DefaultUpstream implements Upstream {
       @Override
       public void channelReleased(Channel ch) throws Exception {
         ch.pipeline().replace("forward", "forward",
-          new IdleStateHandler(0,9, 0) {
+          new IdleStateHandler(0, poolCfg.idleTimeoutSeconds(), 0) {
           @Override
           protected void channelIdle(ChannelHandlerContext ctx, IdleStateEvent evt) {
             ctx.close();
@@ -70,8 +72,7 @@ public class DefaultUpstream implements Upstream {
         ch.pipeline().addLast("forward", new ForwardHandler(null, null));
       }
     };
-    // TODO: parameter
-    int maxConnections = 0;
+    int maxConnections = poolCfg.maxSize();
     if (maxConnections <= 0) {
       pool = new SimpleChannelPool(bootstrap,
         channelHandler,
@@ -90,11 +91,7 @@ public class DefaultUpstream implements Upstream {
   }
 
   void addHttpHandler(ChannelPipeline  pipeline) {
-    // pipeline.addLast(new ReportIoErrorsHandler("upstream"));
     pipeline.addLast(new HttpClientCodec());
-    // FIXME: timeout?
-    // pipeline.addLast(new ReadTimeoutHandler(23));
-    // pipeline.addLast(new LoggingHandler(LogLevel.INFO));
   }
 
   @Override
