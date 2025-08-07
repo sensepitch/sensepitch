@@ -193,8 +193,8 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
   private void handleChallengeAnswer(ChannelHandlerContext ctx, HttpRequest req) {
     QueryStringDecoder decoder = new QueryStringDecoder(req.uri());
     Map<String, List<String>> params = decoder.parameters();
-    String challenge = params.get("challenge").get(0);
-    String nonce = params.get("nonce").get(0);
+    String challenge = params.get("challenge").getFirst();
+    String nonce = params.get("nonce").getFirst();
     long t = challengeVerification.verifyChallengeParameters(challenge, nonce);
     FullHttpResponse response;
     if (t > 0) {
