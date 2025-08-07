@@ -14,13 +14,6 @@ import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslProvider;
 import io.netty.util.DomainWildcardMappingBuilder;
 import io.netty.util.Mapping;
-import org.sensepitch.edge.config.KeyInjector;
-import org.yaml.snakeyaml.DumperOptions;
-import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.introspector.BeanAccess;
-import org.yaml.snakeyaml.representer.Representer;
-
-import javax.net.ssl.SSLException;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -28,10 +21,14 @@ import java.io.InputStream;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Set;
+import javax.net.ssl.SSLException;
+import org.sensepitch.edge.config.KeyInjector;
+import org.yaml.snakeyaml.DumperOptions;
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.introspector.BeanAccess;
+import org.yaml.snakeyaml.representer.Representer;
 
-/**
- * Minimal HTTP/1.1 proxy without aggregation, with keep-alive and basic logging
- */
+/** Minimal HTTP/1.1 proxy without aggregation, with keep-alive and basic logging */
 public class Proxy implements ProxyContext {
 
   ProxyLogger LOG = ProxyLogger.get(Proxy.class);
@@ -72,12 +69,13 @@ public class Proxy implements ProxyContext {
     siteSelectorHandler = new SiteSelectorHandler(this, config);
     var servicedHosts = siteSelectorHandler.getServicedHosts();
     sniMapping = initializeSniMapping(config.listen(), servicedHosts);
-    UnservicedHostConfig unservicedHostConfig = config.unservicedHost() != null ? config.unservicedHost() : UnservicedHostConfig.builder().build();
+    UnservicedHostConfig unservicedHostConfig =
+        config.unservicedHost() != null
+            ? config.unservicedHost()
+            : UnservicedHostConfig.builder().build();
     if (unservicedHostConfig.servicedDomains() == null) {
       unservicedHostConfig =
-        unservicedHostConfig.toBuilder()
-          .servicedDomains(servicedHosts)
-          .build();
+          unservicedHostConfig.toBuilder().servicedDomains(servicedHosts).build();
     }
     unservicedHostHandler = new UnservicedHostHandler(unservicedHostConfig);
     Set<String> knownHosts = new HashSet<>();
@@ -86,14 +84,15 @@ public class Proxy implements ProxyContext {
       knownHosts.addAll(config.listen().hosts());
     }
     sanitizeHostHandler = new SanitizeHostHandler(knownHosts);
-    requestLogger = new DistributingRequestLogger(
-      new StandardOutRequestLogger(),
-      metricsBridge.expose(new ExposeRequestCountPerStatusCodeHandler()));
+    requestLogger =
+        new DistributingRequestLogger(
+            new StandardOutRequestLogger(),
+            metricsBridge.expose(new ExposeRequestCountPerStatusCodeHandler()));
     try {
       if (config.ipLookup() != null) {
         ipTraitsLookup = new CombinedIpTraitsLookup(config.ipLookup());
       } else {
-        ipTraitsLookup = (builder, address) -> { };
+        ipTraitsLookup = (builder, address) -> {};
       }
     } catch (IOException e) {
       throw new RuntimeException(e);
@@ -126,7 +125,8 @@ public class Proxy implements ProxyContext {
     return new PrometheusMetricsBridge(prometheusConfig);
   }
 
-  static Mapping<String, SslContext> initializeSniMapping(ListenConfig cfg, Set<String> servicedHosts) {
+  static Mapping<String, SslContext> initializeSniMapping(
+      ListenConfig cfg, Set<String> servicedHosts) {
     var knownHosts = new HashSet<>(servicedHosts);
     if (cfg.hosts() != null) {
       knownHosts.addAll(cfg.hosts());
@@ -134,9 +134,10 @@ public class Proxy implements ProxyContext {
     var contexts = new LinkedHashMap<String, SslContext>();
     if (cfg.letsEncrypt()) {
       for (String host : knownHosts) {
-        final SslConfig sslCfg = new SslConfig(
-          cfg.letsEncryptPrefix() + host + "/privkey.pem",
-          cfg.letsEncryptPrefix() + host + "/fullchain.pem");
+        final SslConfig sslCfg =
+            new SslConfig(
+                cfg.letsEncryptPrefix() + host + "/privkey.pem",
+                cfg.letsEncryptPrefix() + host + "/fullchain.pem");
         contexts.put(host, createSslContext(sslCfg));
       }
     }
@@ -156,18 +157,21 @@ public class Proxy implements ProxyContext {
       throw new IllegalArgumentException("SSL setup missing");
     }
     var builder = new DomainWildcardMappingBuilder<>(defaultContext);
-    contexts.entrySet().forEach(entry -> {
-      builder.add(entry.getKey(), entry.getValue());
-    });
+    contexts
+        .entrySet()
+        .forEach(
+            entry -> {
+              builder.add(entry.getKey(), entry.getValue());
+            });
     return builder.build();
   }
 
   static SslContext createSslContext(SslConfig cfg) {
     try {
       return SslContextBuilder.forServer(open(cfg.certPath()), open(cfg.keyPath()))
-        .clientAuth(ClientAuth.NONE)
-        .sslProvider(SslProvider.OPENSSL)
-        .build();
+          .clientAuth(ClientAuth.NONE)
+          .sslProvider(SslProvider.OPENSSL)
+          .build();
     } catch (SSLException e) {
       throw new RuntimeException(e);
     } catch (IOException e) {
@@ -198,18 +202,19 @@ public class Proxy implements ProxyContext {
     try {
       ServerBootstrap sb = new ServerBootstrap();
       sb.group(bossGroup, eventLoopGroup)
-        .channel(NioServerSocketChannel.class)
-        // .option(ChannelOption.SO_SNDBUF, 1 * 1024) // testing
-        .childHandler(new ChannelInitializer<SocketChannel>() {
-          @Override
-          protected void initChannel(SocketChannel ch) {
-            final ChannelPipeline pipeline = ch.pipeline();
-            pipeline.addLast(trackIngressConnectionsHandler);
-            pipeline.addLast(new SniHandler(sniMapping));
-            pipeline.addLast(new HttpServerCodec());
-            addHttpHandlers(pipeline);
-          }
-        });
+          .channel(NioServerSocketChannel.class)
+          // .option(ChannelOption.SO_SNDBUF, 1 * 1024) // testing
+          .childHandler(
+              new ChannelInitializer<SocketChannel>() {
+                @Override
+                protected void initChannel(SocketChannel ch) {
+                  final ChannelPipeline pipeline = ch.pipeline();
+                  pipeline.addLast(trackIngressConnectionsHandler);
+                  pipeline.addLast(new SniHandler(sniMapping));
+                  pipeline.addLast(new HttpServerCodec());
+                  addHttpHandlers(pipeline);
+                }
+              });
       int port = config.listen().httpsPort();
       ChannelFuture f = sb.bind(port).sync();
       System.out.println("Open SSL: " + OpenSsl.versionString());
@@ -235,7 +240,7 @@ public class Proxy implements ProxyContext {
     pipeline.addLast(new HttpServerKeepAliveHandler());
     // ch.pipeline().addLast(new LoggingHandler(LogLevel.INFO, ByteBufFormat.SIMPLE));
     pipeline.addLast(new IpTraitsHandler(ipTraitsLookup));
-//            ch.pipeline().addLast(new ReportIoErrorsHandler("downstream"));
+    //            ch.pipeline().addLast(new ReportIoErrorsHandler("downstream"));
     if (unservicedHostHandler != null) {
       pipeline.addLast(unservicedHostHandler);
     }
@@ -253,6 +258,4 @@ public class Proxy implements ProxyContext {
   public ProxyMetrics metrics() {
     return metrics;
   }
-
 }
-

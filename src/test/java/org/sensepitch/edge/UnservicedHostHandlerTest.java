@@ -3,26 +3,23 @@ package org.sensepitch.edge;
 /**
  * @author Jens Wilke
  */
+import static io.netty.handler.codec.http.HttpMethod.GET;
 import static io.netty.handler.codec.http.HttpResponseStatus.*;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
-import static io.netty.handler.codec.http.HttpMethod.GET;
 import static org.assertj.core.api.Assertions.assertThat;
-
-import java.util.List;
-import java.util.Set;
-
-import io.netty.handler.codec.http.DefaultLastHttpContent;
-import io.netty.handler.codec.http.HttpContent;
-import io.netty.handler.codec.http.HttpRequest;
-import io.netty.handler.codec.http.HttpResponse;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
 
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.DefaultHttpContent;
 import io.netty.handler.codec.http.DefaultHttpRequest;
+import io.netty.handler.codec.http.DefaultLastHttpContent;
+import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.HttpRequest;
+import io.netty.handler.codec.http.HttpResponse;
+import java.util.Set;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 class UnservicedHostHandlerTest {
 
@@ -31,10 +28,11 @@ class UnservicedHostHandlerTest {
   @BeforeEach
   void setUp() {
     // build real RedirectConfig instead of mocking
-    UnservicedHostConfig cfg = UnservicedHostConfig.builder()
-      .servicedDomains(Set.of("www.foo.com", "bar.com", "www.baz.com"))
-      .defaultLocation("https://default.example")
-      .build();
+    UnservicedHostConfig cfg =
+        UnservicedHostConfig.builder()
+            .servicedDomains(Set.of("www.foo.com", "bar.com", "www.baz.com"))
+            .defaultLocation("https://default.example")
+            .build();
     channel = new EmbeddedChannel(new UnservicedHostHandler(cfg));
   }
 
@@ -66,9 +64,7 @@ class UnservicedHostHandlerTest {
     assertThat(resp.headers().get(HttpHeaderNames.LOCATION) == null).isTrue();
   }
 
-  /**
-   * Set by {@link SanitizeHostHandler}
-   */
+  /** Set by {@link SanitizeHostHandler} */
   @Test
   void unknownHost_resultsInBadRequestStatus() {
     DefaultHttpRequest req = new DefaultHttpRequest(HTTP_1_1, GET, "/");
@@ -83,8 +79,7 @@ class UnservicedHostHandlerTest {
     req.headers().set(HttpHeaderNames.HOST, "foo.com");
     HttpResponse resp = writeAndExpectResponse(req);
     assertThat(resp.status()).isEqualTo(PERMANENT_REDIRECT);
-    assertThat(resp.headers().get(HttpHeaderNames.LOCATION))
-      .isEqualTo("https://www.foo.com");
+    assertThat(resp.headers().get(HttpHeaderNames.LOCATION)).isEqualTo("https://www.foo.com");
   }
 
   @Test
@@ -93,8 +88,7 @@ class UnservicedHostHandlerTest {
     req.headers().set(HttpHeaderNames.HOST, "other.com");
     HttpResponse resp = writeAndExpectResponse(req);
     assertThat(resp.status()).isEqualTo(TEMPORARY_REDIRECT);
-    assertThat(resp.headers().get(HttpHeaderNames.LOCATION))
-      .isEqualTo("https://default.example");
+    assertThat(resp.headers().get(HttpHeaderNames.LOCATION)).isEqualTo("https://default.example");
   }
 
   @Test
@@ -104,7 +98,7 @@ class UnservicedHostHandlerTest {
     HttpResponse resp = writeAndExpectResponse(req);
     assertThat(resp.status()).isEqualTo(TEMPORARY_REDIRECT);
     assertThat(resp.headers().get(HttpHeaderNames.LOCATION))
-      .isEqualTo("https://default.example" + UnservicedHostHandler.NOT_FOUND_URI);
+        .isEqualTo("https://default.example" + UnservicedHostHandler.NOT_FOUND_URI);
   }
 
   @Test
@@ -131,5 +125,4 @@ class UnservicedHostHandlerTest {
     assertThat(channel.writeInbound(content)).isFalse();
     assertThat(content.refCnt()).isZero();
   }
-
 }

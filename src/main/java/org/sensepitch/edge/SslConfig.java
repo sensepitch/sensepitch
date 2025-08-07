@@ -6,7 +6,4 @@ import lombok.Builder;
  * @author Jens Wilke
  */
 @Builder
-public record SslConfig(
-  String keyPath,
-  String certPath
-){ }
+public record SslConfig(String keyPath, String certPath) {}

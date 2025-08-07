@@ -10,14 +10,12 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
 import org.yaml.snakeyaml.nodes.MappingNode;
 import org.yaml.snakeyaml.nodes.Node;
 import org.yaml.snakeyaml.nodes.NodeTuple;
 import org.yaml.snakeyaml.nodes.ScalarNode;
 import org.yaml.snakeyaml.nodes.SequenceNode;
 import org.yaml.snakeyaml.nodes.Tag;
-
 
 public class RecordConstructor {
 
@@ -61,7 +59,8 @@ public class RecordConstructor {
           Node valueNode = t.getValueNode();
           Method setMethod = findMethod(builder.getClass(), key);
           if (setMethod == null) {
-            throw new IllegalArgumentException("Unknown parameter in " + recordClass.getSimpleName() + ": " + key);
+            throw new IllegalArgumentException(
+                "Unknown parameter in " + recordClass.getSimpleName() + ": " + key);
           }
           Type type = setMethod.getGenericParameterTypes()[0];
           Object value = createValueObject(type, valueNode);
@@ -99,18 +98,20 @@ public class RecordConstructor {
         }
         Type elementType = parameterizedType.getActualTypeArguments()[1];
         Map<String, Object> map = new LinkedHashMap<>();
-        mappingNode.getValue().forEach(t ->
-        {
-          Object obj;
-          if (Tag.NULL.equals(t.getValueNode().getTag())) {
-            obj = constructEmptyRecord((Class) elementType);
-          } else {
-            obj = createValueObject(elementType, t.getValueNode());
-          }
-          // System.out.println(t.getKeyNode());
-          // System.out.println(t.getValueNode());
-          map.put(scalarValue(t.getKeyNode()), obj);
-        });
+        mappingNode
+            .getValue()
+            .forEach(
+                t -> {
+                  Object obj;
+                  if (Tag.NULL.equals(t.getValueNode().getTag())) {
+                    obj = constructEmptyRecord((Class) elementType);
+                  } else {
+                    obj = createValueObject(elementType, t.getValueNode());
+                  }
+                  // System.out.println(t.getKeyNode());
+                  // System.out.println(t.getValueNode());
+                  map.put(scalarValue(t.getKeyNode()), obj);
+                });
         return map;
       }
     }
@@ -129,5 +130,4 @@ public class RecordConstructor {
   static String scalarValue(Node n) {
     return ((ScalarNode) n).getValue();
   }
-
 }

@@ -18,13 +18,12 @@ public class ResourceLoader {
         throw new IOException("Resource not found on classpath: " + resourcePath);
       }
       // Wrap in a reader and collect all lines into one String
-      try (BufferedReader reader = new BufferedReader(
-        new InputStreamReader(in, StandardCharsets.UTF_8))) {
+      try (BufferedReader reader =
+          new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
         return reader.lines().collect(Collectors.joining(System.lineSeparator()));
       }
     } catch (IOException ex) {
       throw new LinkageError(ex.getMessage(), ex);
     }
   }
-
 }

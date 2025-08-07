@@ -6,16 +6,10 @@ import lombok.Builder;
  * @author Jens Wilke
  */
 @Builder(toBuilder = true)
-public record ConnectionPoolConfig (
-  int idleTimeoutSeconds,
-  int maxSize
-  ){
+public record ConnectionPoolConfig(int idleTimeoutSeconds, int maxSize) {
 
   static int IDLE_TIMEOUT_SECONDS = 30;
 
-  static ConnectionPoolConfig DEFAULT = ConnectionPoolConfig.builder()
-    .idleTimeoutSeconds(IDLE_TIMEOUT_SECONDS)
-    .maxSize(0)
-    .build();
-
+  static ConnectionPoolConfig DEFAULT =
+      ConnectionPoolConfig.builder().idleTimeoutSeconds(IDLE_TIMEOUT_SECONDS).maxSize(0).build();
 }

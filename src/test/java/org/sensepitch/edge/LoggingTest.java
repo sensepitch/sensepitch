@@ -15,5 +15,4 @@ public class LoggingTest {
     logger.warn("warn message to netty logger");
     logger.info("info message to netty logger");
   }
-
 }

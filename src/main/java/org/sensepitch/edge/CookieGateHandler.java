@@ -2,7 +2,6 @@ package org.sensepitch.edge;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.buffer.UnpooledHeapByteBuf;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
@@ -16,15 +15,12 @@ import io.netty.handler.codec.http.cookie.DefaultCookie;
 import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
 import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
 import io.netty.util.CharsetUtil;
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 /**
- *
- *
  * @author Jens Wilke
  */
 @ChannelHandler.Sharable
@@ -52,7 +48,7 @@ public class CookieGateHandler extends SkippingChannelInboundHandlerAdapter {
       if (cfg != null) {
         ByteBuf buf = Unpooled.copiedBuffer("welcome", CharsetUtil.UTF_8);
         DefaultFullHttpResponse response =
-          new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, buf);
+            new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, buf);
         Cookie cookie = new DefaultCookie(cfg.name(), "y");
         cookie.setHttpOnly(true);
         cookie.setSecure(true);
@@ -66,7 +62,7 @@ public class CookieGateHandler extends SkippingChannelInboundHandlerAdapter {
       }
       if (!isCookiePresent(request)) {
         DefaultFullHttpResponse response =
-          new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND);
+            new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND);
         response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
         ctx.writeAndFlush(response);
         skipFollowingContent(ctx);
@@ -88,5 +84,4 @@ public class CookieGateHandler extends SkippingChannelInboundHandlerAdapter {
     }
     return false;
   }
-
 }

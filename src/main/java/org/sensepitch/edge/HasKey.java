@@ -6,5 +6,4 @@ package org.sensepitch.edge;
 public interface HasKey {
 
   String key();
-
 }

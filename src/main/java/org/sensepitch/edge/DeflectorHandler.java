@@ -5,8 +5,6 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelInboundHandler;
-import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpHeaderNames;
@@ -14,7 +12,6 @@ import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
-import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.handler.codec.http.QueryStringDecoder;
 import io.netty.handler.codec.http.cookie.Cookie;
 import io.netty.handler.codec.http.cookie.DefaultCookie;
@@ -22,7 +19,6 @@ import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
 import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
 import io.netty.util.CharsetUtil;
 import io.netty.util.ReferenceCountUtil;
-
 import java.net.Inet4Address;
 import java.net.SocketException;
 import java.net.UnknownHostException;
@@ -44,10 +40,12 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
   public static final String VERIFICATION_URL = "/.sensepitch.challenge.answer";
   public static final String htmlTemplate = ResourceLoader.loadTextFile("challenge.html");
   public static String cookieName = "sensepitch-pass";
+
   /** Request header containing the validated admission token */
   public static String ADMISSION_TOKEN_HEADER = "X-Sensepitch-Admission-Token";
 
-  ChallengeGenerationAndVerification challengeVerification = new ChallengeGenerationAndVerification();
+  ChallengeGenerationAndVerification challengeVerification =
+      new ChallengeGenerationAndVerification();
   private final NoBypassCheck noBypassCheck;
   private final BypassCheck bypassCheck;
   private final AdmissionTokenGenerator tokenGenerator;
@@ -89,8 +87,11 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
     AdmissionTokenGenerator firstGenerator = null;
     for (AdmissionTokenGeneratorConfig tc : cfg.tokenGenerators()) {
       char prefix = tc.prefix().charAt(0);
-       DefaultAdmissionTokenGenerator generator = new DefaultAdmissionTokenGenerator(serverIpv4Address, prefix, tc.secret());
-       if (firstGenerator == null) { firstGenerator = generator; }
+      DefaultAdmissionTokenGenerator generator =
+          new DefaultAdmissionTokenGenerator(serverIpv4Address, prefix, tc.secret());
+      if (firstGenerator == null) {
+        firstGenerator = generator;
+      }
       tokenGenerators.put(prefix, generator);
     }
     tokenGenerator = firstGenerator;
@@ -110,7 +111,7 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
     if (!error) {
       LOG.error("No public IPv4 address found");
     }
-    return new byte[]{1, 1, 1, 1};
+    return new byte[] {1, 1, 1, 1};
   }
 
   BypassCheck chainBypassCheck(BypassCheck first, BypassCheck second) {
@@ -131,7 +132,8 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
       if (checkAdmissionCookie(request)) {
         passedRequestCounter.increment();
         ctx.fireChannelRead(msg);
-      } else if (!noBypassCheck.skipBypass(ctx, request) && bypassCheck.allowBypass(ctx.channel(), request)) {
+      } else if (!noBypassCheck.skipBypass(ctx, request)
+          && bypassCheck.allowBypass(ctx.channel(), request)) {
         bypassRequestCounter.increment();
         ctx.fireChannelRead(msg);
       } else if (request.method() == HttpMethod.GET && request.uri().startsWith(VERIFICATION_URL)) {
@@ -154,11 +156,25 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
   }
 
   public class Metrics {
-    public long getChallengeSentCount() { return challengeSentCounter.longValue(); }
-    public long getChallengeAnsweredCount() { return challengeAnsweredCounter.longValue(); }
-    public long getChallengeAnswerRejectedCount() { return challengeAnswerRejectedCounter.longValue(); }
-    public long getPassRequestCount() { return passedRequestCounter.longValue(); }
-    public long getBypassRequestCount() { return bypassRequestCounter.longValue(); }
+    public long getChallengeSentCount() {
+      return challengeSentCounter.longValue();
+    }
+
+    public long getChallengeAnsweredCount() {
+      return challengeAnsweredCounter.longValue();
+    }
+
+    public long getChallengeAnswerRejectedCount() {
+      return challengeAnswerRejectedCounter.longValue();
+    }
+
+    public long getPassRequestCount() {
+      return passedRequestCounter.longValue();
+    }
+
+    public long getBypassRequestCount() {
+      return bypassRequestCounter.longValue();
+    }
   }
 
   private void outputChallengeHtml(Channel channel) {
@@ -167,7 +183,7 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
     msg = msg.replace("{{PREFIX}}", challengeVerification.getTargetPrefix());
     ByteBuf buf = Unpooled.copiedBuffer(msg, CharsetUtil.UTF_8);
     FullHttpResponse response =
-      new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.FORBIDDEN, buf);
+        new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.FORBIDDEN, buf);
     response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/html; charset=UTF-8");
     response.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, buf.readableBytes());
     channel.writeAndFlush(response);
@@ -183,8 +199,7 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
     FullHttpResponse response;
     if (t > 0) {
       challengeAnsweredCounter.increment();
-      response =
-        new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+      response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
       String cookieValue = tokenGenerator.newAdmission();
       Cookie cookie = new DefaultCookie(cookieName, cookieValue);
       cookie.setHttpOnly(true);
@@ -195,8 +210,7 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
       response.headers().set(HttpHeaderNames.SET_COOKIE, encodedCookie);
     } else {
       challengeAnswerRejectedCounter.increment();
-      response =
-        new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.BAD_REQUEST);
+      response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.BAD_REQUEST);
     }
     ctx.writeAndFlush(response);
   }
@@ -225,5 +239,4 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
     }
     return false;
   }
-
 }

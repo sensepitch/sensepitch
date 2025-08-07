@@ -1,14 +1,10 @@
 package org.sensepitch.edge;
 
-import lombok.Builder;
-
 import java.util.Set;
+import lombok.Builder;
 
 /**
  * @author Jens Wilke
  */
 @Builder(toBuilder = true)
-public record UnservicedHostConfig(
-  String defaultLocation,
-  Set<String> servicedDomains
-) { }
+public record UnservicedHostConfig(String defaultLocation, Set<String> servicedDomains) {}

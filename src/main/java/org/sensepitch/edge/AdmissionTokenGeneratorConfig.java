@@ -6,7 +6,4 @@ import lombok.Builder;
  * @author Jens Wilke
  */
 @Builder
-public record AdmissionTokenGeneratorConfig(
-  String prefix,
-  String secret
-) { }
+public record AdmissionTokenGeneratorConfig(String prefix, String secret) {}

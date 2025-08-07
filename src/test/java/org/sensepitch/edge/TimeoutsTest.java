@@ -1,5 +1,9 @@
 package org.sensepitch.edge;
 
+import static io.netty.util.concurrent.Ticker.newMockTicker;
+import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.assertj.core.api.Assertions.assertThat;
+
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
@@ -9,7 +13,6 @@ import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.DefaultHttpRequest;
 import io.netty.handler.codec.http.DefaultHttpResponse;
-import io.netty.handler.codec.http.DefaultLastHttpContent;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
@@ -25,20 +28,17 @@ import io.netty.util.concurrent.MockTicker;
 import io.netty.util.concurrent.Promise;
 import org.junit.jupiter.api.Test;
 
-import static io.netty.util.concurrent.Ticker.newMockTicker;
-import static java.util.concurrent.TimeUnit.SECONDS;
-import static org.assertj.core.api.Assertions.assertThat;
-
 /**
  * @author Jens Wilke
  */
 class TimeoutsTest {
 
-  ConnectionConfig cfg = ConnectionConfig.builder()
-    .readTimeoutSeconds(10)
-    .writeTimeoutSeconds(20)
-    .responseTimeoutSeconds(30)
-    .build();
+  ConnectionConfig cfg =
+      ConnectionConfig.builder()
+          .readTimeoutSeconds(10)
+          .writeTimeoutSeconds(20)
+          .responseTimeoutSeconds(30)
+          .build();
 
   ProxyMetrics proxyMetrics = new ProxyMetrics();
 
@@ -51,16 +51,16 @@ class TimeoutsTest {
 
   EmbeddedChannel upstreamChannel;
 
-  EmbeddedChannel ingressChannel = EmbeddedChannel.builder()
-    .ticker(ticker)
-    .handlers(
-      new FakeSslHandler(),
-      new RequestLoggingHandler(new StandardOutRequestLogger()),
-      new ClientTimeoutHandler(cfg, proxyMetrics),
-      new HttpServerKeepAliveHandler(),
-      new DownstreamHandler(new MockUpstream(), proxyMetrics)
-    )
-    .build();
+  EmbeddedChannel ingressChannel =
+      EmbeddedChannel.builder()
+          .ticker(ticker)
+          .handlers(
+              new FakeSslHandler(),
+              new RequestLoggingHandler(new StandardOutRequestLogger()),
+              new ClientTimeoutHandler(cfg, proxyMetrics),
+              new HttpServerKeepAliveHandler(),
+              new DownstreamHandler(new MockUpstream(), proxyMetrics))
+          .build();
 
   @Test
   public void test408ResponseWhenTimeoutBeforeRequestReceived() {
@@ -78,8 +78,8 @@ class TimeoutsTest {
   }
 
   /**
-   * Status 200 but connection will be closed since content size unknown.
-   * No keep-alive header is added.
+   * Status 200 but connection will be closed since content size unknown. No keep-alive header is
+   * added.
    */
   @Test
   public void test200UnknownContent() {
@@ -150,19 +150,13 @@ class TimeoutsTest {
 
   private void sendRequest(String uri) {
     assertThat(ingressChannel.isActive()).isTrue();
-    ingressChannel.writeInbound(
-      new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, uri)
-    );
+    ingressChannel.writeInbound(new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, uri));
     if (ingressChannel.isActive()) {
-      ingressChannel.writeInbound(
-        LastHttpContent.EMPTY_LAST_CONTENT
-      );
+      ingressChannel.writeInbound(LastHttpContent.EMPTY_LAST_CONTENT);
     }
   }
 
-  /**
-   * If upstream is connected it might put tasks in the into ingress again
-   */
+  /** If upstream is connected it might put tasks in the into ingress again */
   private void rattle() {
     if (upstreamChannel != null) {
       while (ingressChannel.hasPendingTasks() || upstreamChannel.hasPendingTasks()) {
@@ -175,37 +169,40 @@ class TimeoutsTest {
   }
 
   Channel upstreamChannel(Channel ingressChannel) {
-    return upstreamChannel = EmbeddedChannel.builder()
-      .ticker(ticker)
-      .handlers(
-        new ChannelOutboundHandlerAdapter() {
-          @Override
-          public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
-            if (msg instanceof HttpRequest reqeust) {
-              if (!reqeust.uri().contains("no-response")) {
-                FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
-                if (reqeust.uri().contains("empty-length")) {
-                  response.headers().set(HttpHeaderNames.CONTENT_LENGTH, 0);
-                }
-                ingressChannel.writeAndFlush(response);
-              }
-            }
-            super.write(ctx, msg, promise);
-          }
-
-        }
-
-      )
-      .build();
+    return upstreamChannel =
+        EmbeddedChannel.builder()
+            .ticker(ticker)
+            .handlers(
+                new ChannelOutboundHandlerAdapter() {
+                  @Override
+                  public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
+                      throws Exception {
+                    if (msg instanceof HttpRequest reqeust) {
+                      if (!reqeust.uri().contains("no-response")) {
+                        FullHttpResponse response =
+                            new DefaultFullHttpResponse(
+                                HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+                        if (reqeust.uri().contains("empty-length")) {
+                          response.headers().set(HttpHeaderNames.CONTENT_LENGTH, 0);
+                        }
+                        ingressChannel.writeAndFlush(response);
+                      }
+                    }
+                    super.write(ctx, msg, promise);
+                  }
+                })
+            .build();
   }
 
   static class FakeSslHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
-      ctx.executor().execute(() -> {
-        ctx.fireUserEventTriggered(SslHandshakeCompletionEvent.SUCCESS);
-      });
+      ctx.executor()
+          .execute(
+              () -> {
+                ctx.fireUserEventTriggered(SslHandshakeCompletionEvent.SUCCESS);
+              });
       super.channelActive(ctx);
     }
   }
@@ -219,7 +216,5 @@ class TimeoutsTest {
       promise.setSuccess(upstreamChannel);
       return promise;
     }
-
   }
-
 }

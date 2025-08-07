@@ -34,5 +34,4 @@ public interface MetricsBridge {
       return objectWithMetrics;
     }
   }
-
 }

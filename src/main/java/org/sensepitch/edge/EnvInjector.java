@@ -3,7 +3,6 @@ package org.sensepitch.edge;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
-import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -14,7 +13,8 @@ import java.util.Map;
  */
 public class EnvInjector {
 
-  public static Object injectFromEnv(String prefix, Map<String, String> env, Object targetBuilder) throws Exception {
+  public static Object injectFromEnv(String prefix, Map<String, String> env, Object targetBuilder)
+      throws Exception {
     Class<?> clazz = targetBuilder.getClass();
     for (Method method : clazz.getMethods()) {
       if (!isEligible(method)) {
@@ -43,15 +43,14 @@ public class EnvInjector {
         method.invoke(targetBuilder, value);
       } catch (Exception e) {
         throw new RuntimeException(
-          "Failed to inject env var " + envName +
-            " into " + methodName, e
-        );
+            "Failed to inject env var " + envName + " into " + methodName, e);
       }
     }
     return clazz.getMethod("build").invoke(targetBuilder);
   }
 
-  private static List<Object> handleList(Map<String, String> env, Method method, String envName) throws Exception {
+  private static List<Object> handleList(Map<String, String> env, Method method, String envName)
+      throws Exception {
     ParameterizedType pt = (ParameterizedType) method.getGenericParameterTypes()[0];
     Class targetType = (Class) pt.getActualTypeArguments()[0];
     List<Object> list = new ArrayList<>();
@@ -73,7 +72,7 @@ public class EnvInjector {
     return list;
   }
 
-  private static boolean hasSettingsWithPrefix(Map<String, String> eng,  String prefix) {
+  private static boolean hasSettingsWithPrefix(Map<String, String> eng, String prefix) {
     for (Map.Entry<String, String> entry : eng.entrySet()) {
       if (entry.getKey().startsWith(prefix)) {
         return true;
@@ -82,15 +81,13 @@ public class EnvInjector {
     return false;
   }
 
-  /**
-   * must be instance, public, one-param, non-equals
-   */
+  /** must be instance, public, one-param, non-equals */
   private static boolean isEligible(Method m) {
     return Modifier.isPublic(m.getModifiers())
-      && !Modifier.isStatic(m.getModifiers())
-      && m.getParameterCount() == 1
-      && !"equals".equals(m.getName())
-      && !"wait".equals(m.getName());
+        && !Modifier.isStatic(m.getModifiers())
+        && m.getParameterCount() == 1
+        && !"equals".equals(m.getName())
+        && !"wait".equals(m.getName());
   }
 
   private static String toEnvVarName(String camelCase) {
@@ -106,14 +103,13 @@ public class EnvInjector {
   }
 
   private static Object parseValue(String str, Class<?> type) {
-    if (type == int.class   || type == Integer.class) {
-        return Integer.parseInt(str);
+    if (type == int.class || type == Integer.class) {
+      return Integer.parseInt(str);
     } else if (type == boolean.class || type == Boolean.class) {
-        return Boolean.parseBoolean(str);
+      return Boolean.parseBoolean(str);
     } else if (type == String.class) {
-        return str;
+      return str;
     }
     throw new IllegalArgumentException("Unsupported type " + type);
   }
-
 }

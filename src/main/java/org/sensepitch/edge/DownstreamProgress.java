@@ -3,7 +3,6 @@ package org.sensepitch.edge;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.ByteBufAllocatorMetricProvider;
 import io.netty.channel.Channel;
-
 import java.lang.management.BufferPoolMXBean;
 import java.lang.management.ManagementFactory;
 import java.util.List;
@@ -25,9 +24,10 @@ public class DownstreamProgress {
 
   static {
     ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
-    Runnable task = () -> {
-      print();
-    };
+    Runnable task =
+        () -> {
+          print();
+        };
     scheduler.scheduleAtFixedRate(task, 0, 10, TimeUnit.SECONDS);
   }
 
@@ -52,7 +52,9 @@ public class DownstreamProgress {
     Objects.requireNonNull(channel);
     String text = MAP.remove(localChannelId(channel));
     if (text != null) {
-      LOG.error(channel, "Channel " + localChannelId(channel) + " is inactive, but still in progress: " + text);
+      LOG.error(
+          channel,
+          "Channel " + localChannelId(channel) + " is inactive, but still in progress: " + text);
       new Exception().printStackTrace();
     }
   }
@@ -60,22 +62,24 @@ public class DownstreamProgress {
   private static void print() {
     boolean memoreyStats = false;
     if (memoreyStats) {
-    List<BufferPoolMXBean> pools =
-      ManagementFactory.getPlatformMXBeans(BufferPoolMXBean.class);
-    for (BufferPoolMXBean pool : pools) {
-      System.out.printf("name=%s,count=%d, used=%,d bytes, capacity=%,d bytes%n",
-        pool.getName(),
-        pool.getCount(),
-        pool.getMemoryUsed(),
-        pool.getTotalCapacity());
+      List<BufferPoolMXBean> pools = ManagementFactory.getPlatformMXBeans(BufferPoolMXBean.class);
+      for (BufferPoolMXBean pool : pools) {
+        System.out.printf(
+            "name=%s,count=%d, used=%,d bytes, capacity=%,d bytes%n",
+            pool.getName(), pool.getCount(), pool.getMemoryUsed(), pool.getTotalCapacity());
+      }
+      // TODO: export via prometheus
+      var pool = ByteBufAllocator.DEFAULT;
+      if (pool instanceof ByteBufAllocatorMetricProvider metrics) {
+        System.err.println(
+            "ByteBufAllocator.DEFAULT, usedDirectMemory="
+                + metrics.metric().usedDirectMemory()
+                + ", usedHeapMemory="
+                + metrics.metric().usedHeapMemory());
+      } else {
+        System.err.println("ByteBufAllocator.DEFAULT, does not support metrics");
+      }
     }
-    // TODO: export via prometheus
-    var pool = ByteBufAllocator.DEFAULT;
-    if (pool instanceof ByteBufAllocatorMetricProvider metrics) {
-      System.err.println("ByteBufAllocator.DEFAULT, usedDirectMemory=" + metrics.metric().usedDirectMemory() + ", usedHeapMemory=" + metrics.metric().usedHeapMemory());
-    } else {
-      System.err.println("ByteBufAllocator.DEFAULT, does not support metrics");
-    }}
     if (MAP.size() == 0) {
       return;
     }
@@ -89,5 +93,4 @@ public class DownstreamProgress {
       }
     }
   }
-
 }

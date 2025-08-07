@@ -1,15 +1,11 @@
 package org.sensepitch.edge;
 
-import lombok.Builder;
-
 import java.util.List;
+import lombok.Builder;
 
 /**
  * @author Jens Wilke
  */
 @Builder(toBuilder = true)
 public record ProtectionConfig(
-  boolean disable,
-  DeflectorConfig deflector,
-  List<CookieGateConfig> cookieGates
-) { }
+    boolean disable, DeflectorConfig deflector, List<CookieGateConfig> cookieGates) {}

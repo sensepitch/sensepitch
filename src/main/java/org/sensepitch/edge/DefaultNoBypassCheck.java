@@ -2,11 +2,8 @@ package org.sensepitch.edge;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.HttpRequest;
-
 import java.util.HashMap;
 import java.util.Map;
-import java.util.NavigableMap;
-import java.util.TreeMap;
 
 /**
  * @author Jens Wilke
@@ -17,12 +14,15 @@ public class DefaultNoBypassCheck implements NoBypassCheck {
 
   public DefaultNoBypassCheck(NoBypassConfig cfg) {
     if (cfg.uris() != null) {
-      cfg.uris().forEach(uri -> {
-        if (uri.startsWith("*") || uri.endsWith("*")) {
-          throw new  IllegalArgumentException("noBypass/uri: No prefix or suffix supported: " + uri);
-        }
-        uriMatch.put(uri, this);
-      });
+      cfg.uris()
+          .forEach(
+              uri -> {
+                if (uri.startsWith("*") || uri.endsWith("*")) {
+                  throw new IllegalArgumentException(
+                      "noBypass/uri: No prefix or suffix supported: " + uri);
+                }
+                uriMatch.put(uri, this);
+              });
     }
   }
 
@@ -34,5 +34,4 @@ public class DefaultNoBypassCheck implements NoBypassCheck {
     }
     return false;
   }
-
 }

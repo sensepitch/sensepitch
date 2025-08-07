@@ -20,5 +20,4 @@ public final class ProxyUtil {
     }
     return ((SocketChannel) channel).remoteAddress().getAddress().getHostAddress();
   }
-
 }

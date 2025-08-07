@@ -15,52 +15,54 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.ssl.ClientAuth;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
-
 import java.io.File;
 import java.nio.charset.Charset;
 
 /**
- *
- *
  * @author Jens Wilke
  */
 public class SslServer {
 
   public static void main(String[] args) throws Exception {
     SslContext sslContext =
-      SslContextBuilder.forServer(
-          new File("performance-test/ssl/nginx.crt"), new File("performance-test/ssl/nginx.key"))
-        .clientAuth(ClientAuth.NONE)
-        .build();
+        SslContextBuilder.forServer(
+                new File("performance-test/ssl/nginx.crt"),
+                new File("performance-test/ssl/nginx.key"))
+            .clientAuth(ClientAuth.NONE)
+            .build();
     EventLoopGroup bossGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
     EventLoopGroup workerGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
     ServerBootstrap sb = new ServerBootstrap();
     sb.group(bossGroup, workerGroup)
-      .channel(NioServerSocketChannel.class)
-      .childHandler(new ChannelInitializer<SocketChannel>() {
-        @Override
-        protected void initChannel(SocketChannel ch) {
-          ch.pipeline().addLast(sslContext.newHandler(ch.alloc()));
-          ch.pipeline().addLast(new ChannelDuplexHandler() {
-            @Override
-            public void channelActive(ChannelHandlerContext ctx) throws Exception {
-              ByteBuf buf = Unpooled.buffer();
-              buf.writeCharSequence("HELLO\n", Charset.defaultCharset());
-              ctx.writeAndFlush(buf).addListener(future -> {
-                if (future.isSuccess()) {
-                  System.out.println("write completed successfully");
-                } else {
-                  System.out.println("write error: " + future.cause());
-                }
-              });
-              super.channelActive(ctx);
-            }
-          });
-        }
-      });
+        .channel(NioServerSocketChannel.class)
+        .childHandler(
+            new ChannelInitializer<SocketChannel>() {
+              @Override
+              protected void initChannel(SocketChannel ch) {
+                ch.pipeline().addLast(sslContext.newHandler(ch.alloc()));
+                ch.pipeline()
+                    .addLast(
+                        new ChannelDuplexHandler() {
+                          @Override
+                          public void channelActive(ChannelHandlerContext ctx) throws Exception {
+                            ByteBuf buf = Unpooled.buffer();
+                            buf.writeCharSequence("HELLO\n", Charset.defaultCharset());
+                            ctx.writeAndFlush(buf)
+                                .addListener(
+                                    future -> {
+                                      if (future.isSuccess()) {
+                                        System.out.println("write completed successfully");
+                                      } else {
+                                        System.out.println("write error: " + future.cause());
+                                      }
+                                    });
+                            super.channelActive(ctx);
+                          }
+                        });
+              }
+            });
     int port = 12345;
     ChannelFuture f = sb.bind(port).sync();
     System.out.println("Proxy listening on port " + port);
   }
-
 }

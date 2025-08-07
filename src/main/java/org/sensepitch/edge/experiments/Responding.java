@@ -9,7 +9,6 @@ import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaderValues;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
-
 import java.util.Date;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -28,7 +27,8 @@ public class Responding {
   }
 
   private static void sendStaticResponse(ChannelHandlerContext ctx) {
-    FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+    FullHttpResponse response =
+        new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
     response.headers().set("Date", new Date());
     response.headers().set(HttpHeaderNames.CONTENT_LENGTH, 6906);
     response.headers().set(HttpHeaderNames.CONTENT_TYPE, "image/jpeg");
@@ -36,5 +36,4 @@ public class Responding {
     response.content().writeBytes(RANDOM6909.duplicate());
     ctx.writeAndFlush(response);
   }
-
 }

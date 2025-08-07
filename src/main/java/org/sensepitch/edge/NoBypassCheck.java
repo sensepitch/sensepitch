@@ -8,14 +8,13 @@ import io.netty.handler.codec.http.HttpRequest;
  */
 public interface NoBypassCheck {
 
-  NoBypassCheck FALSE = new NoBypassCheck() {
-    @Override
-    public boolean skipBypass(ChannelHandlerContext ctx, HttpRequest request) {
-      return false;
-    }
-  };
+  NoBypassCheck FALSE =
+      new NoBypassCheck() {
+        @Override
+        public boolean skipBypass(ChannelHandlerContext ctx, HttpRequest request) {
+          return false;
+        }
+      };
 
   boolean skipBypass(ChannelHandlerContext ctx, HttpRequest request);
-
-
 }

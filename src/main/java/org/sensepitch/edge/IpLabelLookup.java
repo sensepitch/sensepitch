@@ -8,8 +8,10 @@ import java.util.List;
 public interface IpLabelLookup {
 
   void insertIpv4(String cidr, String label);
-  void insertIpv6(String cidr, String label);
-  List<String> lookupIpv4(byte[] addr);
-  List<String> lookupIpv6(byte[] addr);
 
+  void insertIpv6(String cidr, String label);
+
+  List<String> lookupIpv4(byte[] addr);
+
+  List<String> lookupIpv6(byte[] addr);
 }

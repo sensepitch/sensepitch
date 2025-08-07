@@ -6,7 +6,6 @@ import io.prometheus.metrics.model.registry.Collector;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import io.prometheus.metrics.model.snapshots.CounterSnapshot;
 import io.prometheus.metrics.model.snapshots.MetricSnapshot;
-
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.function.Consumer;
@@ -27,15 +26,14 @@ public class PrometheusMetricsBridge implements MetricsBridge {
     }
     HTTPServer server = null;
     try {
-      server = HTTPServer.builder()
-        .port(cfg.port())
-        .registry(prometheusRegistry)
-        .buildAndStart();
+      server = HTTPServer.builder().port(cfg.port()).registry(prometheusRegistry).buildAndStart();
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
-    DEBUG.info("Prometheus HTTP server listening on port http://localhost:" +
-      server.getPort() + "/metrics");
+    DEBUG.info(
+        "Prometheus HTTP server listening on port http://localhost:"
+            + server.getPort()
+            + "/metrics");
   }
 
   @Override
@@ -45,7 +43,7 @@ public class PrometheusMetricsBridge implements MetricsBridge {
     // find all zero-arg getters that return long or Long
     for (Method m : target.getClass().getMethods()) {
       if (m.getParameterCount() == 0
-        && (m.getReturnType() == long.class || m.getReturnType() == Long.class)) {
+          && (m.getReturnType() == long.class || m.getReturnType() == Long.class)) {
         Collector c = createCounterCollector(prefix, target, m);
         prometheusRegistry.register(c);
       }
@@ -73,17 +71,15 @@ public class PrometheusMetricsBridge implements MetricsBridge {
       public MetricSnapshot collect() {
         long value = 0;
         try {
-            Object result = method.invoke(target);
-            value = result == null ? 0L : ((Number) result).longValue();
+          Object result = method.invoke(target);
+          value = result == null ? 0L : ((Number) result).longValue();
         } catch (Exception e) {
           // ignore
         }
         return CounterSnapshot.builder()
-          .name(metricName)
-          .dataPoint(CounterSnapshot.CounterDataPointSnapshot.builder()
-            .value(value)
-            .build())
-          .build();
+            .name(metricName)
+            .dataPoint(CounterSnapshot.CounterDataPointSnapshot.builder().value(value).build())
+            .build();
       }
 
       @Override
@@ -112,9 +108,8 @@ public class PrometheusMetricsBridge implements MetricsBridge {
       str = str.substring(3);
     }
     if (str.endsWith("Count")) {
-      str =  str.substring(0, str.length() - 5);
+      str = str.substring(0, str.length() - 5);
     }
     return camelToSnake(str);
   }
-
 }

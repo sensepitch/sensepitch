@@ -21,5 +21,4 @@ public class Dummy404Handler extends SkippingChannelInboundHandlerAdapter {
     }
     super.channelRead(ctx, msg);
   }
-
 }

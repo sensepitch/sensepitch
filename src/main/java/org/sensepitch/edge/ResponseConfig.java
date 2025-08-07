@@ -7,9 +7,4 @@ import lombok.Builder;
  */
 @Builder(toBuilder = true)
 public record ResponseConfig(
-  String text,
-  int status,
-  String location,
-  String permanentRedirect,
-  String temporaryRedirect
-) {  }
+    String text, int status, String location, String permanentRedirect, String temporaryRedirect) {}

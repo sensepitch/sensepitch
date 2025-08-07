@@ -16,7 +16,6 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.Promise;
-
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -34,7 +33,7 @@ public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
   private static final SiteConfig SITE_CONFIG_DEFAULT = SiteConfig.builder().build();
   private final Upstream defaultUpstream;
   private final Map<String, Suppliers> directHostMatch = new HashMap<>();
-  private final Map<String, TreeMap<String, Suppliers>> sitePrefixUriMatch =  new HashMap<>();
+  private final Map<String, TreeMap<String, Suppliers>> sitePrefixUriMatch = new HashMap<>();
 
   public SiteSelectorHandler(ProxyContext ctx, ProxyConfig config) {
     if (config.sites() == null || config.sites().isEmpty()) {
@@ -45,50 +44,55 @@ public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
     } else {
       defaultUpstream = null;
     }
-    config.sites().values().forEach(site -> {
-      Supplier<ChannelHandler> proxySupplier = constructProxySupplier(ctx, site);
-      Supplier<ChannelHandler> protectionSupplier = null;
-      ProtectionConfig protection = site.protection();
-      if (protection == null) {
-        protection = config.protection();
-      }
-      if (protection != null) {
-        if (protection.disable()) {
-          PassThroughHandler passThroughHandler = new PassThroughHandler();
-          protectionSupplier = () -> passThroughHandler;
-        } else if (protection.deflector() != null) {
-          DeflectorHandler sharedAdmission = new DeflectorHandler(protection.deflector());
-          protectionSupplier = () -> sharedAdmission;
-        } else if (protection.cookieGates() != null) {
-          CookieGateHandler handler = new CookieGateHandler(protection.cookieGates());
-          protectionSupplier = () -> handler;
-        }
-      }
-      if (protectionSupplier == null) {
-        throw new IllegalArgumentException("Site requires protection scheme or explicit disable");
-      }
-      var suppliers = new Suppliers(protectionSupplier, proxySupplier);
-      String host = site.host();
-      if (host == null) {
-        host = site.key();
-      }
-      if (host == null) {
-        throw new IllegalArgumentException("Site requires host or key");
-      }
-      if (host.contains("*")) {
-        // TODO: support wildcard hosts
-        throw new IllegalArgumentException("Host wildcards are not yet supported");
-      }
-      if (site.uri() == null || site.uri().equals("*") || site.uri().equals("/*")) {
-        directHostMatch.put(host, suppliers);
-      } else if (site.uri().endsWith("*")) {
-        String matchUri = site.uri().substring(0, site.uri().length() - 1);
-        var tree = sitePrefixUriMatch.computeIfAbsent(host, k -> new TreeMap<>());
-        tree.put(matchUri, suppliers);
-      } else {
-        throw new IllegalArgumentException("Site match uri needs to be prefix");
-      }
-    });
+    config
+        .sites()
+        .values()
+        .forEach(
+            site -> {
+              Supplier<ChannelHandler> proxySupplier = constructProxySupplier(ctx, site);
+              Supplier<ChannelHandler> protectionSupplier = null;
+              ProtectionConfig protection = site.protection();
+              if (protection == null) {
+                protection = config.protection();
+              }
+              if (protection != null) {
+                if (protection.disable()) {
+                  PassThroughHandler passThroughHandler = new PassThroughHandler();
+                  protectionSupplier = () -> passThroughHandler;
+                } else if (protection.deflector() != null) {
+                  DeflectorHandler sharedAdmission = new DeflectorHandler(protection.deflector());
+                  protectionSupplier = () -> sharedAdmission;
+                } else if (protection.cookieGates() != null) {
+                  CookieGateHandler handler = new CookieGateHandler(protection.cookieGates());
+                  protectionSupplier = () -> handler;
+                }
+              }
+              if (protectionSupplier == null) {
+                throw new IllegalArgumentException(
+                    "Site requires protection scheme or explicit disable");
+              }
+              var suppliers = new Suppliers(protectionSupplier, proxySupplier);
+              String host = site.host();
+              if (host == null) {
+                host = site.key();
+              }
+              if (host == null) {
+                throw new IllegalArgumentException("Site requires host or key");
+              }
+              if (host.contains("*")) {
+                // TODO: support wildcard hosts
+                throw new IllegalArgumentException("Host wildcards are not yet supported");
+              }
+              if (site.uri() == null || site.uri().equals("*") || site.uri().equals("/*")) {
+                directHostMatch.put(host, suppliers);
+              } else if (site.uri().endsWith("*")) {
+                String matchUri = site.uri().substring(0, site.uri().length() - 1);
+                var tree = sitePrefixUriMatch.computeIfAbsent(host, k -> new TreeMap<>());
+                tree.put(matchUri, suppliers);
+              } else {
+                throw new IllegalArgumentException("Site match uri needs to be prefix");
+              }
+            });
   }
 
   private Supplier<ChannelHandler> constructProxySupplier(ProxyContext ctx, SiteConfig site) {
@@ -122,34 +126,40 @@ public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
       if (text == null && location == null) {
         throw new IllegalArgumentException("Response requires redirect location or text");
       }
-      upstream = ingressContext -> {
-        Promise<Channel> promise = ingressContext.executor().newPromise();
-        Channel ingressChannel = ingressContext.channel();
-        Channel upstreamChannel = EmbeddedChannel.builder()
-          .handlers(
-            new ChannelOutboundHandlerAdapter() {
-              @Override
-              public void write(ChannelHandlerContext ctx1, Object msg, ChannelPromise promise) {
-                if (msg instanceof HttpRequest) {
-                  ByteBuf content = Unpooled.EMPTY_BUFFER;
-                  if (text != null) {
-                    content = Unpooled.copiedBuffer(text, StandardCharsets.US_ASCII);
-                  }
-                  FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status, content);
-                  response.headers().set(HttpHeaderNames.CONTENT_LENGTH, content.readableBytes());
-                  if (location != null) {
-                    response.headers().set(HttpHeaderNames.LOCATION, location);
-                  }
-                  ingressChannel.writeAndFlush(response);
-                }
-                ReferenceCountUtil.release(msg);
-              }
-            }
-          )
-          .build();
-        promise.setSuccess(upstreamChannel);
-        return promise;
-      };
+      upstream =
+          ingressContext -> {
+            Promise<Channel> promise = ingressContext.executor().newPromise();
+            Channel ingressChannel = ingressContext.channel();
+            Channel upstreamChannel =
+                EmbeddedChannel.builder()
+                    .handlers(
+                        new ChannelOutboundHandlerAdapter() {
+                          @Override
+                          public void write(
+                              ChannelHandlerContext ctx1, Object msg, ChannelPromise promise) {
+                            if (msg instanceof HttpRequest) {
+                              ByteBuf content = Unpooled.EMPTY_BUFFER;
+                              if (text != null) {
+                                content = Unpooled.copiedBuffer(text, StandardCharsets.US_ASCII);
+                              }
+                              FullHttpResponse response =
+                                  new DefaultFullHttpResponse(
+                                      HttpVersion.HTTP_1_1, status, content);
+                              response
+                                  .headers()
+                                  .set(HttpHeaderNames.CONTENT_LENGTH, content.readableBytes());
+                              if (location != null) {
+                                response.headers().set(HttpHeaderNames.LOCATION, location);
+                              }
+                              ingressChannel.writeAndFlush(response);
+                            }
+                            ReferenceCountUtil.release(msg);
+                          }
+                        })
+                    .build();
+            promise.setSuccess(upstreamChannel);
+            return promise;
+          };
     } else if (site.upstream() != null) {
       upstream = constructUpstream(ctx, site.upstream());
     } else if (defaultUpstream != null) {
@@ -196,7 +206,6 @@ public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
     super.channelRead(ctx, msg);
   }
 
-  record Suppliers(Supplier<ChannelHandler> protectionSupplier,
-                   Supplier<ChannelHandler> proxySupplier) { }
-
+  record Suppliers(
+      Supplier<ChannelHandler> protectionSupplier, Supplier<ChannelHandler> proxySupplier) {}
 }

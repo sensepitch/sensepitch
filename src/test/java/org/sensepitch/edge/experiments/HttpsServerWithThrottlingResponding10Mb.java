@@ -27,47 +27,52 @@ import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.handler.ssl.ClientAuth;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
-
 import java.io.File;
 
 /**
- * For every request, send a big amount of data to understand how to throttle writes when the
- * output queue is not draining fast enough.
+ * For every request, send a big amount of data to understand how to throttle writes when the output
+ * queue is not draining fast enough.
  *
  * @author Jens Wilke
  */
 public class HttpsServerWithThrottlingResponding10Mb {
 
   private static final int TOTAL_BYTES = 10 * 1024 * 1024;
-  private static final int CHUNK_SIZE  = 1 * 1024;
+  private static final int CHUNK_SIZE = 1 * 1024;
 
   public static void main(String[] args) throws Exception {
     SslContext sslContext =
-      SslContextBuilder.forServer(
-          new File("performance-test/ssl/nginx.crt"), new File("performance-test/ssl/nginx.key"))
-        .clientAuth(ClientAuth.NONE)
-        .build();
+        SslContextBuilder.forServer(
+                new File("performance-test/ssl/nginx.crt"),
+                new File("performance-test/ssl/nginx.key"))
+            .clientAuth(ClientAuth.NONE)
+            .build();
     EventLoopGroup bossGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
     EventLoopGroup workerGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
     ServerBootstrap sb = new ServerBootstrap();
     sb.group(bossGroup, workerGroup)
-      .channel(NioServerSocketChannel.class)
-      .childHandler(new ChannelInitializer<SocketChannel>() {
-        @Override
-        protected void initChannel(SocketChannel ch) throws InterruptedException {
-          ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
-            @Override
-            public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
-              // System.err.println("Top received writabilityChanged " + ctx.channel().isWritable());
-              super.channelWritabilityChanged(ctx);
-            }
-          });
-          ch.pipeline().addLast(sslContext.newHandler(ch.alloc()));
-          ch.pipeline().addLast(new HttpServerCodec());
-          ch.pipeline().addLast(new HttpObjectAggregator(65536));
-          ch.pipeline().addLast(new ChunkedResponseHandler());
-        }
-      });
+        .channel(NioServerSocketChannel.class)
+        .childHandler(
+            new ChannelInitializer<SocketChannel>() {
+              @Override
+              protected void initChannel(SocketChannel ch) throws InterruptedException {
+                ch.pipeline()
+                    .addLast(
+                        new ChannelInboundHandlerAdapter() {
+                          @Override
+                          public void channelWritabilityChanged(ChannelHandlerContext ctx)
+                              throws Exception {
+                            // System.err.println("Top received writabilityChanged " +
+                            // ctx.channel().isWritable());
+                            super.channelWritabilityChanged(ctx);
+                          }
+                        });
+                ch.pipeline().addLast(sslContext.newHandler(ch.alloc()));
+                ch.pipeline().addLast(new HttpServerCodec());
+                ch.pipeline().addLast(new HttpObjectAggregator(65536));
+                ch.pipeline().addLast(new ChunkedResponseHandler());
+              }
+            });
     int port = 12345;
     ChannelFuture f = sb.bind(port).sync();
     System.out.println("Proxy listening on port " + port);
@@ -80,8 +85,7 @@ public class HttpsServerWithThrottlingResponding10Mb {
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, FullHttpRequest req) {
       // 1) Build the initial HTTP response:
-      HttpResponse response = new DefaultHttpResponse(
-        HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+      HttpResponse response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
       response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/octet-stream");
       HttpUtil.setTransferEncodingChunked(response, true);
       ctx.write(response);
@@ -123,5 +127,4 @@ public class HttpsServerWithThrottlingResponding10Mb {
       ctx.close();
     }
   }
-
 }

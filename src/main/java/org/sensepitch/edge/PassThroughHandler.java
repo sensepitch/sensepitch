@@ -7,5 +7,4 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
  * @author Jens Wilke
  */
 @ChannelHandler.Sharable
-public class PassThroughHandler extends ChannelInboundHandlerAdapter {
-}
+public class PassThroughHandler extends ChannelInboundHandlerAdapter {}
