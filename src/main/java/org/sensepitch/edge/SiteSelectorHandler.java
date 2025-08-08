@@ -15,6 +15,7 @@ import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.util.ReferenceCountUtil;
+import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.Promise;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -127,38 +128,46 @@ public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
         throw new IllegalArgumentException("Response requires redirect location or text");
       }
       upstream =
-          ingressContext -> {
-            Promise<Channel> promise = ingressContext.executor().newPromise();
-            Channel ingressChannel = ingressContext.channel();
-            Channel upstreamChannel =
-                EmbeddedChannel.builder()
-                    .handlers(
-                        new ChannelOutboundHandlerAdapter() {
-                          @Override
-                          public void write(
-                              ChannelHandlerContext ctx1, Object msg, ChannelPromise promise) {
-                            if (msg instanceof HttpRequest) {
-                              ByteBuf content = Unpooled.EMPTY_BUFFER;
-                              if (text != null) {
-                                content = Unpooled.copiedBuffer(text, StandardCharsets.US_ASCII);
+          new Upstream() {
+            @Override
+            public Future<Channel> connect(ChannelHandlerContext ingressContext) {
+              Promise<Channel> promise = ingressContext.executor().newPromise();
+              Channel ingressChannel = ingressContext.channel();
+              Channel upstreamChannel =
+                  EmbeddedChannel.builder()
+                      .handlers(
+                          new ChannelOutboundHandlerAdapter() {
+                            @Override
+                            public void write(
+                                ChannelHandlerContext ctx1, Object msg, ChannelPromise promise) {
+                              if (msg instanceof HttpRequest) {
+                                ByteBuf content = Unpooled.EMPTY_BUFFER;
+                                if (text != null) {
+                                  content = Unpooled.copiedBuffer(text, StandardCharsets.US_ASCII);
+                                }
+                                FullHttpResponse response =
+                                    new DefaultFullHttpResponse(
+                                        HttpVersion.HTTP_1_1, status, content);
+                                response
+                                    .headers()
+                                    .set(HttpHeaderNames.CONTENT_LENGTH, content.readableBytes());
+                                if (location != null) {
+                                  response.headers().set(HttpHeaderNames.LOCATION, location);
+                                }
+                                ingressChannel.writeAndFlush(response);
                               }
-                              FullHttpResponse response =
-                                  new DefaultFullHttpResponse(
-                                      HttpVersion.HTTP_1_1, status, content);
-                              response
-                                  .headers()
-                                  .set(HttpHeaderNames.CONTENT_LENGTH, content.readableBytes());
-                              if (location != null) {
-                                response.headers().set(HttpHeaderNames.LOCATION, location);
-                              }
-                              ingressChannel.writeAndFlush(response);
+                              ReferenceCountUtil.release(msg);
                             }
-                            ReferenceCountUtil.release(msg);
-                          }
-                        })
-                    .build();
-            promise.setSuccess(upstreamChannel);
-            return promise;
+                          })
+                      .build();
+              promise.setSuccess(upstreamChannel);
+              return promise;
+            }
+
+            @Override
+            public void release(Channel ch) {
+              // ignore, embedded
+            }
           };
     } else if (site.upstream() != null) {
       upstream = constructUpstream(ctx, site.upstream());

@@ -73,7 +73,7 @@ public class DefaultUpstream implements Upstream {
           @Override
           public void channelCreated(Channel ch) throws Exception {
             addHttpHandler(ch.pipeline());
-            ch.pipeline().addLast("forward", new ForwardHandler(null, null));
+            ch.pipeline().addLast("forward", new ForwardHandler(null));
           }
         };
     int maxConnections = poolCfg.maxSize();
@@ -99,8 +99,7 @@ public class DefaultUpstream implements Upstream {
 
   @Override
   public Future<Channel> connect(ChannelHandlerContext downstreamContext) {
-    boolean pooled = true;
-    if (pooled) {
+    if (pool != null) {
       return getPooledChannel(downstreamContext.channel());
     } else {
       ChannelFuture upstreamFuture = connectToUpstream(downstreamContext.channel());
@@ -118,20 +117,29 @@ public class DefaultUpstream implements Upstream {
     }
   }
 
-  private Future<Channel> getPooledChannel(Channel downstream) {
-    Future<Channel> future = pool.acquire(downstream.eventLoop().newPromise());
+  @Override
+  public void release(Channel ch) {
+    if (pool != null) {
+      //      System.err.println("release: " + ch.id().asShortText());
+      // TODO: void promise
+      pool.release(ch);
+    }
+  }
+
+  private Future<Channel> getPooledChannel(Channel ingress) {
+    Future<Channel> future = pool.acquire(ingress.eventLoop().newPromise());
     future.addListener(
         (FutureListener<Channel>)
             f -> {
               if (f.isSuccess()) {
-                DownstreamProgress.progress(downstream, "upstream connection established");
+                DownstreamProgress.progress(ingress, "upstream connection established");
                 Channel ch = f.resultNow();
                 // make sure read is on, it can happen that its till off from previous request
                 // handling
                 ch.setOption(ChannelOption.AUTO_READ, true);
                 if (LOG.isTraceEnabled()) {
                   LOG.trace(
-                      downstream,
+                      ingress,
                       f.resultNow(),
                       "pool acquire complete isActive="
                           + ch.isActive()
@@ -139,13 +147,13 @@ public class DefaultUpstream implements Upstream {
                           + ch.pipeline().names());
                 }
                 // we need to do this in the listener call back, to set the downstream
-                ch.pipeline().replace("forward", "forward", new ForwardHandler(downstream, pool));
+                ch.pipeline().replace("forward", "forward", new ForwardHandler(ingress));
               }
             });
     return future;
   }
 
-  private ChannelFuture connectToUpstream(Channel downstream) {
+  private ChannelFuture connectToUpstream(Channel ingress) {
     Bootstrap bs =
         bootstrap
             .clone()
@@ -154,8 +162,7 @@ public class DefaultUpstream implements Upstream {
                   @Override
                   public void initChannel(SocketChannel ch) {
                     addHttpHandler(ch.pipeline());
-                    ch.pipeline()
-                        .replace("forward", "forward", new ForwardHandler(downstream, null));
+                    ch.pipeline().replace("forward", "forward", new ForwardHandler(ingress));
                   }
                 });
     ChannelFuture f = bs.connect();

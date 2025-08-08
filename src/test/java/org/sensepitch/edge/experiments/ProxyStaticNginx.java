@@ -1,11 +1,7 @@
 package org.sensepitch.edge.experiments;
 
-import java.util.List;
 import java.util.Map;
-import org.sensepitch.edge.AdmissionTokenGeneratorConfig;
-import org.sensepitch.edge.BypassConfig;
 import org.sensepitch.edge.ConnectionConfig;
-import org.sensepitch.edge.DeflectorConfig;
 import org.sensepitch.edge.ListenConfig;
 import org.sensepitch.edge.MetricsConfig;
 import org.sensepitch.edge.PrometheusConfig;
@@ -43,25 +39,11 @@ public class ProxyStaticNginx {
                     .build())
             .upstream(UpstreamConfig.builder().target("172.21.0.3:80").build())
             // not used
-            .protection(
-                ProtectionConfig.builder()
-                    .deflector(
-                        DeflectorConfig.builder()
-                            .bypass(BypassConfig.builder().uris(List.of("/*")).build())
-                            .tokenGenerators(
-                                List.of(
-                                    AdmissionTokenGeneratorConfig.builder()
-                                        .prefix("X")
-                                        .secret("secret")
-                                        .build()))
-                            .build())
-                    .build())
+            .protection(ProtectionConfig.builder().disable(true).build())
             .sites(
                 Map.of(
-                    "any",
+                    "localhost",
                     SiteConfig.builder()
-                        .host("localhost")
-                        .protection(ProtectionConfig.builder().disable(true).build())
                         .upstream(UpstreamConfig.builder().target("172.21.0.3:80").build())
                         .build()))
             .build();

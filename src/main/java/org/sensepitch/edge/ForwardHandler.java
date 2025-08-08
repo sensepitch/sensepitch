@@ -5,9 +5,7 @@ import io.netty.channel.ChannelException;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.ChannelOption;
-import io.netty.channel.pool.ChannelPool;
 import io.netty.handler.codec.http.HttpContent;
-import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.LastHttpContent;
 
@@ -20,12 +18,9 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
 
   static ProxyLogger DEBUG = ProxyLogger.get(ForwardHandler.class);
   private Channel downstream;
-  private final ChannelPool pool;
-  private boolean closeConnection = false;
 
-  public ForwardHandler(Channel downstream, ChannelPool pool) {
-    this.downstream = downstream;
-    this.pool = pool;
+  public ForwardHandler(Channel ingress) {
+    this.downstream = ingress;
   }
 
   @Override
@@ -39,8 +34,6 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
     }
     if (msg instanceof HttpResponse) {
       HttpResponse response = (HttpResponse) msg;
-      String connection = response.headers().get(HttpHeaderNames.CONNECTION);
-      closeConnection = connection != null && connection.equalsIgnoreCase("close");
       // if message contains response and content, write below
       if (!(msg instanceof HttpContent)) {
         downstream.write(response);
@@ -54,15 +47,7 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
       // the connection already. Maybe introduce error handling for non empty last contents and
       // requests only.
       downstream.writeAndFlush(msg, downstream.voidPromise());
-      if (closeConnection) {
-        ctx.channel().close();
-      }
-      if (pool != null) {
-        // disconnect from downstream, if upstream sends us more data we don't expect it
-        downstream = null;
-        // even if closed, we should release it
-        pool.release(ctx.channel(), ctx.voidPromise());
-      }
+      downstream = null;
     } else if (msg instanceof HttpContent) {
       downstream.write(msg, downstream.voidPromise());
     }

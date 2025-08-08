@@ -40,7 +40,11 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   private long connectionEstablishedNanos;
   private long requestStartTimeNanos;
   private long requestCompleteTimeNanos;
+
+  /** When we start sending the first byte */
   private long responseStartedTimeNanos;
+
+  /** When everything was received */
   private long responseReceivedTimeNanos;
 
   public RequestLoggingHandler(RequestLogger logger) {
@@ -72,13 +76,12 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     super.channelRead(ctx, msg);
   }
 
-  /** Set response start time when the output buffer becomes full. */
   @Override
-  public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
-    if (!ctx.channel().isWritable() && responseStartedTimeNanos == 0) {
+  public void flush(ChannelHandlerContext ctx) throws Exception {
+    if (responseStartedTimeNanos == 0) {
       responseStartedTimeNanos = ticker.nanoTime();
     }
-    super.channelWritabilityChanged(ctx);
+    super.flush(ctx);
   }
 
   @Override
@@ -97,6 +100,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     }
     if (msg instanceof LastHttpContent lastHttpContent) {
       long now = ticker.nanoTime();
+      // optional, since done by flush, however, we save a timer call
       if (responseStartedTimeNanos == 0) {
         responseStartedTimeNanos = now;
       }
@@ -112,29 +116,35 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
       }
       trailingHeaders = lastHttpContent.trailingHeaders();
       channel = ctx.channel();
-      promise.addListener(
-          future -> {
-            responseReceivedTimeNanos = ticker.nanoTime();
-            error = future.cause();
-            try {
-              logger.logRequest(this);
-              requestCount++;
-            } catch (Throwable e) {
-              DEBUG.error(ctx.channel(), "Error logging request", e);
-            }
-            // reset times for keep alive requests
-            requestStartTime = System.currentTimeMillis();
-            connectionEstablishedNanos = now;
-            requestCompleteTimeNanos = responseStartedTimeNanos = 0;
-            request = null;
-          });
+      promise
+          .unvoid()
+          .addListener(
+              future -> {
+                responseReceivedTimeNanos = ticker.nanoTime();
+                error = future.cause();
+                // FIXME: in case of error, maybe different status code? maybe set content to 0?
+                try {
+                  logger.logRequest(this);
+                  requestCount++;
+                } catch (Throwable e) {
+                  DEBUG.error(ctx.channel(), "Error logging request", e);
+                }
+                // reset times for keep alive requests
+                requestStartTime = System.currentTimeMillis();
+                connectionEstablishedNanos = now;
+                requestCompleteTimeNanos = responseStartedTimeNanos = 0;
+                request = null;
+              });
     }
     super.write(ctx, msg, promise);
   }
 
+  // FIXME: this is not logging write timeouts
+  /** If response is seen, log as aborted */
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-    if (request != null) {
+    // FIXME: fix time values, unify with write()
+    if (request != null && response != null) {
       error = cause;
       try {
         logger.logRequest(this);

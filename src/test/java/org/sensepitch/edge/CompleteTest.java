@@ -7,17 +7,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.handler.codec.http.DefaultHttpContent;
 import io.netty.handler.codec.http.DefaultHttpRequest;
+import io.netty.handler.codec.http.DefaultLastHttpContent;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
+import io.netty.handler.codec.http.LastHttpContent;
+import io.netty.util.ReferenceCounted;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import net.serenitybdd.annotations.Step;
 import net.serenitybdd.junit5.SerenityJUnit5Extension;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -40,17 +46,40 @@ class CompleteTest {
                   .build())
           .unservicedHost(
               UnservicedHostConfig.builder().defaultLocation("https://sensepitch.io").build())
+          .protection(
+              ProtectionConfig.builder()
+                  .deflector(
+                      DeflectorConfig.builder()
+                          .tokenGenerators(
+                              List.of(
+                                  AdmissionTokenGeneratorConfig.builder()
+                                      .prefix("X")
+                                      .secret("munich")
+                                      .build()))
+                          .build())
+                  .build())
           .sites(
               Map.of(
                   "example.com",
                   SiteConfig.builder()
                       .response(ResponseConfig.builder().text("a test response").build())
                       .protection(ProtectionConfig.builder().disable(true).build())
+                      .build(),
+                  "withprotection.com",
+                  SiteConfig.builder()
+                      .response(ResponseConfig.builder().text("a test response").build())
                       .build()))
           .metrics(MetricsConfig.builder().enable(false).build())
           .build();
 
   Steps steps = new Steps().given_initialized_proxy_with(COMMON_CONFIG);
+
+  @Test
+  void deflected() {
+    steps
+        .when_requesting("withprotection.com", "/")
+        .then_the_response_status_is(HttpResponseStatus.FORBIDDEN);
+  }
 
   @Test
   void testMissingHost() {
@@ -95,10 +124,30 @@ class CompleteTest {
         .then_channel_open();
   }
 
+  @AfterEach
+  void finish() {
+    steps.finish_and_check_for_leaks();
+  }
+
   static class Steps extends ProxyConstructBDDTest.ExtendableSteps<Steps> {
 
     EmbeddedChannel ingressChannel;
     HttpResponse response;
+    List<ReferenceCounted> referenceCounted = new ArrayList<>();
+
+    @Step
+    Steps finish_and_check_for_leaks() {
+      if (ingressChannel == null) {
+        return this;
+      }
+      for (ReferenceCounted ref : referenceCounted) {
+        assertThat(ref.refCnt())
+            .describedAs("Reference released, type: " + ref.getClass().getSimpleName())
+            .isEqualTo(0);
+      }
+      ingressChannel.finishAndReleaseAll();
+      return this;
+    }
 
     @Step
     Steps given_initialized_proxy_with(ProxyConfig proxyConfig) {
@@ -127,7 +176,15 @@ class CompleteTest {
       if (host != null) {
         req.headers().set(HttpHeaderNames.HOST, host);
       }
-      ingressChannel.writeInbound(req);
+      // TODO: add lstacontent?
+      // ingressChannel.writeInbound(req);
+      HttpContent emptyChunk = new DefaultHttpContent(ingressChannel.alloc().buffer(1).clear());
+      referenceCounted.add(emptyChunk);
+      // ingressChannel.writeInbound(emptyChunk);
+      LastHttpContent emptyLastContent =
+          new DefaultLastHttpContent(ingressChannel.alloc().buffer(1).clear());
+      referenceCounted.add(emptyLastContent);
+      ingressChannel.writeInbound(req, emptyChunk, emptyLastContent);
       Object msg = ingressChannel.readOutbound();
       assertThat(msg).isNotNull();
       assertThat(msg).isInstanceOf(FullHttpResponse.class);

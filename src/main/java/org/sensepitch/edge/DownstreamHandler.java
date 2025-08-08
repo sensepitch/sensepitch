@@ -3,7 +3,6 @@ package org.sensepitch.edge;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelDuplexHandler;
-import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
@@ -40,6 +39,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   private final Upstream upstream;
   private final ProxyMetrics metrics;
   private Future<Channel> upstreamChannelFuture;
+  private boolean returnUpstreamToPool;
   private boolean requestReceived;
   private boolean lastContentReceivedFromClient;
   private boolean sslHandshakeComplete;
@@ -71,16 +71,22 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     } else if (msg instanceof LastHttpContent) {
       // upstream might complete the response before the client sent the complete request
       // e.g. in an error situation
-      if (upstreamChannelFuture != null) {
-        DownstreamProgress.progress(ctx.channel(), "last content, waiting for upstream");
-        // Upstream channel might be still connecting or retrieved and checked by the pool.
-        // Queue in all content we receive via the listener.
-        upstreamChannelFuture.addListener(
-            (FutureListener<Channel>)
-                future -> forwardLastContentAndFlush(ctx, future, (LastHttpContent) msg));
-        lastContentReceivedFromClient = true;
+      if (upstreamChannelFuture == null) {
+        ReferenceCountUtil.release(msg);
+        return;
       }
+      DownstreamProgress.progress(ctx.channel(), "last content, waiting for upstream");
+      // Upstream channel might be still connecting or retrieved and checked by the pool.
+      // Queue in all content we receive via the listener.
+      upstreamChannelFuture.addListener(
+          (FutureListener<Channel>)
+              future -> forwardLastContentAndFlush(ctx, future, (LastHttpContent) msg));
+      lastContentReceivedFromClient = true;
     } else if (msg instanceof HttpContent) {
+      if (upstreamChannelFuture == null) {
+        ReferenceCountUtil.release(msg);
+        return;
+      }
       upstreamChannelFuture.addListener(
           (FutureListener<Channel>) future -> forwardContent(future, (HttpContent) msg));
     }
@@ -203,57 +209,35 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   }
 
   /**
-   * If upstream is active sending content, throttle reading. In any case flush the buffer it its
-   * full.
+   * Throttle reading, if the upstream is connected. If buffer is full send flush. If upstream is
+   * null, it means we received the last content, so no more flush is needed.
    */
   @Override
   public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
-    if (upstreamChannelFuture != null && upstreamChannelFuture.isDone()) {
-      if (ctx.channel().isWritable()) {
-        DEBUG.trace(
-            ctx.channel(), "channelWritabilityChanged, isWritable=true, start upstream reads");
-        upstreamChannelFuture.resultNow().config().setAutoRead(true);
-      } else {
-        DEBUG.trace(
-            ctx.channel(),
-            "channelWritabilityChanged, isWritable=false, queuing flush, stop upstream reads");
-        upstreamChannelFuture.resultNow().config().setAutoRead(false);
-      }
+    if (upstreamChannelFuture == null || !upstreamChannelFuture.isDone()) {
+      return;
     }
-    if (!ctx.channel().isWritable()) {
-      DEBUG.trace(
-          ctx.channel(),
-          "channelWritabilityChanged, isWritable=false, queuing flush, stop upstream reads");
-      // flush task is only created once for the context
-      if (flushTask == null) {
-        flushTask =
-            new Runnable() {
-              @Override
-              public void run() {
-                ctx.channel()
-                    .writeAndFlush(Unpooled.EMPTY_BUFFER)
-                    .addListener(
-                        new ChannelFutureListener() {
-                          @Override
-                          public void operationComplete(ChannelFuture future) throws Exception {
+    if (ctx.channel().isWritable()) {
+      upstreamChannelFuture.resultNow().config().setAutoRead(true);
+      return;
+    }
+    upstreamChannelFuture.resultNow().config().setAutoRead(false);
+    if (flushTask == null) {
+      flushTask =
+          () ->
+              ctx.channel()
+                  .writeAndFlush(Unpooled.EMPTY_BUFFER)
+                  .addListener(
+                      (ChannelFutureListener)
+                          future -> {
                             if (future.isSuccess() && ctx.channel().isActive()) {
                               if (!ctx.channel().isWritable()) {
-                                DEBUG.trace(
-                                    future.channel(),
-                                    "flush complete, output buffer still full, queuing another flush");
                                 ctx.executor().execute(flushTask);
-                              } else {
-                                DEBUG.trace(
-                                    future.channel(), "flush complete, output buffer writable");
                               }
                             }
-                          }
-                        });
-              }
-            };
-      }
-      ctx.executor().execute(flushTask);
+                          });
     }
+    ctx.executor().execute(flushTask);
   }
 
   /**
@@ -286,10 +270,18 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       throws Exception {
     // FIXME: sanitize headers
     if (msg instanceof HttpResponse response) {
+      returnUpstreamToPool = HttpUtil.isKeepAlive(response);
       response.headers().remove(HttpHeaderNames.KEEP_ALIVE);
       response.headers().remove(HttpHeaderNames.CONNECTION);
     }
     if (msg instanceof LastHttpContent) {
+      // we can release upstream channel to pool only as soon as we cleared out
+      // the reference here to ensure no more throttling is done
+      if (returnUpstreamToPool) {
+        upstream.release(upstreamChannelFuture.resultNow());
+      } else {
+        upstreamChannelFuture.resultNow().close();
+      }
       upstreamChannelFuture = null;
       promise =
           promise

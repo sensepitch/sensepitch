@@ -201,8 +201,8 @@ public class ClientTimeoutHandler extends ReadTimeoutHandler {
             new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.GATEWAY_TIMEOUT);
         response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
         ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-        // TODO: remove the exception
-        ctx.fireExceptionCaught(new UpstreamResponseTimeoutException());
+        // ctx.fireExceptionCaught(new UpstreamResponseTimeoutException());
+        throw new UpstreamResponseTimeoutException();
       }
     }
   }
@@ -269,11 +269,14 @@ public class ClientTimeoutHandler extends ReadTimeoutHandler {
         throws Exception {
       assert evt.state() == IdleState.WRITER_IDLE;
       if (!closed) {
+        closed = true;
+        throw new WriteTimeoutException();
+        /*-
         DownstreamProgress.complete(ctx.channel());
         // TODO: send different marker so request logging can detect abort
         ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT)
             .addListener(ChannelFutureListener.CLOSE);
-        closed = true;
+         */
       }
     }
   }

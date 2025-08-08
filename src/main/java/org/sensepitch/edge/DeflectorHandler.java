@@ -142,7 +142,7 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
         skipFollowingContent(ctx);
       } else {
         // TODO: behaviour of non GET requests?
-        outputChallengeHtml(ctx.channel());
+        outputChallengeHtml(ctx);
         ReferenceCountUtil.release(request);
         skipFollowingContent(ctx);
       }
@@ -177,7 +177,7 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
     }
   }
 
-  private void outputChallengeHtml(Channel channel) {
+  private void outputChallengeHtml(ChannelHandlerContext ctx) {
     String msg = htmlTemplate.replace("{{CHALLENGE}}", challengeVerification.generateChallenge());
     msg = msg.replace("{{VERIFY_URL}}", VERIFICATION_URL);
     msg = msg.replace("{{PREFIX}}", challengeVerification.getTargetPrefix());
@@ -186,7 +186,7 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
         new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.FORBIDDEN, buf);
     response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/html; charset=UTF-8");
     response.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, buf.readableBytes());
-    channel.writeAndFlush(response);
+    ctx.writeAndFlush(response);
     challengeSentCounter.increment();
   }
 
