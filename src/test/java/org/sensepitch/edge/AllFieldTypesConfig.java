@@ -13,6 +13,5 @@ public record AllFieldTypesConfig(
     boolean flag,
     String text,
     List<String> texts,
-    List<AllFieldTypesConfig> configList,
-    Map<String, AllFieldTypesConfig> configMap,
-    Map<String, TestWithKeyConfig> withKeyMap) {}
+    List<AllFieldTypesConfig> list,
+    Map<String, TestWithKeyConfig> map) {}

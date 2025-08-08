@@ -68,6 +68,18 @@ public class ConfigTest {
   }
 
   @Test
+  public void readMap() throws Exception {
+    Map<String, String> env =
+        Map.of(
+            "XX_MAP_0_KEY", "hello",
+            "XX_MAP_0_NUMBER", "234");
+    NestedTestConfig cfg =
+        (NestedTestConfig) EnvInjector.injectFromEnv("XX_", env, NestedTestConfig.builder());
+    assertThat(cfg.map()).isNotNull();
+    assertThat(cfg.map().get("hello").number()).isEqualTo(234);
+  }
+
+  @Test
   public void readAllFieldTypesFromYaml() {
     String yaml =
         """
@@ -77,10 +89,10 @@ public class ConfigTest {
       texts:
         - one
         - two
-      configList:
+      list:
         - number: 123
         - number: 456
-      configMap:
+      map:
         first:
           number: 1001
         second:
@@ -95,16 +107,16 @@ public class ConfigTest {
     assertThat(obj.flag()).isEqualTo(true);
     assertThat(obj.text()).isEqualTo("hello world");
     assertThat(obj.texts()).hasSize(2).first().isEqualTo("one");
-    assertThat(obj.configList()).hasSize(2);
-    assertThat(obj.configList().getFirst().number()).isEqualTo(123);
-    assertThat(obj.configMap().get("second").number()).isEqualTo(1002);
+    assertThat(obj.list()).hasSize(2);
+    assertThat(obj.list().getFirst().number()).isEqualTo(123);
+    assertThat(obj.map().get("second").number()).isEqualTo(1002);
   }
 
   @Test
   public void injectKey() {
     String yaml =
         """
-      withKeyMap:
+      map:
         first:
           number: 1
         second:
@@ -114,11 +126,10 @@ public class ConfigTest {
     Node root = parser.compose(new StringReader(yaml));
     // printNode(root, 2);
     AllFieldTypesConfig obj = RecordConstructor.construct(AllFieldTypesConfig.class, root);
-    assertThat(obj.withKeyMap().get("first").key()).isNull();
+    assertThat(obj.map().get("first").key()).isNull();
     obj = KeyInjector.injectAllMapKeys(obj);
-    assertThat(obj.withKeyMap().get("first").key()).isEqualTo("first");
-    assertThat(obj.withKeyMap().get("second").key()).isEqualTo("second");
-    System.out.println(obj);
+    assertThat(obj.map().get("first").key()).isEqualTo("first");
+    assertThat(obj.map().get("second").key()).isEqualTo("second");
   }
 
   void printNode(Node node, int indent) {
