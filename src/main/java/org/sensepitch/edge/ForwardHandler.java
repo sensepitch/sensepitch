@@ -1,5 +1,6 @@
 package org.sensepitch.edge;
 
+import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelException;
 import io.netty.channel.ChannelHandlerContext;
@@ -10,13 +11,13 @@ import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.LastHttpContent;
 
 /**
- * Receive response from upstream and pass it on downstream
+ * Handler for upstream communication, receives response from upstream and pass it on downstream
  *
  * @author Jens Wilke
  */
 public class ForwardHandler extends ChannelInboundHandlerAdapter {
 
-  static ProxyLogger DEBUG = ProxyLogger.get(ForwardHandler.class);
+  static ProxyLogger LOG = ProxyLogger.get(ForwardHandler.class);
   private Channel downstream;
 
   public ForwardHandler(Channel ingress) {
@@ -26,7 +27,7 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) {
     if (downstream == null) {
-      DEBUG.error(
+      LOG.error(
           ctx.channel(),
           msg.getClass().getName()
               + " -> downstream is null, getting unexpected data from upstream");
@@ -54,25 +55,39 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
   }
 
   /** Flush if output buffer is full and apply back pressure to downstream */
-  // FIXME: backpressure needs to get implemented for sending to upstream
   @Override
   public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
-    DEBUG.trace(
-        ctx.channel(), "channelWritabilityChanged, isWritable=" + ctx.channel().isWritable());
+    LOG.trace(ctx.channel(), "channelWritabilityChanged, isWritable=" + ctx.channel().isWritable());
     if (ctx.channel().isWritable()) {
       downstream.setOption(ChannelOption.AUTO_READ, true);
     } else {
-      // FIXME: in test we never get the isWritable=true
-      // downstream.setOption(ChannelOption.AUTO_READ, false);
-      ctx.channel().flush();
+      downstream.setOption(ChannelOption.AUTO_READ, false);
+      flush(ctx);
     }
   }
 
-  // FIXME: improve error handling, if downstream is connected we should fire exception there
+  /**
+   * Flush output to upstream. If we don't stop reading from ingress fast enough it may happen that
+   * the output buffer is already filled again when the flush is complete. Issue another flush until
+   * writable again.
+   */
+  void flush(ChannelHandlerContext ctx) {
+    ctx.channel()
+        .writeAndFlush(Unpooled.EMPTY_BUFFER)
+        .addListener(
+            future -> {
+              if (future.isSuccess()) {
+                if (!ctx.channel().isWritable()) {
+                  flush(ctx);
+                }
+              }
+            });
+  }
+
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
     // DEBUG.trace(downstream, ctx.channel(), "upstream read exception closing downstream");
-    DEBUG.upstreamError(ctx.channel(), "downstream=" + DEBUG.channelId(downstream), cause);
+    LOG.upstreamError(ctx.channel(), "downstream=" + LOG.channelId(downstream), cause);
     if (downstream != null) {
       downstream.pipeline().fireExceptionCaught(new UpstreamException(cause));
       downstream = null;

@@ -247,6 +247,7 @@ public class Proxy implements ProxyContext {
     pipeline.addLast("siteSelector", siteSelectorHandler);
     pipeline.addLast("protection", dummy404Handler);
     pipeline.addLast("proxy", dummy404Handler);
+    pipeline.addLast("exception", new ExceptionHandler(metrics));
   }
 
   @Override

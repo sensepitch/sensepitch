@@ -59,7 +59,8 @@ class TimeoutsTest {
               new RequestLoggingHandler(new StandardOutRequestLogger()),
               new ClientTimeoutHandler(cfg, proxyMetrics),
               new HttpServerKeepAliveHandler(),
-              new DownstreamHandler(new MockUpstream(), proxyMetrics))
+              new DownstreamHandler(new MockUpstream(), proxyMetrics),
+              new ExceptionHandler(proxyMetrics))
           .build();
 
   @Test

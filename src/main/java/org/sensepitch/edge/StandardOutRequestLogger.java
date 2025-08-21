@@ -48,7 +48,7 @@ public class StandardOutRequestLogger implements RequestLogger {
     if (info.error() != null) {
       error = sanitize(info.error().getMessage());
     }
-    if (error == null && status >= 502) {
+    if (error == null && status >= 500) {
       error = sanitize(response.status().reasonPhrase());
     }
     if (error == null) {

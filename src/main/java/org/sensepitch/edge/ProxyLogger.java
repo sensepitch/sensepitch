@@ -54,7 +54,7 @@ public interface ProxyLogger {
 
   void downstreamError(Channel downstream, String msg, Throwable cause);
 
-  void upstreamError(Channel downstream, String msg, Throwable cause);
+  void upstreamError(Channel upstream, String msg, Throwable cause);
 
   default String channelId(Channel channel) {
     return LogTarget.localChannelId(channel);
