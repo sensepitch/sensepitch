@@ -16,6 +16,8 @@ import io.netty.channel.pool.SimpleChannelPool;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.http.HttpClientCodec;
+import io.netty.handler.timeout.IdleStateEvent;
+import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.FutureListener;
 import io.netty.util.concurrent.Promise;
@@ -31,6 +33,8 @@ public class DefaultUpstream implements Upstream {
   private final SimpleChannelPool pool;
 
   public DefaultUpstream(ProxyContext ctx, UpstreamConfig cfg) {
+    ConnectionPoolConfig poolCfg =
+        cfg.connectionPool() != null ? cfg.connectionPool() : ConnectionPoolConfig.DEFAULT;
     String[] sa = cfg.target().split(":");
     int port = 80;
     String target = sa[0];
@@ -40,100 +44,128 @@ public class DefaultUpstream implements Upstream {
     if (sa.length > 1) {
       port = Integer.parseInt(sa[1]);
     }
-    bootstrap = new Bootstrap()
-      .group(ctx.eventLoopGroup())
-      .channel(NioSocketChannel.class)
-      .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-      .option(ChannelOption.SO_KEEPALIVE, true)
-      .remoteAddress(target, port);
-    ChannelPoolHandler channelHandler = new ChannelPoolHandler() {
-      @Override
-      public void channelReleased(Channel ch) throws Exception {
-      }
+    bootstrap =
+        new Bootstrap()
+            .group(ctx.eventLoopGroup())
+            .channel(NioSocketChannel.class)
+            .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+            .option(ChannelOption.SO_KEEPALIVE, true)
+            .remoteAddress(target, port);
+    ChannelPoolHandler channelHandler =
+        new ChannelPoolHandler() {
+          @Override
+          public void channelReleased(Channel ch) throws Exception {
+            ch.pipeline()
+                .replace(
+                    "forward",
+                    "forward",
+                    new IdleStateHandler(0, poolCfg.idleTimeoutSeconds(), 0) {
+                      @Override
+                      protected void channelIdle(ChannelHandlerContext ctx, IdleStateEvent evt) {
+                        ctx.close();
+                      }
+                    });
+          }
 
-      @Override
-      public void channelAcquired(Channel ch) throws Exception {
-      }
+          @Override
+          public void channelAcquired(Channel ch) throws Exception {}
 
-      @Override
-      public void channelCreated(Channel ch) throws Exception {
-        addHttpHandler(ch.pipeline());
-        ch.pipeline().addLast("forward", new ForwardHandler(null, null));
-      }
-    };
-    // TODO: parameter
-    int maxConnections = 0;
+          @Override
+          public void channelCreated(Channel ch) throws Exception {
+            addHttpHandler(ch.pipeline());
+            ch.pipeline().addLast("forward", new ForwardHandler(null));
+          }
+        };
+    int maxConnections = poolCfg.maxSize();
     if (maxConnections <= 0) {
-      pool = new SimpleChannelPool(bootstrap,
-        channelHandler,
-        ChannelHealthChecker.ACTIVE);
+      pool = new SimpleChannelPool(bootstrap, channelHandler, ChannelHealthChecker.ACTIVE);
     } else {
-      pool = new FixedChannelPool(bootstrap,
-        channelHandler,
-        ChannelHealthChecker.ACTIVE,
-        FixedChannelPool.AcquireTimeoutAction.FAIL,
-        50,   // acquire timeout ms
-        maxConnections,     // max connections
-        1,
-        true
-      );
+      pool =
+          new FixedChannelPool(
+              bootstrap,
+              channelHandler,
+              ChannelHealthChecker.ACTIVE,
+              FixedChannelPool.AcquireTimeoutAction.FAIL,
+              50, // acquire timeout ms
+              maxConnections, // max connections
+              1,
+              true);
     }
   }
 
-  void addHttpHandler(ChannelPipeline  pipeline) {
-    // pipeline.addLast(new ReportIoErrorsHandler("upstream"));
+  void addHttpHandler(ChannelPipeline pipeline) {
     pipeline.addLast(new HttpClientCodec());
-    // FIXME: timeout?
-    // pipeline.addLast(new ReadTimeoutHandler(23));
-    // pipeline.addLast(new LoggingHandler(LogLevel.INFO));
   }
 
   @Override
   public Future<Channel> connect(ChannelHandlerContext downstreamContext) {
-    boolean pooled = true;
-    if (pooled) {
+    if (pool != null) {
       return getPooledChannel(downstreamContext.channel());
     } else {
       ChannelFuture upstreamFuture = connectToUpstream(downstreamContext.channel());
       Promise<Channel> promise = downstreamContext.executor().newPromise();
-      upstreamFuture.addListener((ChannelFutureListener) cf -> {
-        if (cf.isSuccess()) {
-          promise.setSuccess(cf.channel());
-        } else {
-          promise.setFailure(cf.cause());
-        }
-      });
+      upstreamFuture.addListener(
+          (ChannelFutureListener)
+              cf -> {
+                if (cf.isSuccess()) {
+                  promise.setSuccess(cf.channel());
+                } else {
+                  promise.setFailure(cf.cause());
+                }
+              });
       return promise;
     }
   }
 
-  private Future<Channel> getPooledChannel(Channel downstream) {
-    Future<Channel> future = pool.acquire(downstream.eventLoop().newPromise());
-    future.addListener((FutureListener<Channel>) future1 -> {
-      if (future1.isSuccess()) {
-        DownstreamProgress.progress(downstream, "upstream connection established");
-        Channel ch = future1.resultNow();
-        if (LOG.isTraceEnabled()) {
-          LOG.trace(downstream, future1.resultNow(), "pool acquire complete isActive=" + ch.isActive() + " pipeline=" + ch.pipeline().names());
-        }
-        // we need to do this in the lister call back, to set the downstream
-        future1.resultNow().pipeline().replace("forward", "forward", new ForwardHandler(downstream, pool));
-      }
-    });
+  @Override
+  public void release(Channel ch) {
+    if (pool != null) {
+      //      System.err.println("release: " + ch.id().asShortText());
+      // TODO: void promise
+      pool.release(ch);
+    }
+  }
+
+  private Future<Channel> getPooledChannel(Channel ingress) {
+    Future<Channel> future = pool.acquire(ingress.eventLoop().newPromise());
+    future.addListener(
+        (FutureListener<Channel>)
+            f -> {
+              if (f.isSuccess()) {
+                DownstreamProgress.progress(ingress, "upstream connection established");
+                Channel ch = f.resultNow();
+                // make sure read is on, it can happen that its till off from previous request
+                // handling
+                ch.setOption(ChannelOption.AUTO_READ, true);
+                if (LOG.isTraceEnabled()) {
+                  LOG.trace(
+                      ingress,
+                      f.resultNow(),
+                      "pool acquire complete isActive="
+                          + ch.isActive()
+                          + " pipeline="
+                          + ch.pipeline().names());
+                }
+                // we need to do this in the listener call back, to set the downstream
+                ch.pipeline().replace("forward", "forward", new ForwardHandler(ingress));
+              }
+            });
     return future;
   }
 
-  private ChannelFuture connectToUpstream(Channel downstream) {
-    Bootstrap  bs = bootstrap.clone()
-      .handler(new ChannelInitializer<SocketChannel>() {
-        @Override
-        public void initChannel(SocketChannel ch) {
-          addHttpHandler(ch.pipeline());
-          ch.pipeline().replace("forward", "forward", new ForwardHandler(downstream, null));
-        }
-      });
+  private ChannelFuture connectToUpstream(Channel ingress) {
+    Bootstrap bs =
+        bootstrap
+            .clone()
+            .handler(
+                new ChannelInitializer<SocketChannel>() {
+                  @Override
+                  public void initChannel(SocketChannel ch) {
+                    addHttpHandler(ch.pipeline());
+                    ch.pipeline().replace("forward", "forward", new ForwardHandler(ingress));
+                  }
+                });
     ChannelFuture f = bs.connect();
     return f;
   }
-
 }

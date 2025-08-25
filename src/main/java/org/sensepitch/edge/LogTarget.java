@@ -1,7 +1,6 @@
 package org.sensepitch.edge;
 
 import io.netty.channel.Channel;
-
 import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -24,7 +23,6 @@ public interface LogTarget {
     return ch.id().asShortText();
   }
 
-
   void log(String source, LogInfo info);
 
   class StreamOutput implements LogTarget {
@@ -35,15 +33,16 @@ public interface LogTarget {
       this.output = output;
     }
 
-   private static final DateTimeFormatter TSTAMP = new DateTimeFormatterBuilder()
-      .appendValue(ChronoField.SECOND_OF_MINUTE, 2)   // two-digit seconds (00–59)
-      .appendLiteral('.')
-      .appendValue(ChronoField.MILLI_OF_SECOND, 3)   // three-digit millis (000–999)
-      .toFormatter();
+    private static final DateTimeFormatter TSTAMP =
+        new DateTimeFormatterBuilder()
+            .appendValue(ChronoField.SECOND_OF_MINUTE, 2) // two-digit seconds (00–59)
+            .appendLiteral('.')
+            .appendValue(ChronoField.MILLI_OF_SECOND, 3) // three-digit millis (000–999)
+            .toFormatter();
 
     String prefix() {
-      String time  = LocalTime.now().format(TSTAMP);
-      String tid   = Long.toString(Thread.currentThread().getId(), 36);
+      String time = LocalTime.now().format(TSTAMP);
+      String tid = Long.toString(Thread.currentThread().getId(), 36);
       return time + "/Thread#" + tid;
     }
 
@@ -81,13 +80,11 @@ public interface LogTarget {
         sb.append(" ");
       }
       if (record.error() != null) {
-        StringWriter writer  = new StringWriter();
+        StringWriter writer = new StringWriter();
         record.error().printStackTrace(new PrintWriter(writer));
         sb.append(writer.toString());
       }
       output.println(sb.toString().trim());
     }
-
   }
-
 }

@@ -1,13 +1,13 @@
 package org.sensepitch.edge;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import io.netty.handler.codec.http.DefaultFullHttpRequest;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpVersion;
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * @author Jens Wilke
@@ -30,5 +30,4 @@ public class DetectCrawlerTest {
     boolean f = detectCrawler.allowBypass(null, request);
     return f;
   }
-
 }

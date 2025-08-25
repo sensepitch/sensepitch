@@ -132,14 +132,20 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [x] proxy headers
 - [x] pass to NGINX configuration 
 - [x] host based upstream routing
-- [x] admission: use server IP in token
-- [x] admission: make time a parameter
+- [x] pow deflection: use server IP in token
+- [x] pow deflection: make time a parameter
 - [x] make admission secret configurable
 - [x] can we use Builder in lombok?
 - [x] use keep alive / connection pool upstream
 - [x] openssl support for HTTPS
 - [x] upstream backpressure
-- [ ] POC production testing
+- [x] YAML based configuration
+- [x] improve default configuration
+- [ ] make Netty socket options available, check connection timeout and SO_TIMEOUT
+- [ ] config: stop / complain if option is unknown
+- [ ] upstream metrics, e.g. pool metrics
+- [ ] Logging: Netty LoggingHandler seems not to respect the origin class
+- [ ] try markdown JavaDoc, https://openjdk.org/jeps/467
 - [ ] explain PoW admission
 - [ ] use delombok, so JavaDoc has proper documentation in the builder
 - [ ] block requests that are not GET and POST if not admitted or crawler bypassed
@@ -147,16 +153,13 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [ ] expose upstream connection pool statistics via prometheus
 - [ ] failure counters
 - [ ] cleanup debugging code / use Netty logger
-- [ ] make Netty socket options available, check connection timeout and SO_TIMEOUT
 - [ ] test errors of in flight requests
 - [ ] restrict admissions per solved challenge
 - [ ] default configs / layer configuration / overwrite config tree
-- [ ] YAML based configuration
 - [ ] Enable tracing / debugging switch
 - [ ] standard logging target
 - [ ] Admission performance: skip validation for keep-alive connections
 - [ ] Admission performance: deliver a challenge via cookie and serve static HTML
-- [ ] improve default configuration
 - [ ] improve bypass matching (maybe ASN, geo)
 - [ ] downstream http2 support
 - [ ] Expiry of granted admissions

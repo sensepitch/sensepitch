@@ -8,5 +8,8 @@ import io.netty.util.concurrent.Future;
  * @author Jens Wilke
  */
 public interface Upstream {
+
   Future<Channel> connect(ChannelHandlerContext downstreamContext);
+
+  void release(Channel ch);
 }

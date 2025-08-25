@@ -8,5 +8,4 @@ import java.net.InetAddress;
 public interface IpTraitsLookup {
 
   void lookup(IpTraits.Builder builder, InetAddress address);
-
 }

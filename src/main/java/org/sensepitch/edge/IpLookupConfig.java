@@ -6,6 +6,4 @@ import lombok.Builder;
  * @author Jens Wilke
  */
 @Builder
-public record IpLookupConfig(
-  GeoIp2Config geoIp2
-) { }
+public record IpLookupConfig(GeoIp2Config geoIp2) {}

@@ -15,9 +15,7 @@ public class IpTrie implements AnyVersionIpLookup {
 
   private final TrieNode root = new TrieNode();
 
-  /**
-   * Insert a CIDR like "66.249.64.0/19" or "2001:4860::/32"
-   */
+  /** Insert a CIDR like "66.249.64.0/19" or "2001:4860::/32" */
   @Override
   public void insert(String cidrStr, String label) {
     String[] parts = cidrStr.split("/");
@@ -36,9 +34,8 @@ public class IpTrie implements AnyVersionIpLookup {
     for (int i = 0; i < bytes.length && bitIndex < prefixLen; i++) {
       for (int b = 7; b >= 0; b--) {
         int bit = (bytes[i] >> b) & 1;
-        node = node.children[bit] != null
-          ? node.children[bit]
-          : (node.children[bit] = new TrieNode());
+        node =
+            node.children[bit] != null ? node.children[bit] : (node.children[bit] = new TrieNode());
         bitIndex++;
         if (bitIndex == prefixLen) {
           List<String> labelList = new ArrayList<>();
@@ -53,9 +50,7 @@ public class IpTrie implements AnyVersionIpLookup {
     }
   }
 
-  /**
-   * Walk the trie along the bits of `addr` and add the found labels
-   */
+  /** Walk the trie along the bits of `addr` and add the found labels */
   @Override
   public List<String> findLabelMatching(byte[] addr) {
     TrieNode node = root;
@@ -98,5 +93,4 @@ public class IpTrie implements AnyVersionIpLookup {
     TrieNode[] children = new TrieNode[2];
     String[] labels = null;
   }
-
 }

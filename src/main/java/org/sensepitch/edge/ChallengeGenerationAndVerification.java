@@ -15,7 +15,8 @@ public class ChallengeGenerationAndVerification {
   private final ChallengeStringGenerator challengeStringGenerator;
   private final String targetPrefix;
 
-  public ChallengeGenerationAndVerification(ChallengeStringGenerator challengeStringGenerator, String targetPrefix) {
+  public ChallengeGenerationAndVerification(
+      ChallengeStringGenerator challengeStringGenerator, String targetPrefix) {
     this.challengeStringGenerator = challengeStringGenerator;
     this.targetPrefix = targetPrefix;
   }
@@ -41,7 +42,7 @@ public class ChallengeGenerationAndVerification {
   public long verifyChallengeParameters(String challengeString, String nonce) {
     long t = challengeStringGenerator.verifyChallenge(challengeString);
     if (t > 0) {
-      String hex =  calculateSha256(challengeString + nonce);
+      String hex = calculateSha256(challengeString + nonce);
       if (hex.startsWith(targetPrefix)) {
         return t;
       }
@@ -62,5 +63,4 @@ public class ChallengeGenerationAndVerification {
       throw new UnsatisfiedLinkError(e.getMessage());
     }
   }
-
 }

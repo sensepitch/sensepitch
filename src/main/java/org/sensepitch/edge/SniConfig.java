@@ -6,9 +6,4 @@ import lombok.Builder;
  * @author Jens Wilke
  */
 @Builder
-public record SniConfig(
-  String domain,
-  SslConfig ssl,
-  String certificateFile,
-  String keyFile) {
-}
+public record SniConfig(String host, SslConfig ssl) {}

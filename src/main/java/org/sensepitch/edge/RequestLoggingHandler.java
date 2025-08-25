@@ -14,19 +14,30 @@ import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.concurrent.Ticker;
 
 /**
- * Listens to incoming and outgoing http messages and collects all relevant information
- * during request processing and calls the request logger implementation when the last
- * content is written.
+ * Listens to incoming and outgoing http messages and collects all relevant information during
+ * request processing and calls the request logger implementation when the last content is written.
  *
- * <p>Note on concurrency: there is no concurrent activity on this object.
- * The downstream request comes from one thread, after submitting the upstream request,
- * writes come from the upstream reading thread
+ * <p>Note on concurrency: there is no concurrent activity on this object. The downstream request
+ * comes from one thread, after submitting the upstream request, writes come from the upstream
+ * reading thread
  *
  * @author Jens Wilke
  */
 public class RequestLoggingHandler extends ChannelDuplexHandler implements RequestLogInfo {
 
   static ProxyLogger DEBUG = ProxyLogger.get(RequestLoggingHandler.class);
+
+  /**
+   * Construct a mock http request in case we don't have a request, which can happen if the request
+   * was malformed or receive timed out. We don't use a HttpRequest singleton, maybe we want to add
+   * headers, like set the host, if its known.
+   */
+  private static final HttpRequest MOCK_REQUEST =
+      new DefaultFullHttpRequest(NIL_VERSION, NIL_METHOD, "/");
+
+  static {
+    MOCK_REQUEST.headers().set(HttpHeaderNames.HOST, SanitizeHostHandler.NIL_HOST);
+  }
 
   private long contentBytes = 0;
   private HttpRequest request;
@@ -41,7 +52,11 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   private long connectionEstablishedNanos;
   private long requestStartTimeNanos;
   private long requestCompleteTimeNanos;
+
+  /** When we start sending the first byte */
   private long responseStartedTimeNanos;
+
+  /** When everything was received */
   private long responseReceivedTimeNanos;
 
   public RequestLoggingHandler(RequestLogger logger) {
@@ -61,11 +76,12 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   }
 
   @Override
-  public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception{
+  public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
     if (msg instanceof HttpRequest) {
       request = (HttpRequest) msg;
       requestStartTime = System.currentTimeMillis();
       requestStartTimeNanos = ticker.nanoTime();
+      response = null;
     }
     if (msg instanceof LastHttpContent) {
       requestCompleteTimeNanos = ticker.nanoTime();
@@ -73,25 +89,20 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     super.channelRead(ctx, msg);
   }
 
-  /**
-   * Set response start time when the output buffer becomes full.
-   */
   @Override
-  public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
-    if (!ctx.channel().isWritable() && responseStartedTimeNanos == 0) {
+  public void flush(ChannelHandlerContext ctx) throws Exception {
+    if (responseStartedTimeNanos == 0) {
       responseStartedTimeNanos = ticker.nanoTime();
     }
-    super.channelWritabilityChanged(ctx);
+    super.flush(ctx);
   }
 
   @Override
-  public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
+  public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
+      throws Exception {
     if (msg instanceof HttpResponse) {
       response = (HttpResponse) msg;
       contentBytes = 0;
-    }
-    if (request == null) {
-      request = constructMockHttpRequest(ctx);
     }
     // HttpResponse may have content as well
     if (msg instanceof HttpContent httpContent) {
@@ -99,6 +110,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     }
     if (msg instanceof LastHttpContent lastHttpContent) {
       long now = ticker.nanoTime();
+      // optional, since done by flush, however, we save a timer call
       if (responseStartedTimeNanos == 0) {
         responseStartedTimeNanos = now;
       }
@@ -114,45 +126,73 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
       }
       trailingHeaders = lastHttpContent.trailingHeaders();
       channel = ctx.channel();
-      promise.addListener(future -> {
-          responseReceivedTimeNanos = ticker.nanoTime();
-          error = future.cause();
-          try {
-            logger.logRequest(this);
-            requestCount++;
-          } catch (Throwable e) {
-            DEBUG.error(ctx.channel(), "Error logging request", e);
-          }
-          // reset times for keep alive requests
-          requestStartTime = System.currentTimeMillis();
-          connectionEstablishedNanos = now;
-          requestCompleteTimeNanos = responseStartedTimeNanos = 0;
-          request = null;
-        }
-      );
+      promise
+          .unvoid()
+          .addListener(
+              future -> {
+                // in case of a timeout we send a timeout response. make sure we have
+                // a mock request to not confuse loggers
+                if (request == null) {
+                  request = MOCK_REQUEST;
+                }
+                responseReceivedTimeNanos = ticker.nanoTime();
+                error = future.cause();
+                // TODO: in case of error, maybe different status code? maybe set content to 0?
+                try {
+                  logger.logRequest(this);
+                  requestCount++;
+                } catch (Throwable e) {
+                  DEBUG.error(ctx.channel(), "Error logging request", e);
+                }
+                // reset times for keep alive requests
+                requestStartTime = System.currentTimeMillis();
+                connectionEstablishedNanos = now;
+                requestCompleteTimeNanos = responseStartedTimeNanos = 0;
+                request = null;
+              });
     }
     super.write(ctx, msg, promise);
   }
 
-  /**
-   * Construct a mock http request in case we don't have a request, which can happen if
-   * the request was malformed or receive timed out. We don't use a HttpRequest singleton,
-   * maybe we want to add headers, like set the host, if its known.
-   */
-  private HttpRequest constructMockHttpRequest(ChannelHandlerContext ctx) {
-    HttpRequest request = new DefaultFullHttpRequest(NIL_VERSION, NIL_METHOD, "/");
-    request.headers().set(HttpHeaderNames.HOST, SanitizeHostHandler.NIL_HOST);
+  @Override
+  public String requestId() {
+    return LogTarget.localChannelId(channel) + "/" + requestCount;
+  }
+
+  @Override
+  public Channel channel() {
+    return channel;
+  }
+
+  @Override
+  public Throwable error() {
+    return error;
+  }
+
+  @Override
+  public HttpRequest request() {
     return request;
   }
 
-  @Override public String requestId() { return LogTarget.localChannelId(channel) + "/" + requestCount; }
-  @Override public Channel channel() { return channel; }
-  @Override  public Throwable error() { return error; }
-  @Override public HttpRequest request() { return request; }
-  @Override public HttpResponse response() { return response; }
-  @Override public HttpHeaders trailingHeaders() { return trailingHeaders; }
-  @Override public long contentBytes() { return contentBytes; }
-  @Override public long requestStartTimeMillis() { return requestStartTime; }
+  @Override
+  public HttpResponse response() {
+    return response;
+  }
+
+  @Override
+  public HttpHeaders trailingHeaders() {
+    return trailingHeaders;
+  }
+
+  @Override
+  public long contentBytes() {
+    return contentBytes;
+  }
+
+  @Override
+  public long requestStartTimeMillis() {
+    return requestStartTime;
+  }
 
   @Override
   public long receiveDurationNanos() {
@@ -174,4 +214,15 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     return request.headers().get(HttpHeaderNames.HOST);
   }
 
+  public boolean isResponseStarted() {
+    return response != null;
+  }
+
+  public boolean isRequestReceived() {
+    return request != null;
+  }
+
+  public boolean isRequestComplete() {
+    return requestCompleteTimeNanos > 0;
+  }
 }

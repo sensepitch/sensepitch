@@ -3,7 +3,6 @@ package org.sensepitch.edge;
 import java.util.List;
 
 /**
- *
  * TODO: Needs to be consolidated into {@link IpTraitsLookup}
  *
  * @author Jens Wilke
@@ -42,7 +41,6 @@ public class TrieIpLabelLookup implements IpLabelLookup {
   }
 
   public int getNodeCount() {
-    return trieIpv4.getNodeCount() +  trieIpv6.getNodeCount();
+    return trieIpv4.getNodeCount() + trieIpv6.getNodeCount();
   }
-
 }

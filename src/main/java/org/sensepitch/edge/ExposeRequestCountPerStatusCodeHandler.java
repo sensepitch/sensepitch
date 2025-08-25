@@ -8,8 +8,6 @@ import io.prometheus.metrics.model.snapshots.CounterSnapshot.CounterDataPointSna
 import io.prometheus.metrics.model.snapshots.Labels;
 import io.prometheus.metrics.model.snapshots.MetricSnapshot;
 import io.prometheus.metrics.model.snapshots.Unit;
-
-import javax.swing.plaf.nimbus.NimbusLookAndFeel;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
@@ -22,37 +20,41 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
 
   private final Map<Integer, LongAdder> counts = new ConcurrentHashMap<>();
 
-  private final Histogram requestDuration = Histogram.builder()
-    .name("http_request_duration_seconds")
-    .help("HTTP total duration of the request from ")
-    .unit(Unit.SECONDS)
-    .labelNames("ingress", "method", "status_code")
-    .classicExponentialUpperBounds(0.002, 2.0, 14)
-    .build();
+  private final Histogram requestDuration =
+      Histogram.builder()
+          .name("http_request_duration_seconds")
+          .help("HTTP total duration of the request from ")
+          .unit(Unit.SECONDS)
+          .labelNames("ingress", "method", "status_code")
+          .classicExponentialUpperBounds(0.002, 2.0, 14)
+          .build();
 
-  private final Histogram responseTime = Histogram.builder()
-    .name("http_request_response_time_seconds")
-    .help("HTTP request response time in seconds")
-    .unit(Unit.SECONDS)
-    .labelNames("ingress", "method", "status_code")
-    .classicExponentialUpperBounds(0.002, 2.0, 14)
-    .build();
+  private final Histogram responseTime =
+      Histogram.builder()
+          .name("http_request_response_time_seconds")
+          .help("HTTP request response time in seconds")
+          .unit(Unit.SECONDS)
+          .labelNames("ingress", "method", "status_code")
+          .classicExponentialUpperBounds(0.002, 2.0, 14)
+          .build();
 
-
-  public ExposeRequestCountPerStatusCodeHandler() { }
+  public ExposeRequestCountPerStatusCodeHandler() {}
 
   private MetricSnapshot internalCollect() {
-    CounterSnapshot.Builder builder = CounterSnapshot.builder()
-        .name("nginx_ingress_controller_requests")
-        .help("Total HTTP requests, partitioned by status code")
-        .unit(new Unit("requests"));
-    counts.forEach((statusCode, adder) -> {
-      CounterDataPointSnapshot dp = CounterDataPointSnapshot.builder()
-            .value(adder.sum())
-            .labels(Labels.of("code", statusCode + ""))
-            .build();
-        builder.dataPoint(dp);
-    });
+    CounterSnapshot.Builder builder =
+        CounterSnapshot.builder()
+            .name("nginx_ingress_controller_requests")
+            .help("Total HTTP requests, partitioned by status code")
+            .unit(new Unit("requests"));
+    counts.forEach(
+        (statusCode, adder) -> {
+          CounterDataPointSnapshot dp =
+              CounterDataPointSnapshot.builder()
+                  .value(adder.sum())
+                  .labels(Labels.of("code", statusCode + ""))
+                  .build();
+          builder.dataPoint(dp);
+        });
     CounterSnapshot snapshot = builder.build();
     return snapshot;
   }
@@ -61,12 +63,13 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
   public void registerCollectors(Consumer<Collector> consumer) {
     consumer.accept(requestDuration);
     consumer.accept(responseTime);
-    consumer.accept(new Collector() {
-      @Override
-      public MetricSnapshot collect() {
-        return internalCollect();
-      }
-    });
+    consumer.accept(
+        new Collector() {
+          @Override
+          public MetricSnapshot collect() {
+            return internalCollect();
+          }
+        });
   }
 
   @Override
@@ -83,15 +86,15 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
       statusCode = 600;
     }
     counts.computeIfAbsent(statusCode, k -> new LongAdder()).increment();
-    String[] labelValues = new String[]{
-      info.request().headers().get(HttpHeaderNames.HOST),
-      info.request().method().name(),
-      statusCode + ""
-    };
-    requestDuration.labelValues(labelValues)
-      .observe(Unit.nanosToSeconds(info.totalDurationNanos()));
-    responseTime.labelValues(labelValues)
-      .observe(Unit.nanosToSeconds(info.responseTimeNanos()));
+    String[] labelValues =
+        new String[] {
+          info.request().headers().get(HttpHeaderNames.HOST),
+          info.request().method().name(),
+          statusCode + ""
+        };
+    requestDuration
+        .labelValues(labelValues)
+        .observe(Unit.nanosToSeconds(info.totalDurationNanos()));
+    responseTime.labelValues(labelValues).observe(Unit.nanosToSeconds(info.responseTimeNanos()));
   }
-
 }

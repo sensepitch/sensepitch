@@ -3,10 +3,8 @@ package org.sensepitch.edge;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.http.HttpRequest;
-
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.util.List;
 
 /**
  * @author Jens Wilke
@@ -37,17 +35,23 @@ public class IpTraitsHandler extends ChannelInboundHandlerAdapter {
       var attributes = builder.build();
       StringBuilder collectTraits = new StringBuilder();
       if (attributes.isAsnKnown()) {
-        if (!collectTraits.isEmpty()) { collectTraits.append(", "); }
+        if (!collectTraits.isEmpty()) {
+          collectTraits.append(", ");
+        }
         collectTraits.append("asn=");
         collectTraits.append(attributes.asn());
       }
       if (attributes.isoCountry() != null) {
-        if (!collectTraits.isEmpty()) { collectTraits.append(", "); }
+        if (!collectTraits.isEmpty()) {
+          collectTraits.append(", ");
+        }
         collectTraits.append("country=");
         collectTraits.append(attributes.isoCountry());
       }
       if (attributes.crawler()) {
-        if (!collectTraits.isEmpty()) { collectTraits.append(", "); }
+        if (!collectTraits.isEmpty()) {
+          collectTraits.append(", ");
+        }
         collectTraits.append("crawler");
       }
       // TODO: add key/value traits
@@ -66,5 +70,4 @@ public class IpTraitsHandler extends ChannelInboundHandlerAdapter {
     }
     super.channelRead(ctx, msg);
   }
-
 }

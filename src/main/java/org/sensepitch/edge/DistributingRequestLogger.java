@@ -17,5 +17,4 @@ public class DistributingRequestLogger implements RequestLogger {
       requestLogger.logRequest(info);
     }
   }
-
 }
