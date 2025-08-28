@@ -141,6 +141,7 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [x] upstream backpressure
 - [x] YAML based configuration
 - [x] improve default configuration
+- [ ] add netty memory pool statistics to monitoring
 - [ ] make Netty socket options available, check connection timeout and SO_TIMEOUT
 - [ ] config: stop / complain if option is unknown
 - [ ] upstream metrics, e.g. pool metrics
@@ -168,6 +169,7 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [ ] multiple servers per upstream
 - [ ] upstream health
 - [ ] warmup
+- [ ] limit body size for incoming requests? NGINX has 1M as default / client_max_body_size / status 413
 
 ## Resources
 
@@ -182,6 +184,23 @@ Robust keep alive is a bit different from what the HTTP/1.1 standard defines.
 - https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/408
 - https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Keep-Alive
 - https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Connection_management_in_HTTP_1.x
+
+## Exposed metrics
+
+Metrics are exposed via prometheus. This section picks out metrics that should be monitored.
+
+### `process_resident_memory_bytes`
+
+Total memory consumption of the process as reported by the OS.
+
+### `jvm_memory_used_bytes{area="heap"}` and `jvm_memory_used_bytes{area="nonheap"}` 
+
+Java heap, which is used for allocating objects and nonheap which is used for JVM internals.
+The `nonheap` does not include direct buffers.
+
+### `jvm_buffer_pool_used_bytes{pool="direct"}`
+
+Netty makes use of pooled direct byte buffers.
 
 ## Put Sensepitch Edge in front of NGINX
 

@@ -24,8 +24,8 @@ public class TrackIngressConnectionsHandler extends ChannelInboundHandlerAdapter
     consumer.accept(
         () ->
             CounterSnapshot.builder()
-                .name("ingress_connections_opened_total")
-                .help("Total number of connections opened")
+                .name("ingress_connections_opened")
+                .help("Connections opened")
                 .dataPoint(
                     CounterSnapshot.CounterDataPointSnapshot.builder()
                         .value(connectionOpened.sum())
@@ -35,8 +35,8 @@ public class TrackIngressConnectionsHandler extends ChannelInboundHandlerAdapter
     consumer.accept(
         () ->
             CounterSnapshot.builder()
-                .name("ingress_connections_closed_total")
-                .help("Total number of connections closed")
+                .name("ingress_connections_closed")
+                .help("Connections closed")
                 .dataPoint(
                     CounterSnapshot.CounterDataPointSnapshot.builder()
                         .value(connectionClosed.sum())
@@ -46,7 +46,7 @@ public class TrackIngressConnectionsHandler extends ChannelInboundHandlerAdapter
     consumer.accept(
         () ->
             CounterSnapshot.builder()
-                .name("ingress_connections_in_flight_total")
+                .name("ingress_connections_open")
                 .help("Number of currently active connections (opened - closed)")
                 .dataPoint(
                     CounterSnapshot.CounterDataPointSnapshot.builder()

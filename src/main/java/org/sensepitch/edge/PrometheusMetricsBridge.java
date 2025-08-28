@@ -22,7 +22,7 @@ public class PrometheusMetricsBridge implements MetricsBridge {
   public PrometheusMetricsBridge(PrometheusConfig cfg) {
     prometheusRegistry = PrometheusRegistry.defaultRegistry;
     if (cfg.enableJvmMetrics()) {
-      JvmMetrics.builder().register();
+      JvmMetrics.builder().register(prometheusRegistry);
     }
     HTTPServer server = null;
     try {
