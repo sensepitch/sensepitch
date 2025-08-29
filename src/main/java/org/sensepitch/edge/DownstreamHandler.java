@@ -84,21 +84,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   void forwardLastContentAndFlush(
       ChannelHandlerContext ctx, Future<Channel> future, LastHttpContent msg) {
     if (future.isSuccess()) {
-      String remoteIp = ProxyUtil.extractRemoteIp(ctx);
-      String upstreamString = DEBUG.channelId(future.resultNow());
-      String requestString =
-          "upstream="
-              + upstreamString
-              + ", "
-              + requestForDebugging.headers().get(HttpHeaderNames.HOST)
-              + " "
-              + remoteIp
-              + " "
-              + requestForDebugging.method()
-              + " "
-              + requestForDebugging.uri();
-      DownstreamProgress.progress(
-          ctx.channel(), "write and flushing last content to upstream, " + requestString);
       future
           .resultNow()
           .writeAndFlush(msg)
@@ -107,10 +92,11 @@ public class DownstreamHandler extends ChannelDuplexHandler {
                   future1 -> {
                     // TODO: counter!
                     if (!future1.isSuccess()) {
+                      ctx.pipeline().get(RequestLoggingHandler.class).setException(future1.cause());
                       completeWithError(
                           ctx,
                           HttpResponseStatus.valueOf(
-                              502, "Upstream write problem: " + future1.cause()));
+                              502, "Upstream write problem"));
                     }
                   });
     } else {
@@ -127,8 +113,9 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       }
       DEBUG.error(ctx.channel(), "unknown upstream connection problem", future.cause());
       if (cause.getMessage() != null) {
+        ctx.pipeline().get(RequestLoggingHandler.class).setException(cause);
         completeWithError(
-            ctx, HttpResponseStatus.valueOf(502, "Upstream connection problem: " + cause));
+            ctx, HttpResponseStatus.valueOf(502, "Upstream connection problem"));
       } else {
         completeWithError(ctx, HttpResponseStatus.valueOf(502, "Upstream connection problem"));
       }

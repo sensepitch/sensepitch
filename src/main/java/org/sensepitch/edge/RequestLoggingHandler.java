@@ -4,12 +4,15 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
-import io.netty.handler.codec.http.DefaultFullHttpRequest;
+import io.netty.handler.codec.http.DefaultHttpRequest;
+import io.netty.handler.codec.http.DefaultHttpResponse;
 import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
+import io.netty.handler.codec.http.HttpResponseStatus;
+import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.concurrent.Ticker;
 
@@ -33,7 +36,10 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
    * headers, like set the host, if its known.
    */
   private static final HttpRequest MOCK_REQUEST =
-      new DefaultFullHttpRequest(NIL_VERSION, NIL_METHOD, "/");
+      new DefaultHttpRequest(NIL_VERSION, NIL_METHOD, "/");
+
+  private static final HttpResponse ABORTED_RESPONSE =
+      new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.valueOf(499, "Aborted"));
 
   static {
     MOCK_REQUEST.headers().set(HttpHeaderNames.HOST, SanitizeHostHandler.NIL_HOST);
@@ -109,49 +115,79 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
       contentBytes += httpContent.content().readableBytes();
     }
     if (msg instanceof LastHttpContent lastHttpContent) {
-      long now = ticker.nanoTime();
-      // optional, since done by flush, however, we save a timer call
-      if (responseStartedTimeNanos == 0) {
-        responseStartedTimeNanos = now;
-      }
-      // not yet received LastHttpContent from ingress, assume it was complete already
-      // special case may happen (in testing), if upstream response is already processed
-      // before we receive the last content
-      // This can also be a request timeout
-      if (requestCompleteTimeNanos == 0) {
-        requestCompleteTimeNanos = now;
-      }
-      if (requestStartTimeNanos == 0) {
-        requestStartTimeNanos = now;
-      }
+      consolidateTimes();
       trailingHeaders = lastHttpContent.trailingHeaders();
-      channel = ctx.channel();
+      // in case of a timeout we send a timeout response. make sure we have
+      // a mock request to not confuse loggers
+      if (request == null) {
+        request = MOCK_REQUEST;
+      }
       promise
           .unvoid()
           .addListener(
               future -> {
-                // in case of a timeout we send a timeout response. make sure we have
-                // a mock request to not confuse loggers
                 if (request == null) {
-                  request = MOCK_REQUEST;
+                  return;
                 }
-                responseReceivedTimeNanos = ticker.nanoTime();
-                error = future.cause();
-                // TODO: in case of error, maybe different status code? maybe set content to 0?
-                try {
-                  logger.logRequest(this);
-                  requestCount++;
-                } catch (Throwable e) {
-                  DEBUG.error(ctx.channel(), "Error logging request", e);
-                }
-                // reset times for keep alive requests
-                requestStartTime = System.currentTimeMillis();
-                connectionEstablishedNanos = now;
-                requestCompleteTimeNanos = responseStartedTimeNanos = 0;
-                request = null;
+                setException(future.cause());
+                log(ctx);
               });
     }
     super.write(ctx, msg, promise);
+  }
+
+  private void log(ChannelHandlerContext ctx) {
+    channel = ctx.channel();
+    responseReceivedTimeNanos = ticker.nanoTime();
+    // TODO: in case of error, maybe different status code? maybe set content to 0?
+    try {
+      logger.logRequest(this);
+      requestCount++;
+    } catch (Throwable e) {
+      DEBUG.error(ctx.channel(), "Error logging request", e);
+    }
+    // reset times for keep alive requests
+    requestStartTime = System.currentTimeMillis();
+    connectionEstablishedNanos = ticker.nanoTime();
+    requestCompleteTimeNanos = responseStartedTimeNanos = 0;
+    request = null;
+  }
+
+  private void consolidateTimes() {
+    long now = ticker.nanoTime();
+    // optional, since done by flush, however, we save a timer call
+    if (responseStartedTimeNanos == 0) {
+      responseStartedTimeNanos = now;
+    }
+    // not yet received LastHttpContent from ingress, assume it was complete already
+    // special case may happen (in testing), if upstream response is already processed
+    // before we receive the last content
+    // This can also be a request timeout
+    if (requestCompleteTimeNanos == 0) {
+      requestCompleteTimeNanos = now;
+    }
+    if (requestStartTimeNanos == 0) {
+      requestStartTimeNanos = now;
+    }
+  }
+
+  public void setException(Throwable throwable) {
+    if (error == null) {
+      error = throwable;
+    }
+  }
+
+  /**
+   * Write a log if the connection is closed before the complete response is received. Rationale: In
+   * case of a PUT or POST the request may have an effect, so we should also log it.
+   */
+  @Override
+  public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+    if (request != null) {
+      response = ABORTED_RESPONSE;
+      log(ctx);
+    }
+    super.channelInactive(ctx);
   }
 
   @Override

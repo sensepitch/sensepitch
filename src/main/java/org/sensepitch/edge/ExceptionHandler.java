@@ -14,10 +14,12 @@ import io.netty.handler.ssl.NotSslRecordException;
 import io.netty.handler.ssl.SslHandshakeCompletionEvent;
 import java.net.SocketException;
 import javax.net.ssl.SSLHandshakeException;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * @author Jens Wilke
  */
+@Slf4j
 public class ExceptionHandler extends ChannelInboundHandlerAdapter {
 
   static final ProxyLogger LOG = ProxyLogger.get(ExceptionHandler.class);
@@ -102,9 +104,10 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
     // logging handler does know exact state
     RequestLoggingHandler loggingHandler =
         ctx.channel().pipeline().get(RequestLoggingHandler.class);
+    loggingHandler.setException(cause);
     String phase;
     if (!loggingHandler.isRequestReceived()) {
-      phase = "request";
+      phase = "requesting";
     } else if (!loggingHandler.isRequestComplete()) {
       phase = "upload";
     } else if (!loggingHandler.isResponseStarted()) {
@@ -127,7 +130,7 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
       completeWithError(ctx, status);
       return;
     }
-    // log if impossible to send response
+    // log if impossible to send normal response
     LOG.downstreamError(ctx.channel(), "error, phase=" + phase, cause);
     completeAndClose(ctx);
   }
