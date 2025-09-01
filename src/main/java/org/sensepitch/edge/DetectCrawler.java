@@ -89,14 +89,17 @@ public class DetectCrawler implements BypassCheck {
     }
     BypassCheck bypassCheck = agentMatch.get(agent);
     if (bypassCheck != null && bypassCheck.allowBypass(channel, request)) {
-      return bypassCheck.allowBypass(channel, request);
+      request.headers().set(DeflectorHandler.TRAFFIC_FLAVOR_HEADER, DeflectorHandler.FLAVOR_CRAWLER);
+      return true;
     }
     String ipLabels = IpTraitsHandler.extract(request);
     if (ipLabels != null && ipLabels.contains("crawler")) {
+      request.headers().set(DeflectorHandler.TRAFFIC_FLAVOR_HEADER, DeflectorHandler.FLAVOR_CRAWLER);
       return true;
     }
     for (Map.Entry<String, BypassCheck> entry : fragmentAgentMatch.entrySet()) {
       if (agent.contains(entry.getKey()) && entry.getValue().allowBypass(channel, request)) {
+        request.headers().set(DeflectorHandler.TRAFFIC_FLAVOR_HEADER, DeflectorHandler.FLAVOR_CRAWLER);
         return true;
       }
     }

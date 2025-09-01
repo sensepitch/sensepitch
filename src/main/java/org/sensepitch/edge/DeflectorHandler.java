@@ -43,6 +43,11 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
 
   /** Request header containing the validated admission token */
   public static String ADMISSION_TOKEN_HEADER = "X-Sensepitch-Admission-Token";
+  public static String TRAFFIC_FLAVOR_HEADER = "X-Sensepitch-Traffic-Flavor";
+
+  public static String FLAVOR_USER = "user";
+  public static String FLAVOR_CRAWLER = "crawler";
+  public static String FLAVOR_DEFLECT = "deflect";
 
   ChallengeGenerationAndVerification challengeVerification =
       new ChallengeGenerationAndVerification();
@@ -131,17 +136,20 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
     if (msg instanceof HttpRequest request) {
       if (checkAdmissionCookie(request)) {
         passedRequestCounter.increment();
+        request.headers().set(DeflectorHandler.TRAFFIC_FLAVOR_HEADER, DeflectorHandler.FLAVOR_USER);
         ctx.fireChannelRead(msg);
       } else if (!noBypassCheck.skipBypass(ctx, request)
           && bypassCheck.allowBypass(ctx.channel(), request)) {
         bypassRequestCounter.increment();
         ctx.fireChannelRead(msg);
       } else if (request.method() == HttpMethod.GET && request.uri().startsWith(VERIFICATION_URL)) {
+        request.headers().set(DeflectorHandler.TRAFFIC_FLAVOR_HEADER, DeflectorHandler.FLAVOR_USER);
         handleChallengeAnswer(ctx, request);
         ReferenceCountUtil.release(request);
         skipFollowingContent(ctx);
       } else {
         // TODO: behaviour of non GET requests?
+        request.headers().set(DeflectorHandler.TRAFFIC_FLAVOR_HEADER, DeflectorHandler.FLAVOR_DEFLECT);
         outputChallengeHtml(ctx);
         ReferenceCountUtil.release(request);
         skipFollowingContent(ctx);

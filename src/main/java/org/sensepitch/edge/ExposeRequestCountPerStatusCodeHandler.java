@@ -1,6 +1,7 @@
 package org.sensepitch.edge;
 
 import io.netty.handler.codec.http.HttpHeaderNames;
+import io.prometheus.metrics.core.metrics.Counter;
 import io.prometheus.metrics.core.metrics.Histogram;
 import io.prometheus.metrics.model.registry.Collector;
 import io.prometheus.metrics.model.snapshots.CounterSnapshot;
@@ -55,6 +56,12 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
       .classicExponentialUpperBounds(64, 2.0, 14)
       .build();
 
+  private final Counter requestFlavorCount =
+    Counter.builder()
+      .name("sensepitch_ingress_request_flavor_count")
+      .labelNames("flavor")
+      .build();
+
   public ExposeRequestCountPerStatusCodeHandler() {}
 
   @Override
@@ -63,6 +70,7 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
     consumer.accept(responseTime);
     consumer.accept(responseSize);
     consumer.accept(requestSize);
+    consumer.accept(requestFlavorCount);
   }
 
   @Override
@@ -91,6 +99,9 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
     responseTime.labelValues(labelValues).observe(Unit.nanosToSeconds(info.responseTimeNanos()));
     requestSize.labelValues(ingress).observe(info.bytesReceived());
     responseSize.labelValues(ingress).observe(info.bytesSent());
+    String flavor = info.request().headers().get(DeflectorHandler.TRAFFIC_FLAVOR_HEADER);
+    if (flavor == null) { flavor = "unknown"; }
+    requestFlavorCount.labelValues(flavor).inc();
   }
 
 }
