@@ -74,6 +74,10 @@ public class StandardOutRequestLogger implements RequestLogger {
             + " "
             + info.contentBytes()
             + " "
+            + info.bytesReceived()
+            + ">"
+            + info.bytesSent()
+            + " "
             + timing
             + " \""
             + bypass

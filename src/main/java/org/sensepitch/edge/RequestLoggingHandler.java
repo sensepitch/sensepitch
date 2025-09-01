@@ -65,6 +65,10 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   /** When everything was received */
   private long responseReceivedTimeNanos;
 
+  private long bytesReceivedStart;
+  private long bytesSentStart;
+  CountByteIoHandler countByteIoHandler;
+
   private final ProxyMetrics metrics;
 
   public RequestLoggingHandler(ProxyMetrics metrics, RequestLogger logger) {
@@ -80,6 +84,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
 
   @Override
   public void channelActive(ChannelHandlerContext ctx) throws Exception {
+    countByteIoHandler = ctx.pipeline().get(CountByteIoHandler.class);
     connectionEstablishedNanos = ticker.nanoTime();
     super.channelActive(ctx);
   }
@@ -158,6 +163,8 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     requestStartTime = System.currentTimeMillis();
     connectionEstablishedNanos = ticker.nanoTime();
     requestCompleteTimeNanos = responseStartedTimeNanos = 0;
+    bytesReceivedStart = countByteIoHandler.getBytesReceived();
+    bytesSentStart = countByteIoHandler.getBytesSent();
     request = null;
   }
 
@@ -232,6 +239,16 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   @Override
   public long contentBytes() {
     return contentBytes;
+  }
+
+  @Override
+  public long bytesSent() {
+    return countByteIoHandler.getBytesSent() - bytesSentStart;
+  }
+
+  @Override
+  public long bytesReceived() {
+    return countByteIoHandler.getBytesReceived() - bytesReceivedStart;
   }
 
   @Override

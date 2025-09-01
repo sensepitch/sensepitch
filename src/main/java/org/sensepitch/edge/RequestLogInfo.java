@@ -45,7 +45,22 @@ public interface RequestLogInfo {
 
   HttpResponse response();
 
+  /**
+   * Size, in bytes, of the message body sent. Total bytes sent, including header bytes and
+   * framing is {@link #bytesSent()}
+   */
   long contentBytes();
+
+  /**
+   * Total bytes sent for this request including headers. However, this only accounts
+   * for HTTP traffic and does not include HTTPS
+   */
+  long bytesSent();
+
+  /**
+   * Total bytes received for this request including headers.
+   */
+  long bytesReceived();
 
   long requestStartTimeMillis();
 

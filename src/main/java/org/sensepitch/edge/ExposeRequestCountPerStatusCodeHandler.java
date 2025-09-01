@@ -39,11 +39,20 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
 
   private final Histogram responseSize =
     Histogram.builder()
-      .name("sensepitch_ingress_response_size")
-      .help("")
+      .name("sensepitch_ingress_response_size_bytes")
+      .help("Bytes of HTTP response traffic sent")
       .unit(Unit.BYTES)
       .labelNames("ingress")
       .classicExponentialUpperBounds(256, 2.0, 14)
+      .build();
+
+  private final Histogram requestSize =
+    Histogram.builder()
+      .name("sensepitch_ingress_request_size_bytes")
+      .help("Bytes of HTTP request traffic received")
+      .unit(Unit.BYTES)
+      .labelNames("ingress")
+      .classicExponentialUpperBounds(64, 2.0, 14)
       .build();
 
   public ExposeRequestCountPerStatusCodeHandler() {}
@@ -53,6 +62,7 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
     consumer.accept(requestDuration);
     consumer.accept(responseTime);
     consumer.accept(responseSize);
+    consumer.accept(requestSize);
   }
 
   @Override
@@ -79,7 +89,8 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
         .labelValues(labelValues)
         .observe(Unit.nanosToSeconds(info.totalDurationNanos()));
     responseTime.labelValues(labelValues).observe(Unit.nanosToSeconds(info.responseTimeNanos()));
-    // TODO: need to add header and http framing overhead
-    responseSize.labelValues(ingress).observe(info.contentBytes());
+    requestSize.labelValues(ingress).observe(info.bytesReceived());
+    responseSize.labelValues(ingress).observe(info.bytesSent());
   }
+
 }

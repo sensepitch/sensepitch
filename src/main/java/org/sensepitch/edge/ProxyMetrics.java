@@ -18,10 +18,10 @@ public class ProxyMetrics implements HasMultipleMetrics {
   private final MetricSet metricSet = new MetricSet();
 
   public final Counter ingressErrorCounter =
-      metricSet.add(Counter.builder().name("ingress_error").labelNames("phase", "type").build());
+      metricSet.add(Counter.builder().name("sensepitch_ingress_request_errors").labelNames("phase", "type").build());
 
   public final Counter ingressReceiveTimeoutCounter =
-      metricSet.add(Counter.builder().name("ingress_receive_timeout").labelNames("phase").build());
+      metricSet.add(Counter.builder().name("sensepitch_ingress_receive_timeout").labelNames("phase").build());
 
   public final CounterDataPoint ingressReceiveTimeoutFirstRequest =
       ingressReceiveTimeoutCounter.labelValues("first_request");
