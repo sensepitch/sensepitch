@@ -89,14 +89,18 @@ public class DownstreamHandler extends ChannelDuplexHandler {
           .writeAndFlush(msg)
           .addListener(
               (ChannelFutureListener)
-                  future1 -> {
+                  f -> {
                     // TODO: counter!
-                    if (!future1.isSuccess()) {
-                      ctx.pipeline().get(RequestLoggingHandler.class).setException(future1.cause());
-                      completeWithError(
-                          ctx,
-                          HttpResponseStatus.valueOf(
-                              502, "Upstream write problem"));
+                    if (!f.isSuccess()) {
+                      ctx.executor()
+                          .execute(
+                              () -> {
+                                ctx.pipeline()
+                                    .get(RequestLoggingHandler.class)
+                                    .setException(f.cause());
+                                completeWithError(
+                                    ctx, HttpResponseStatus.valueOf(502, "Upstream write problem"));
+                              });
                     }
                   });
     } else {
@@ -104,21 +108,20 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       ReferenceCountUtil.release(msg);
       Throwable cause = future.cause();
       // TODO: counter!
-      if (cause instanceof IllegalStateException) {
-        if (cause.getMessage() != null
-            && cause.getMessage().contains("Too many outstanding acquire operations")) {
-          completeWithError(ctx, HttpResponseStatus.valueOf(509, "Bandwidth Limit Exceeded"));
-          return;
-        }
+      if (cause instanceof IllegalStateException
+          && cause.getMessage() != null
+          && cause.getMessage().contains("Too many outstanding acquire operations")) {
+        completeWithError(ctx, HttpResponseStatus.valueOf(509, "Bandwidth Limit Exceeded"));
+        return;
       }
       DEBUG.error(ctx.channel(), "unknown upstream connection problem", future.cause());
-      if (cause.getMessage() != null) {
-        ctx.pipeline().get(RequestLoggingHandler.class).setException(cause);
-        completeWithError(
-            ctx, HttpResponseStatus.valueOf(502, "Upstream connection problem"));
-      } else {
-        completeWithError(ctx, HttpResponseStatus.valueOf(502, "Upstream connection problem"));
-      }
+      ctx.executor()
+          .execute(
+              () -> {
+                ctx.pipeline().get(RequestLoggingHandler.class).setException(cause);
+                completeWithError(
+                    ctx, HttpResponseStatus.valueOf(502, "Upstream connection problem"));
+              });
     }
   }
 

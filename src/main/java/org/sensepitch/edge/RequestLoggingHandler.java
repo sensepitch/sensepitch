@@ -65,8 +65,11 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   /** When everything was received */
   private long responseReceivedTimeNanos;
 
-  public RequestLoggingHandler(RequestLogger logger) {
+  private final ProxyMetrics metrics;
+
+  public RequestLoggingHandler(ProxyMetrics metrics, RequestLogger logger) {
     this.logger = logger;
+    this.metrics = metrics;
   }
 
   @Override
@@ -84,6 +87,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
     if (msg instanceof HttpRequest) {
+      metrics.ingressRequestsStarted.increment();
       request = (HttpRequest) msg;
       requestStartTime = System.currentTimeMillis();
       requestStartTimeNanos = ticker.nanoTime();
@@ -120,18 +124,22 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
       // in case of a timeout we send a timeout response. make sure we have
       // a mock request to not confuse loggers
       if (request == null) {
-        request = MOCK_REQUEST;
-      }
-      promise
+        // don't send to logging
+        // request = MOCK_REQUEST;
+      } else {
+        promise
           .unvoid()
           .addListener(
-              future -> {
-                if (request == null) {
-                  return;
-                }
-                setException(future.cause());
-                log(ctx);
-              });
+            future -> {
+              if (request == null) {
+                return;
+              }
+              metrics.ingressRequestsCompleted.increment();
+              // TODO: switch response in case of error?
+              setException(future.cause());
+              log(ctx);
+            });
+      }
     }
     super.write(ctx, msg, promise);
   }
@@ -184,6 +192,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   @Override
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     if (request != null) {
+      metrics.ingressRequestsAborted.increment();
       response = ABORTED_RESPONSE;
       log(ctx);
     }

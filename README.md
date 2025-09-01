@@ -141,6 +141,7 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [x] upstream backpressure
 - [x] YAML based configuration
 - [x] improve default configuration
+- [ ] metrics: byte IO count per ingress
 - [ ] add netty memory pool statistics to monitoring
 - [ ] make Netty socket options available, check connection timeout and SO_TIMEOUT
 - [ ] config: stop / complain if option is unknown

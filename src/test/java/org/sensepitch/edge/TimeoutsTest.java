@@ -56,7 +56,7 @@ class TimeoutsTest {
           .ticker(ticker)
           .handlers(
               new FakeSslHandler(),
-              new RequestLoggingHandler(new StandardOutRequestLogger()),
+              new RequestLoggingHandler(new ProxyMetrics(), new StandardOutRequestLogger()),
               new ClientTimeoutHandler(cfg, proxyMetrics),
               new HttpServerKeepAliveHandler(),
               new DownstreamHandler(new MockUpstream(), proxyMetrics),

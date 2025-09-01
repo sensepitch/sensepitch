@@ -18,12 +18,10 @@ import java.util.function.Consumer;
  */
 public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetrics, RequestLogger {
 
-  private final Map<Integer, LongAdder> counts = new ConcurrentHashMap<>();
-
   private final Histogram requestDuration =
       Histogram.builder()
-          .name("http_request_duration_seconds")
-          .help("HTTP total duration of the request from ")
+          .name("sensepitch_ingress_request_duration_seconds")
+          .help("HTTP total duration of the request from established connection to response received")
           .unit(Unit.SECONDS)
           .labelNames("ingress", "method", "status_code")
           .classicExponentialUpperBounds(0.002, 2.0, 14)
@@ -31,49 +29,35 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
 
   private final Histogram responseTime =
       Histogram.builder()
-          .name("http_request_response_time_seconds")
-          .help("HTTP request response time in seconds")
+          .name("sensepitch_ingress_response_duration_seconds")
+          .help("HTTP request response duration in seconds, from request received to first byte " +
+            "of response, not effected by client connectivity")
           .unit(Unit.SECONDS)
           .labelNames("ingress", "method", "status_code")
           .classicExponentialUpperBounds(0.002, 2.0, 14)
           .build();
 
-  public ExposeRequestCountPerStatusCodeHandler() {}
+  private final Histogram responseSize =
+    Histogram.builder()
+      .name("sensepitch_ingress_response_size")
+      .help("")
+      .unit(Unit.BYTES)
+      .labelNames("ingress")
+      .classicExponentialUpperBounds(256, 2.0, 14)
+      .build();
 
-  private MetricSnapshot internalCollect() {
-    CounterSnapshot.Builder builder =
-        CounterSnapshot.builder()
-            .name("nginx_ingress_controller_requests")
-            .help("Total HTTP requests, partitioned by status code")
-            .unit(new Unit("requests"));
-    counts.forEach(
-        (statusCode, adder) -> {
-          CounterDataPointSnapshot dp =
-              CounterDataPointSnapshot.builder()
-                  .value(adder.sum())
-                  .labels(Labels.of("code", statusCode + ""))
-                  .build();
-          builder.dataPoint(dp);
-        });
-    CounterSnapshot snapshot = builder.build();
-    return snapshot;
-  }
+  public ExposeRequestCountPerStatusCodeHandler() {}
 
   @Override
   public void registerCollectors(Consumer<Collector> consumer) {
     consumer.accept(requestDuration);
     consumer.accept(responseTime);
-    consumer.accept(
-        new Collector() {
-          @Override
-          public MetricSnapshot collect() {
-            return internalCollect();
-          }
-        });
+    consumer.accept(responseSize);
   }
 
   @Override
   public void logRequest(RequestLogInfo info) {
+    String ingress = info.request().headers().get(HttpHeaderNames.HOST);
     int statusCode = info.response().status().code();
     // timeout before request was received, ignore
     if (statusCode == 408 && info.request().method().equals(RequestLogInfo.NIL_METHOD)) {
@@ -85,10 +69,9 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
     if (statusCode >= 600) {
       statusCode = 600;
     }
-    counts.computeIfAbsent(statusCode, k -> new LongAdder()).increment();
     String[] labelValues =
         new String[] {
-          info.request().headers().get(HttpHeaderNames.HOST),
+          ingress,
           info.request().method().name(),
           statusCode + ""
         };
@@ -96,5 +79,7 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
         .labelValues(labelValues)
         .observe(Unit.nanosToSeconds(info.totalDurationNanos()));
     responseTime.labelValues(labelValues).observe(Unit.nanosToSeconds(info.responseTimeNanos()));
+    // TODO: need to add header and http framing overhead
+    responseSize.labelValues(ingress).observe(info.contentBytes());
   }
 }

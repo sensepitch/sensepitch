@@ -211,6 +211,7 @@ public class Proxy implements ProxyContext {
                   final ChannelPipeline pipeline = ch.pipeline();
                   pipeline.addLast(trackIngressConnectionsHandler);
                   pipeline.addLast(new SniHandler(sniMapping));
+                  pipeline.addLast(new CountByteIoHandler());
                   pipeline.addLast(new HttpServerCodec());
                   addHttpHandlers(pipeline);
                 }
@@ -235,7 +236,7 @@ public class Proxy implements ProxyContext {
     pipeline.addLast(sanitizeHostHandler);
     // logger sits between codec and rest so it sees header modifications
     // from timeout and keep alive below
-    pipeline.addLast(new RequestLoggingHandler(requestLogger));
+    pipeline.addLast(new RequestLoggingHandler(metrics, requestLogger));
     pipeline.addLast(new ClientTimeoutHandler(connectionConfig, metrics));
     pipeline.addLast(new HttpServerKeepAliveHandler());
     // ch.pipeline().addLast(new LoggingHandler(LogLevel.INFO, ByteBufFormat.SIMPLE));
