@@ -59,7 +59,7 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
   private final Counter requestFlavorCount =
     Counter.builder()
       .name("sensepitch_ingress_request_flavor_count")
-      .labelNames("flavor")
+      .labelNames("flavor", "country")
       .build();
 
   public ExposeRequestCountPerStatusCodeHandler() {}
@@ -99,9 +99,13 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
     responseTime.labelValues(labelValues).observe(Unit.nanosToSeconds(info.responseTimeNanos()));
     requestSize.labelValues(ingress).observe(info.bytesReceived());
     responseSize.labelValues(ingress).observe(info.bytesSent());
+    String country = info.request().headers().get(IpTraitsHandler.COUNTRY_HEADER);
+    if (country == null) {
+      country = "unknown";
+    }
     String flavor = info.request().headers().get(DeflectorHandler.TRAFFIC_FLAVOR_HEADER);
     if (flavor == null) { flavor = "unknown"; }
-    requestFlavorCount.labelValues(flavor).inc();
+    requestFlavorCount.labelValues(flavor, country).inc();
   }
 
 }

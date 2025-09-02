@@ -17,7 +17,7 @@ public class GeoIp2CountryLookup {
     reader = new DatabaseReader.Builder(database).build();
   }
 
-  public String lookupAsn(InetAddress addr) throws Exception {
+  public String lookupCountry(InetAddress addr) throws Exception {
     var optional = reader.tryCountry(addr);
     if (optional.isEmpty()) {
       return null;

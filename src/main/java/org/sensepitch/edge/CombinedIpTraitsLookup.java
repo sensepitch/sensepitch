@@ -27,8 +27,12 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
         addCountryLookup(new GeoIp2CountryLookup(ipLookupConfig.geoIp2().countryDbPath()));
       }
     }
+    if (ipLookupConfig.ipInfoPath() != null) {
+      IpInfoCountryAndAsnLookup  ipLookup = new IpInfoCountryAndAsnLookup(ipLookupConfig.ipInfoPath());
+      ipAttributesLookups.add(ipLookup);
+    }
     ipLabelLookup = readGoogleBotList();
-    System.out.println("IP lookup nodes: " + ((TrieIpLabelLookup) ipLabelLookup).getNodeCount());
+    LOG.info("IP lookup nodes: " + ((TrieIpLabelLookup) ipLabelLookup).getNodeCount());
   }
 
   public static TrieIpLabelLookup readGoogleBotList() throws IOException {
@@ -48,36 +52,22 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
 
   private void addAsnLookup(AsnLookup asnLookup) {
     ipAttributesLookups.add(
-        new IpTraitsLookup() {
-          @Override
-          public void lookup(IpTraits.Builder builder, InetAddress address) {
-            try {
-              long asn = asnLookup.lookupAsn(address);
-              if (asn >= 0) {
-                builder.asn(asn);
-              }
-            } catch (Exception e) {
-              lookupException(e);
-            }
-          }
-        });
+      (builder, address) -> {
+        long asn = asnLookup.lookupAsn(address);
+        if (asn >= 0) {
+          builder.asn(asn);
+        }
+      });
   }
 
   private void addCountryLookup(GeoIp2CountryLookup countryLookup) {
     ipAttributesLookups.add(
-        new IpTraitsLookup() {
-          @Override
-          public void lookup(IpTraits.Builder builder, InetAddress address) {
-            try {
-              var country = countryLookup.lookupAsn(address);
-              if (country != null) {
-                builder.isoCountry(country);
-              }
-            } catch (Exception e) {
-              lookupException(e);
-            }
-          }
-        });
+      (builder, address) -> {
+        var country = countryLookup.lookupCountry(address);
+        if (country != null) {
+          builder.isoCountry(country);
+        }
+      });
   }
 
   private void lookupException(Exception e) {
@@ -87,7 +77,11 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
   @Override
   public void lookup(IpTraits.Builder builder, InetAddress address) {
     for (IpTraitsLookup db : ipAttributesLookups) {
-      db.lookup(builder, address);
+      try {
+        db.lookup(builder, address);
+      } catch (Exception e) {
+        lookupException(e);
+      }
     }
     byte[] addressBytes = address.getAddress();
     List<String> labelList;
