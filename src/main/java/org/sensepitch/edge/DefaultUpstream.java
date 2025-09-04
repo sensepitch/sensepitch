@@ -62,6 +62,8 @@ public class DefaultUpstream implements Upstream {
                     new IdleStateHandler(0, poolCfg.idleTimeoutSeconds(), 0) {
                       @Override
                       protected void channelIdle(ChannelHandlerContext ctx, IdleStateEvent evt) {
+                        // TODO: temp for investigation, remove
+                        LOG.info("Closing idle upstream connection: " + ctx.channel().id() + ", event=" + evt);
                         ctx.close();
                       }
                     });
@@ -120,7 +122,6 @@ public class DefaultUpstream implements Upstream {
   @Override
   public void release(Channel ch) {
     if (pool != null) {
-      //      System.err.println("release: " + ch.id().asShortText());
       // TODO: void promise
       pool.release(ch);
     }
@@ -137,15 +138,6 @@ public class DefaultUpstream implements Upstream {
                 // make sure read is on, it can happen that its till off from previous request
                 // handling
                 ch.setOption(ChannelOption.AUTO_READ, true);
-                if (LOG.isTraceEnabled()) {
-                  LOG.trace(
-                      ingress,
-                      f.resultNow(),
-                      "pool acquire complete isActive="
-                          + ch.isActive()
-                          + " pipeline="
-                          + ch.pipeline().names());
-                }
                 // we need to do this in the listener call back, to set the downstream
                 ch.pipeline().replace("forward", "forward", new ForwardHandler(ingress));
               }

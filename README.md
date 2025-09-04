@@ -141,9 +141,9 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [x] upstream backpressure
 - [x] YAML based configuration
 - [x] improve default configuration
-- [ ] metrics: byte IO count per ingress
+- [x] metrics: byte IO count per ingress
 - [ ] add netty memory pool statistics to monitoring
-- [ ] make Netty socket options available, check connection timeout and SO_TIMEOUT
+- [ ] documentation, nice examples are: Envoy
 - [ ] config: stop / complain if option is unknown
 - [ ] upstream metrics, e.g. pool metrics
 - [ ] Logging: Netty LoggingHandler seems not to respect the origin class

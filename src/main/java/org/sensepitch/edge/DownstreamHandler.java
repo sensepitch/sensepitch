@@ -35,8 +35,8 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   private Future<Channel> upstreamChannelFuture;
   private boolean returnUpstreamToPool;
   private Runnable flushTask;
-  // TODO: remove requestForDebugging
-  private HttpRequest requestForDebugging;
+  /** This avoids that we sent stray content to upstream when not expected */
+  private boolean ingressRequestComplete;
 
   public DownstreamHandler(Upstream upstream, ProxyMetrics metrics) {
     this.upstream = upstream;
@@ -44,24 +44,31 @@ public class DownstreamHandler extends ChannelDuplexHandler {
 
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) {
-    DEBUG.traceChannelRead(ctx, msg);
     if (msg instanceof HttpRequest request) {
-      if (upstreamChannelFuture != null) {
+      if (upstreamChannelFuture != null || ingressRequestComplete) {
+        DEBUG.error(ctx.channel(), "another request is unexpected");
         completeWithError(
             ctx,
             new HttpResponseStatus(
-                HttpResponseStatus.BAD_GATEWAY.code(), "pipelining not supported"));
+                HttpResponseStatus.BAD_REQUEST.code(), "another request is unexpected"));
         return;
       }
-      this.requestForDebugging = request;
       DownstreamProgress.progress(ctx.channel(), "request received, selecting upstream");
       upstreamChannelFuture = upstream.connect(ctx);
       augmentHeadersAndForwardRequest(ctx, request);
     } else if (msg instanceof LastHttpContent) {
-      // upstream might complete the response before the client sent the complete request
-      // e.g. in an error situation
+      // upstream might complete the response before the client sent the LastHttpContent request
+      // e.g. for a get request that has no body
       if (upstreamChannelFuture == null) {
         ReferenceCountUtil.release(msg);
+        return;
+      }
+      if (ingressRequestComplete) {
+        DEBUG.error(ctx.channel(), "another request is unexpected");
+        completeWithError(
+          ctx,
+          new HttpResponseStatus(
+            HttpResponseStatus.BAD_REQUEST.code(), "another request is unexpected"));
         return;
       }
       DownstreamProgress.progress(ctx.channel(), "last content, waiting for upstream");
@@ -73,6 +80,14 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     } else if (msg instanceof HttpContent) {
       if (upstreamChannelFuture == null) {
         ReferenceCountUtil.release(msg);
+        return;
+      }
+      if (ingressRequestComplete) {
+        DEBUG.error(ctx.channel(), "another request is unexpected");
+        completeWithError(
+          ctx,
+          new HttpResponseStatus(
+            HttpResponseStatus.BAD_REQUEST.code(), "another request is unexpected"));
         return;
       }
       upstreamChannelFuture.addListener(
@@ -90,7 +105,8 @@ public class DownstreamHandler extends ChannelDuplexHandler {
           .addListener(
               (ChannelFutureListener)
                   f -> {
-                    // TODO: counter!
+                    DEBUG.info(ctx.channel().id() + ">" + future.resultNow().id() + ", flushed success=" + f.isSuccess() + ", cause=" + f.cause());
+                    // TODO: error counter!
                     if (!f.isSuccess()) {
                       ctx.executor()
                           .execute(
@@ -136,6 +152,8 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   }
 
   void completeWithError(ChannelHandlerContext ctx, HttpResponseStatus status) {
+    // TODO: maybe response was already sent
+    // TODO: drop upstream
     FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status);
     response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
     ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
@@ -152,7 +170,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       ctx.channel().config().setAutoRead(false);
     }
     addProxyHeaders(ctx, request);
-    DEBUG.trace(ctx.channel(), "connecting to upstream contentExpected=" + contentExpected);
     upstreamChannelFuture.addListener(
         (FutureListener<Channel>)
             future -> {
@@ -247,7 +264,12 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       throws Exception {
     // FIXME: sanitize headers
     if (msg instanceof HttpResponse response) {
+      // NGINX will send Connection: close after 100 requests
       returnUpstreamToPool = HttpUtil.isKeepAlive(response);
+      // DEBUG.trace(ctx.channel(), upstreamChannelFuture.resultNow(),
+      //  "connection=" + response.headers().get(HttpHeaderNames.CONNECTION) +
+      //  ", keepAlive=" + response.headers().get(HttpHeaderNames.KEEP_ALIVE) +
+      //  ", returnUpstreamToPool=" + returnUpstreamToPool);
       response.headers().remove(HttpHeaderNames.KEEP_ALIVE);
       response.headers().remove(HttpHeaderNames.CONNECTION);
     }
