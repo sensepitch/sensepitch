@@ -54,6 +54,17 @@ public class StandardOutRequestLogger implements RequestLogger {
     if (error == null) {
       error = "-";
     }
+    String signatureAgent = request.headers().get("Signature-Agent");
+    if (signatureAgent == null) {
+      signatureAgent = "-";
+    }
+    StringBuilder sb = new StringBuilder();
+    request.headers().forEach(kv ->
+      {
+        if (sb.length() > 0) { sb.append(", "); }
+        sb.append(sanitize(kv.getKey())); }
+    );
+    String headerNames = sb.toString();
     System.out.println(
         "RQ0 "
             + info.requestId()
@@ -87,7 +98,14 @@ public class StandardOutRequestLogger implements RequestLogger {
             + referer
             + " \""
             + error
-            + "\"");
+            + "\""
+            + " \""
+            + signatureAgent
+            + "\""
+            + " \""
+            + headerNames
+            + "\""
+    );
   }
 
   String formatDeltaTime(long nanoDelta) {
