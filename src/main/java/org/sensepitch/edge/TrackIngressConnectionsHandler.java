@@ -4,7 +4,6 @@ import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.prometheus.metrics.model.registry.Collector;
-import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import io.prometheus.metrics.model.snapshots.CounterSnapshot;
 import io.prometheus.metrics.model.snapshots.GaugeSnapshot;
 import io.prometheus.metrics.model.snapshots.Labels;
@@ -69,5 +68,4 @@ public class TrackIngressConnectionsHandler extends ChannelInboundHandlerAdapter
     connectionClosed.increment();
     super.channelInactive(ctx);
   }
-
 }

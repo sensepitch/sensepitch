@@ -133,17 +133,17 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
         // request = MOCK_REQUEST;
       } else {
         promise
-          .unvoid()
-          .addListener(
-            future -> {
-              if (request == null) {
-                return;
-              }
-              metrics.ingressRequestsCompleted.increment();
-              // TODO: switch response in case of error?
-              setException(future.cause());
-              log(ctx);
-            });
+            .unvoid()
+            .addListener(
+                future -> {
+                  if (request == null) {
+                    return;
+                  }
+                  metrics.ingressRequestsCompleted.increment();
+                  // TODO: switch response in case of error?
+                  setException(future.cause());
+                  log(ctx);
+                });
       }
     }
     super.write(ctx, msg, promise);
@@ -194,8 +194,8 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
 
   /**
    * Write a log if the connection is closed before the full response is received. Rationale: In
-   * case of a PUT or POST the request may have an effect, so we should also log it. In this case
-   * we set contentBytes to 0, because the contentBytes do not reflect
+   * case of a PUT or POST the request may have an effect, so we should also log it. In this case we
+   * set contentBytes to 0, because the contentBytes do not reflect
    */
   @Override
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {

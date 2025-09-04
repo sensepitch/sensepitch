@@ -21,6 +21,7 @@ import org.apache.commons.csv.CSVRecord;
  */
 public class DetectCrawler implements BypassCheck {
 
+  private static final String FRAGMENT_SEQUENCE = "http";
   private final Map<String, BypassCheck> agentMatch = new HashMap<>();
   private final Map<String, BypassCheck> fragmentAgentMatch = new HashMap<>();
 
@@ -37,7 +38,7 @@ public class DetectCrawler implements BypassCheck {
       };
 
   public DetectCrawler(DetectCrawlerConfig cfg) {
-    if (!cfg.disableDefault()) {
+    if (!cfg.disableBuiltinDatabase()) {
       try {
         readTsv(this.getClass().getResourceAsStream("/crawlers.tsv"));
       } catch (IOException e) {
@@ -70,6 +71,9 @@ public class DetectCrawler implements BypassCheck {
           agentMatch.put(agent, AGENT_MATCH_BYPASS);
           String fragment = record.get("fragment-agent-match");
           if (fragment != null && !fragment.isEmpty()) {
+            if (!fragment.contains(FRAGMENT_SEQUENCE)) {
+              throw new IllegalArgumentException("fragment must contain " + FRAGMENT_SEQUENCE);
+            }
             fragmentAgentMatch.put(fragment, FRAGMENT_AGENT_MATCH_BYPASS);
           }
           count++;
@@ -89,17 +93,27 @@ public class DetectCrawler implements BypassCheck {
     }
     BypassCheck bypassCheck = agentMatch.get(agent);
     if (bypassCheck != null && bypassCheck.allowBypass(channel, request)) {
-      request.headers().set(DeflectorHandler.TRAFFIC_FLAVOR_HEADER, DeflectorHandler.FLAVOR_CRAWLER);
+      request
+          .headers()
+          .set(DeflectorHandler.TRAFFIC_FLAVOR_HEADER, DeflectorHandler.FLAVOR_CRAWLER);
       return true;
     }
     String ipLabels = IpTraitsHandler.extract(request);
     if (ipLabels != null && ipLabels.contains("crawler")) {
-      request.headers().set(DeflectorHandler.TRAFFIC_FLAVOR_HEADER, DeflectorHandler.FLAVOR_CRAWLER);
+      request
+          .headers()
+          .set(DeflectorHandler.TRAFFIC_FLAVOR_HEADER, DeflectorHandler.FLAVOR_CRAWLER);
       return true;
+    }
+    // screen first to be faster for normal browsers
+    if (!agent.contains(FRAGMENT_SEQUENCE)) {
+      return false;
     }
     for (Map.Entry<String, BypassCheck> entry : fragmentAgentMatch.entrySet()) {
       if (agent.contains(entry.getKey()) && entry.getValue().allowBypass(channel, request)) {
-        request.headers().set(DeflectorHandler.TRAFFIC_FLAVOR_HEADER, DeflectorHandler.FLAVOR_CRAWLER);
+        request
+            .headers()
+            .set(DeflectorHandler.TRAFFIC_FLAVOR_HEADER, DeflectorHandler.FLAVOR_CRAWLER);
         return true;
       }
     }

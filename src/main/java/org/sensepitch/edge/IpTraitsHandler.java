@@ -79,5 +79,4 @@ public class IpTraitsHandler extends ChannelInboundHandlerAdapter {
     }
     super.channelRead(ctx, msg);
   }
-
 }

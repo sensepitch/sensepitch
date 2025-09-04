@@ -4,14 +4,7 @@ import io.netty.handler.codec.http.HttpHeaderNames;
 import io.prometheus.metrics.core.metrics.Counter;
 import io.prometheus.metrics.core.metrics.Histogram;
 import io.prometheus.metrics.model.registry.Collector;
-import io.prometheus.metrics.model.snapshots.CounterSnapshot;
-import io.prometheus.metrics.model.snapshots.CounterSnapshot.CounterDataPointSnapshot;
-import io.prometheus.metrics.model.snapshots.Labels;
-import io.prometheus.metrics.model.snapshots.MetricSnapshot;
 import io.prometheus.metrics.model.snapshots.Unit;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 
 /**
@@ -22,7 +15,8 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
   private final Histogram requestDuration =
       Histogram.builder()
           .name("sensepitch_ingress_request_duration_seconds")
-          .help("HTTP total duration of the request from established connection to response received")
+          .help(
+              "HTTP total duration of the request from established connection to response received")
           .unit(Unit.SECONDS)
           .labelNames("ingress", "method", "status_code")
           .classicExponentialUpperBounds(0.002, 2.0, 14)
@@ -31,36 +25,37 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
   private final Histogram responseTime =
       Histogram.builder()
           .name("sensepitch_ingress_response_duration_seconds")
-          .help("HTTP request response duration in seconds, from request received to first byte " +
-            "of response, not effected by client connectivity")
+          .help(
+              "HTTP request response duration in seconds, from request received to first byte "
+                  + "of response, not effected by client connectivity")
           .unit(Unit.SECONDS)
           .labelNames("ingress", "method", "status_code")
           .classicExponentialUpperBounds(0.002, 2.0, 14)
           .build();
 
   private final Histogram responseSize =
-    Histogram.builder()
-      .name("sensepitch_ingress_response_size_bytes")
-      .help("Bytes of HTTP response traffic sent")
-      .unit(Unit.BYTES)
-      .labelNames("ingress")
-      .classicExponentialUpperBounds(256, 2.0, 14)
-      .build();
+      Histogram.builder()
+          .name("sensepitch_ingress_response_size_bytes")
+          .help("Bytes of HTTP response traffic sent")
+          .unit(Unit.BYTES)
+          .labelNames("ingress")
+          .classicExponentialUpperBounds(256, 2.0, 14)
+          .build();
 
   private final Histogram requestSize =
-    Histogram.builder()
-      .name("sensepitch_ingress_request_size_bytes")
-      .help("Bytes of HTTP request traffic received")
-      .unit(Unit.BYTES)
-      .labelNames("ingress")
-      .classicExponentialUpperBounds(64, 2.0, 14)
-      .build();
+      Histogram.builder()
+          .name("sensepitch_ingress_request_size_bytes")
+          .help("Bytes of HTTP request traffic received")
+          .unit(Unit.BYTES)
+          .labelNames("ingress")
+          .classicExponentialUpperBounds(64, 2.0, 14)
+          .build();
 
   private final Counter requestFlavorCount =
-    Counter.builder()
-      .name("sensepitch_ingress_request_flavor_count")
-      .labelNames("flavor", "country")
-      .build();
+      Counter.builder()
+          .name("sensepitch_ingress_request_flavor_count")
+          .labelNames("flavor", "country")
+          .build();
 
   public ExposeRequestCountPerStatusCodeHandler() {}
 
@@ -87,12 +82,7 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
     if (statusCode >= 600) {
       statusCode = 600;
     }
-    String[] labelValues =
-        new String[] {
-          ingress,
-          info.request().method().name(),
-          statusCode + ""
-        };
+    String[] labelValues = new String[] {ingress, info.request().method().name(), statusCode + ""};
     requestDuration
         .labelValues(labelValues)
         .observe(Unit.nanosToSeconds(info.totalDurationNanos()));
@@ -104,8 +94,9 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
       country = "unknown";
     }
     String flavor = info.request().headers().get(DeflectorHandler.TRAFFIC_FLAVOR_HEADER);
-    if (flavor == null) { flavor = "unknown"; }
+    if (flavor == null) {
+      flavor = "unknown";
+    }
     requestFlavorCount.labelValues(flavor, country).inc();
   }
-
 }

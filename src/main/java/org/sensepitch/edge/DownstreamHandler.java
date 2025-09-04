@@ -35,6 +35,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   private Future<Channel> upstreamChannelFuture;
   private boolean returnUpstreamToPool;
   private Runnable flushTask;
+
   /** This avoids that we sent stray content to upstream when not expected */
   private boolean ingressRequestComplete;
 
@@ -66,9 +67,9 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       if (ingressRequestComplete) {
         DEBUG.error(ctx.channel(), "another request is unexpected");
         completeWithError(
-          ctx,
-          new HttpResponseStatus(
-            HttpResponseStatus.BAD_REQUEST.code(), "another request is unexpected"));
+            ctx,
+            new HttpResponseStatus(
+                HttpResponseStatus.BAD_REQUEST.code(), "another request is unexpected"));
         return;
       }
       DownstreamProgress.progress(ctx.channel(), "last content, waiting for upstream");
@@ -85,9 +86,9 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       if (ingressRequestComplete) {
         DEBUG.error(ctx.channel(), "another request is unexpected");
         completeWithError(
-          ctx,
-          new HttpResponseStatus(
-            HttpResponseStatus.BAD_REQUEST.code(), "another request is unexpected"));
+            ctx,
+            new HttpResponseStatus(
+                HttpResponseStatus.BAD_REQUEST.code(), "another request is unexpected"));
         return;
       }
       upstreamChannelFuture.addListener(
@@ -105,7 +106,14 @@ public class DownstreamHandler extends ChannelDuplexHandler {
           .addListener(
               (ChannelFutureListener)
                   f -> {
-                    DEBUG.info(ctx.channel().id() + ">" + future.resultNow().id() + ", flushed success=" + f.isSuccess() + ", cause=" + f.cause());
+                    DEBUG.info(
+                        ctx.channel().id()
+                            + ">"
+                            + future.resultNow().id()
+                            + ", flushed success="
+                            + f.isSuccess()
+                            + ", cause="
+                            + f.cause());
                     // TODO: error counter!
                     if (!f.isSuccess()) {
                       ctx.executor()

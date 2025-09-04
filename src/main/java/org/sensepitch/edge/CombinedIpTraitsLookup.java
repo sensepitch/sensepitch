@@ -28,7 +28,8 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
       }
     }
     if (ipLookupConfig.ipInfoPath() != null) {
-      IpInfoCountryAndAsnLookup  ipLookup = new IpInfoCountryAndAsnLookup(ipLookupConfig.ipInfoPath());
+      IpInfoCountryAndAsnLookup ipLookup =
+          new IpInfoCountryAndAsnLookup(ipLookupConfig.ipInfoPath());
       ipAttributesLookups.add(ipLookup);
     }
     ipLabelLookup = readGoogleBotList();
@@ -52,22 +53,22 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
 
   private void addAsnLookup(AsnLookup asnLookup) {
     ipAttributesLookups.add(
-      (builder, address) -> {
-        long asn = asnLookup.lookupAsn(address);
-        if (asn >= 0) {
-          builder.asn(asn);
-        }
-      });
+        (builder, address) -> {
+          long asn = asnLookup.lookupAsn(address);
+          if (asn >= 0) {
+            builder.asn(asn);
+          }
+        });
   }
 
   private void addCountryLookup(GeoIp2CountryLookup countryLookup) {
     ipAttributesLookups.add(
-      (builder, address) -> {
-        var country = countryLookup.lookupCountry(address);
-        if (country != null) {
-          builder.isoCountry(country);
-        }
-      });
+        (builder, address) -> {
+          var country = countryLookup.lookupCountry(address);
+          if (country != null) {
+            builder.isoCountry(country);
+          }
+        });
   }
 
   private void lookupException(Exception e) {

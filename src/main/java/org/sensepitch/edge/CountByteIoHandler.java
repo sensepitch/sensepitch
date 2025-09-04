@@ -21,7 +21,8 @@ public class CountByteIoHandler extends ChannelDuplexHandler {
   }
 
   @Override
-  public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
+  public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
+      throws Exception {
     assert msg instanceof ByteBuf;
     sent += ((ByteBuf) msg).readableBytes();
     super.write(ctx, msg, promise);
@@ -34,5 +35,4 @@ public class CountByteIoHandler extends ChannelDuplexHandler {
   public long getBytesSent() {
     return sent;
   }
-
 }

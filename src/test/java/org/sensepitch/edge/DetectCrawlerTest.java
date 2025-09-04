@@ -20,6 +20,7 @@ public class DetectCrawlerTest {
     assertThat(checkBypass(detectCrawler, "Any")).isFalse();
     assertThat(checkBypass(detectCrawler, null)).isFalse();
     assertThat(checkBypass(detectCrawler, "Twitterbot/1.0")).isTrue();
+    assertThat(checkBypass(detectCrawler, "+https://openai.com/gptbot")).isTrue();
   }
 
   private static boolean checkBypass(DetectCrawler detectCrawler, String userAgent) {

@@ -63,7 +63,11 @@ public class DefaultUpstream implements Upstream {
                       @Override
                       protected void channelIdle(ChannelHandlerContext ctx, IdleStateEvent evt) {
                         // TODO: temp for investigation, remove
-                        LOG.info("Closing idle upstream connection: " + ctx.channel().id() + ", event=" + evt);
+                        LOG.info(
+                            "Closing idle upstream connection: "
+                                + ctx.channel().id()
+                                + ", event="
+                                + evt);
                         ctx.close();
                       }
                     });

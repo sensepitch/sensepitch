@@ -28,8 +28,10 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     if (downstream != null) {
       LOG.error(
-        "upstream closed but request still in flight, downstream=" + downstream.id() +
-        ", upstream=" + ctx.channel().id());
+          "upstream closed but request still in flight, downstream="
+              + downstream.id()
+              + ", upstream="
+              + ctx.channel().id());
     }
     super.channelInactive(ctx);
   }

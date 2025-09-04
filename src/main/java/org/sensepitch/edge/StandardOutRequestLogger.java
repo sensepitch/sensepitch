@@ -59,11 +59,15 @@ public class StandardOutRequestLogger implements RequestLogger {
       signatureAgent = "-";
     }
     StringBuilder sb = new StringBuilder();
-    request.headers().forEach(kv ->
-      {
-        if (sb.length() > 0) { sb.append(", "); }
-        sb.append(sanitize(kv.getKey())); }
-    );
+    request
+        .headers()
+        .forEach(
+            kv -> {
+              if (sb.length() > 0) {
+                sb.append(", ");
+              }
+              sb.append(sanitize(kv.getKey()));
+            });
     String headerNames = sb.toString();
     System.out.println(
         "RQ0 "
@@ -104,8 +108,7 @@ public class StandardOutRequestLogger implements RequestLogger {
             + "\""
             + " \""
             + headerNames
-            + "\""
-    );
+            + "\"");
   }
 
   String formatDeltaTime(long nanoDelta) {

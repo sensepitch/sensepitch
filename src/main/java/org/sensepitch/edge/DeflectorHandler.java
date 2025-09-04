@@ -43,6 +43,7 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
 
   /** Request header containing the validated admission token */
   public static String ADMISSION_TOKEN_HEADER = "X-Sensepitch-Admission-Token";
+
   public static String TRAFFIC_FLAVOR_HEADER = "X-Sensepitch-Traffic-Flavor";
 
   public static String FLAVOR_USER = "user";
@@ -149,7 +150,9 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
         skipFollowingContent(ctx);
       } else {
         // TODO: behaviour of non GET requests?
-        request.headers().set(DeflectorHandler.TRAFFIC_FLAVOR_HEADER, DeflectorHandler.FLAVOR_DEFLECT);
+        request
+            .headers()
+            .set(DeflectorHandler.TRAFFIC_FLAVOR_HEADER, DeflectorHandler.FLAVOR_DEFLECT);
         outputChallengeHtml(ctx);
         ReferenceCountUtil.release(request);
         skipFollowingContent(ctx);
