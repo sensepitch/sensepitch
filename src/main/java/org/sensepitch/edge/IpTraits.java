@@ -18,7 +18,7 @@ public record IpTraits(long asn, String isoCountry, boolean crawler, Map<String,
   }
 
   public static class Builder {
-    long asn = -1;
+    private long asn = -1;
     Map<String, String> keyValue = new HashMap<String, String>();
 
     public void addLabel(String key, String value) {

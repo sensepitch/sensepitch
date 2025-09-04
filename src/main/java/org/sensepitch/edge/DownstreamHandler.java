@@ -84,33 +84,23 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   void forwardLastContentAndFlush(
       ChannelHandlerContext ctx, Future<Channel> future, LastHttpContent msg) {
     if (future.isSuccess()) {
-      String remoteIp = ProxyUtil.extractRemoteIp(ctx);
-      String upstreamString = DEBUG.channelId(future.resultNow());
-      String requestString =
-          "upstream="
-              + upstreamString
-              + ", "
-              + requestForDebugging.headers().get(HttpHeaderNames.HOST)
-              + " "
-              + remoteIp
-              + " "
-              + requestForDebugging.method()
-              + " "
-              + requestForDebugging.uri();
-      DownstreamProgress.progress(
-          ctx.channel(), "write and flushing last content to upstream, " + requestString);
       future
           .resultNow()
           .writeAndFlush(msg)
           .addListener(
               (ChannelFutureListener)
-                  future1 -> {
+                  f -> {
                     // TODO: counter!
-                    if (!future1.isSuccess()) {
-                      completeWithError(
-                          ctx,
-                          HttpResponseStatus.valueOf(
-                              502, "Upstream write problem: " + future1.cause()));
+                    if (!f.isSuccess()) {
+                      ctx.executor()
+                          .execute(
+                              () -> {
+                                ctx.pipeline()
+                                    .get(RequestLoggingHandler.class)
+                                    .setException(f.cause());
+                                completeWithError(
+                                    ctx, HttpResponseStatus.valueOf(502, "Upstream write problem"));
+                              });
                     }
                   });
     } else {
@@ -118,20 +108,20 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       ReferenceCountUtil.release(msg);
       Throwable cause = future.cause();
       // TODO: counter!
-      if (cause instanceof IllegalStateException) {
-        if (cause.getMessage() != null
-            && cause.getMessage().contains("Too many outstanding acquire operations")) {
-          completeWithError(ctx, HttpResponseStatus.valueOf(509, "Bandwidth Limit Exceeded"));
-          return;
-        }
+      if (cause instanceof IllegalStateException
+          && cause.getMessage() != null
+          && cause.getMessage().contains("Too many outstanding acquire operations")) {
+        completeWithError(ctx, HttpResponseStatus.valueOf(509, "Bandwidth Limit Exceeded"));
+        return;
       }
       DEBUG.error(ctx.channel(), "unknown upstream connection problem", future.cause());
-      if (cause.getMessage() != null) {
-        completeWithError(
-            ctx, HttpResponseStatus.valueOf(502, "Upstream connection problem: " + cause));
-      } else {
-        completeWithError(ctx, HttpResponseStatus.valueOf(502, "Upstream connection problem"));
-      }
+      ctx.executor()
+          .execute(
+              () -> {
+                ctx.pipeline().get(RequestLoggingHandler.class).setException(cause);
+                completeWithError(
+                    ctx, HttpResponseStatus.valueOf(502, "Upstream connection problem"));
+              });
     }
   }
 

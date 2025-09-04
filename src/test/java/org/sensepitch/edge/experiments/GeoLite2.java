@@ -18,11 +18,11 @@ public class GeoLite2 {
 
   IpTraitsLookup traitsLookup;
 
-  public static void main(String[] args) throws IOException {
+  public static void main(String[] args) throws Exception {
     new GeoLite2().test();
   }
 
-  public void test() throws IOException {
+  public void test() throws Exception {
     IpLookupConfig cfg =
         IpLookupConfig.builder()
             .geoIp2(
@@ -34,6 +34,8 @@ public class GeoLite2 {
                         System.getenv("HOME")
                             + "/proj/maxmind-geolite2/GeoLite2-Country-latest/GeoLite2-Country.mmdb")
                     .build())
+//          .ipInfoPath( System.getenv("HOME")
+//          + "/proj/ipinfo-lite/ipinfo_lite.mmdb")
             .build();
     traitsLookup = new CombinedIpTraitsLookup(cfg);
     final String address = "80.187.82.121";
@@ -43,7 +45,7 @@ public class GeoLite2 {
     lookup("66.249.64.69");
   }
 
-  private void lookup(String address) throws UnknownHostException {
+  private void lookup(String address) throws Exception {
     InetAddress ip = InetAddress.getByName(address);
     IpTraits.Builder builder = IpTraits.builder();
     traitsLookup.lookup(builder, ip);

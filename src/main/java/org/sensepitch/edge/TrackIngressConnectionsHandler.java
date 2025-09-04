@@ -4,7 +4,9 @@ import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.prometheus.metrics.model.registry.Collector;
+import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import io.prometheus.metrics.model.snapshots.CounterSnapshot;
+import io.prometheus.metrics.model.snapshots.GaugeSnapshot;
 import io.prometheus.metrics.model.snapshots.Labels;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
@@ -24,8 +26,8 @@ public class TrackIngressConnectionsHandler extends ChannelInboundHandlerAdapter
     consumer.accept(
         () ->
             CounterSnapshot.builder()
-                .name("ingress_connections_opened_total")
-                .help("Total number of connections opened")
+                .name("sensepitch_ingress_connections_opened")
+                .help("Connections opened")
                 .dataPoint(
                     CounterSnapshot.CounterDataPointSnapshot.builder()
                         .value(connectionOpened.sum())
@@ -35,8 +37,8 @@ public class TrackIngressConnectionsHandler extends ChannelInboundHandlerAdapter
     consumer.accept(
         () ->
             CounterSnapshot.builder()
-                .name("ingress_connections_closed_total")
-                .help("Total number of connections closed")
+                .name("sensepitch_ingress_connections_closed")
+                .help("Connections closed")
                 .dataPoint(
                     CounterSnapshot.CounterDataPointSnapshot.builder()
                         .value(connectionClosed.sum())
@@ -45,11 +47,11 @@ public class TrackIngressConnectionsHandler extends ChannelInboundHandlerAdapter
                 .build());
     consumer.accept(
         () ->
-            CounterSnapshot.builder()
-                .name("ingress_connections_in_flight_total")
+            GaugeSnapshot.builder()
+                .name("sensepitch_ingress_connections_active")
                 .help("Number of currently active connections (opened - closed)")
                 .dataPoint(
-                    CounterSnapshot.CounterDataPointSnapshot.builder()
+                    GaugeSnapshot.GaugeDataPointSnapshot.builder()
                         .value(connectionOpened.sum() - connectionClosed.sum())
                         .labels(Labels.EMPTY)
                         .build())
@@ -67,4 +69,5 @@ public class TrackIngressConnectionsHandler extends ChannelInboundHandlerAdapter
     connectionClosed.increment();
     super.channelInactive(ctx);
   }
+
 }

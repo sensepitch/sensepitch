@@ -12,9 +12,12 @@ import java.net.InetSocketAddress;
 public class IpTraitsHandler extends ChannelInboundHandlerAdapter {
 
   public static final String TRAITS_HEADER = "X-Sensepitch-Ip-Traits";
+  public static final String COUNTRY_HEADER = "X-Sensepitch-Country";
+  public static final String ASN_HEADER = "X-Sensepitch-Asn";
 
   private final IpTraitsLookup ipTraitsLookup;
   private String traits = null;
+  private IpTraits ipTraits = null;
 
   public IpTraitsHandler(IpTraitsLookup ipTraitsLookup) {
     this.ipTraitsLookup = ipTraitsLookup;
@@ -32,7 +35,7 @@ public class IpTraitsHandler extends ChannelInboundHandlerAdapter {
       // Debug.INSTANCE.trace(ctx.channel(), "remoteAddress: " + address.getHostAddress());
       var builder = IpTraits.builder();
       ipTraitsLookup.lookup(builder, address);
-      var attributes = builder.build();
+      var attributes = ipTraits = builder.build();
       StringBuilder collectTraits = new StringBuilder();
       if (attributes.isAsnKnown()) {
         if (!collectTraits.isEmpty()) {
@@ -66,8 +69,15 @@ public class IpTraitsHandler extends ChannelInboundHandlerAdapter {
     if (msg instanceof HttpRequest request) {
       if (traits != null) {
         request.headers().add(TRAITS_HEADER, traits);
+        if (ipTraits.isoCountry() != null) {
+          request.headers().add(COUNTRY_HEADER, ipTraits.isoCountry());
+        }
+        if (ipTraits.asn() >= 0) {
+          request.headers().add(ASN_HEADER, ipTraits.asn());
+        }
       }
     }
     super.channelRead(ctx, msg);
   }
+
 }

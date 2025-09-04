@@ -32,7 +32,7 @@ public class FlowAndExceptionTest {
       EmbeddedChannel.builder()
           .handlers(
               new TimeoutsTest.FakeSslHandler(),
-              new RequestLoggingHandler(new StandardOutRequestLogger()),
+              new RequestLoggingHandler(new ProxyMetrics(), new StandardOutRequestLogger()),
               new HttpServerKeepAliveHandler(),
               new DownstreamHandler(new MockUpstream(), proxyMetrics),
               new ExceptionHandler(proxyMetrics))
