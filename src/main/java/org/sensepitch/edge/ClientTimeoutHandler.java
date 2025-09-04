@@ -113,7 +113,6 @@ public class ClientTimeoutHandler extends ReadTimeoutHandler {
           new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.REQUEST_TIMEOUT);
       response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
       ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-      DownstreamProgress.complete(ctx.channel());
     }
   }
 
@@ -196,7 +195,6 @@ public class ClientTimeoutHandler extends ReadTimeoutHandler {
       assert evt.state() == IdleState.WRITER_IDLE;
       if (!closed) {
         closed = true;
-        DownstreamProgress.complete(ctx.channel());
         FullHttpResponse response =
             new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.GATEWAY_TIMEOUT);
         response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);

@@ -147,7 +147,6 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
   }
 
   private static void completeAndClose(ChannelHandlerContext ctx) {
-    DownstreamProgress.complete(ctx.channel());
     ctx.channel().close();
   }
 
@@ -155,6 +154,5 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
     FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status);
     response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
     ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-    DownstreamProgress.complete(ctx.channel());
   }
 }

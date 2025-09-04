@@ -137,7 +137,6 @@ public class DefaultUpstream implements Upstream {
         (FutureListener<Channel>)
             f -> {
               if (f.isSuccess()) {
-                DownstreamProgress.progress(ingress, "upstream connection established");
                 Channel ch = f.resultNow();
                 // make sure read is on, it can happen that its till off from previous request
                 // handling

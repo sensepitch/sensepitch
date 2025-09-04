@@ -54,7 +54,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
                 HttpResponseStatus.BAD_REQUEST.code(), "another request is unexpected"));
         return;
       }
-      DownstreamProgress.progress(ctx.channel(), "request received, selecting upstream");
       upstreamChannelFuture = upstream.connect(ctx);
       augmentHeadersAndForwardRequest(ctx, request);
     } else if (msg instanceof LastHttpContent) {
@@ -72,7 +71,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
                 HttpResponseStatus.BAD_REQUEST.code(), "another request is unexpected"));
         return;
       }
-      DownstreamProgress.progress(ctx.channel(), "last content, waiting for upstream");
       // Upstream channel might be still connecting or retrieved and checked by the pool.
       // Queue in all content we receive via the listener.
       upstreamChannelFuture.addListener(
@@ -128,7 +126,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
                     }
                   });
     } else {
-      DownstreamProgress.complete(ctx.channel());
       ReferenceCountUtil.release(msg);
       Throwable cause = future.cause();
       // TODO: counter!
@@ -165,7 +162,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status);
     response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
     ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-    DownstreamProgress.complete(ctx.channel());
   }
 
   /** Send the HTTP request, which may include content, upstream */
@@ -256,7 +252,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     if (upstreamChannelFuture != null && upstreamChannelFuture.isDone()) {
       upstreamChannelFuture.resultNow().config().setAutoRead(true);
     }
-    DownstreamProgress.inactive(ctx.channel());
   }
 
   /**
@@ -290,14 +285,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
         upstreamChannelFuture.resultNow().close();
       }
       upstreamChannelFuture = null;
-      promise =
-          promise
-              .unvoid()
-              .addListener(
-                  (ChannelFutureListener)
-                      future -> {
-                        DownstreamProgress.complete(ctx.channel());
-                      });
     }
     super.write(ctx, msg, promise);
   }
