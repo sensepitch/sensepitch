@@ -12,7 +12,10 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.ssl.NotSslRecordException;
 import io.netty.handler.ssl.SslHandshakeCompletionEvent;
+
+import java.io.IOException;
 import java.net.SocketException;
+import java.nio.channels.ClosedChannelException;
 import javax.net.ssl.SSLHandshakeException;
 import lombok.extern.slf4j.Slf4j;
 
@@ -75,12 +78,24 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
   // reset
   // java.net.SocketException: Connection reset 2053:c0:3700:6157:a256:3692:31aa:1235
   // java.net.SocketException: Connection reset
+  // java.io.IOException: Connection reset by peer java.io.IOException: Connection reset by peer
+  // java.nio.channels.ClosedChannelException java.nio.channels.ClosedChannelException
 
-  /** True for all known variants of connection reset. */
+
+  /**
+   * True for all known variants of ingress connection reset.
+   * If ingress connections resets we don't stop writes but simple ignore the
+   * exceptions that this might result.
+   */
   boolean isConnectionReset(Throwable cause) {
-    return cause instanceof SocketException
+    return
+      cause instanceof ClosedChannelException ||
+      ( cause instanceof IOException
         && cause.getMessage() != null
-        && cause.getMessage().startsWith("Connection reset");
+        && cause.getMessage().startsWith("Connection reset"))
+      || ( cause instanceof SocketException
+        && cause.getMessage() != null
+        && cause.getMessage().startsWith("Connection reset"));
   }
 
   /** Handle an exception, this might be a connection reset a timeout etc. */
@@ -131,7 +146,7 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
       return;
     }
     // log if impossible to send normal response
-    LOG.downstreamError(ctx.channel(), "error, phase=" + phase, cause);
+    LOG.downstreamError(ctx.channel(), "phase=" + phase, cause);
     completeAndClose(ctx);
   }
 
