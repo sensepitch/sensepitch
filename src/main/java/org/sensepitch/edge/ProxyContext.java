@@ -9,4 +9,5 @@ public interface ProxyContext {
 
   EventLoopGroup eventLoopGroup();
 
+  ProxyMetrics metrics();
 }

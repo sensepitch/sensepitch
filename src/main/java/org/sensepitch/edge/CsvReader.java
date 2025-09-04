@@ -12,8 +12,7 @@ public class CsvReader {
 
   public static Stream<String[]> readAll(String path) throws IOException {
     try (Stream<String> lines = Files.lines(Paths.get(path))) {
-      return lines
-        .map(CsvReader::parseLine);
+      return lines.map(CsvReader::parseLine);
     }
   }
 
@@ -21,17 +20,16 @@ public class CsvReader {
   private static final String CSV_SPLIT_REGEX = ",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)";
 
   private static String[] parseLine(String line) {
-      String[] tokens = line.split(CSV_SPLIT_REGEX, -1);
-      for (int i = 0; i < tokens.length; i++) {
-          String field = tokens[i].trim();
-          // remove surrounding quotes, if any
-          if (field.startsWith("\"") && field.endsWith("\"")) {
-              field = field.substring(1, field.length() - 1)
-                .replace("\"\"", "\"");  // un-escape double quotes
-          }
-          tokens[i] = field;
+    String[] tokens = line.split(CSV_SPLIT_REGEX, -1);
+    for (int i = 0; i < tokens.length; i++) {
+      String field = tokens[i].trim();
+      // remove surrounding quotes, if any
+      if (field.startsWith("\"") && field.endsWith("\"")) {
+        field =
+            field.substring(1, field.length() - 1).replace("\"\"", "\""); // un-escape double quotes
       }
-      return tokens;
+      tokens[i] = field;
+    }
+    return tokens;
   }
-
 }

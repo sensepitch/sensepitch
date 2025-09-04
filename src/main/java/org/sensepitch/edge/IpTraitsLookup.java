@@ -7,6 +7,5 @@ import java.net.InetAddress;
  */
 public interface IpTraitsLookup {
 
-  void lookup(IpTraits.Builder builder, InetAddress address);
-
+  void lookup(IpTraits.Builder builder, InetAddress address) throws Exception;
 }

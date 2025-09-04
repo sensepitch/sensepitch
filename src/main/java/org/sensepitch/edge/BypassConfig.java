@@ -1,18 +1,11 @@
 package org.sensepitch.edge;
 
-import lombok.Builder;
-
 import java.util.List;
+import lombok.Builder;
 
 /**
  * @author Jens Wilke
  */
 @Builder
 public record BypassConfig(
-  DetectCrawlerConfig detectCrawler,
-  List<String> uriPrefixes,
-  List<String> uriSuffixes,
-  boolean disableDefaultSuffixes,
-  List<String> hosts,
-  List<String> remotes
-) { }
+    DetectCrawlerConfig detectCrawler, List<String> uris, List<String> remotes) {}

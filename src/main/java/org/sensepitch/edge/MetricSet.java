@@ -1,7 +1,6 @@
 package org.sensepitch.edge;
 
 import io.prometheus.metrics.core.metrics.Metric;
-
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
@@ -22,5 +21,4 @@ public class MetricSet implements Iterable<Metric> {
   public Iterator<Metric> iterator() {
     return metrics.iterator();
   }
-
 }

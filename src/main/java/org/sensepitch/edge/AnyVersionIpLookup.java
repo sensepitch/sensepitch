@@ -12,5 +12,4 @@ public interface AnyVersionIpLookup {
   List<String> findLabelMatching(byte[] addr);
 
   int getNodeCount();
-
 }

@@ -1,10 +1,7 @@
 package org.sensepitch.edge;
 
 import java.math.BigInteger;
-import java.net.Inet4Address;
-import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -16,13 +13,13 @@ public class DefaultAdmissionTokenGenerator implements AdmissionTokenGenerator {
   private static final AtomicLong NEXT_THREAD_ID = new AtomicLong(0);
 
   private static final ThreadLocal<Long> THREAD_ID =
-    ThreadLocal.withInitial(NEXT_THREAD_ID::getAndIncrement);
+      ThreadLocal.withInitial(NEXT_THREAD_ID::getAndIncrement);
 
-  private static final ThreadLocal<Sequence> TL_SEQUENCE =
-    ThreadLocal.withInitial(Sequence::new);
+  private static final ThreadLocal<Sequence> TL_SEQUENCE = ThreadLocal.withInitial(Sequence::new);
 
   private static class Sequence {
     private long count = 0;
+
     public long nextLong() {
       return count++;
     }
@@ -37,12 +34,12 @@ public class DefaultAdmissionTokenGenerator implements AdmissionTokenGenerator {
 
   /**
    * The encoding number base used, which is 62 using alphanumeric chars only. Encoding base 64
-   * would be more efficient since simple bit shifting can be used. However, efficiency
-   * of validity check is most important, here the base does not matter much. Also,
-   * we want to avoid any special characters these might always
-   * give trouble when we want to cut and past and search.
+   * would be more efficient since simple bit shifting can be used. However, efficiency of validity
+   * check is most important, here the base does not matter much. Also, we want to avoid any special
+   * characters these might always give trouble when we want to cut and past and search.
    */
   public static int ENCODING_RADIX = 62;
+
   public static final int SEQUENCE_BYTES = 2;
   public static final int TIME_BYTES = 4;
   public static final int TIME_CHARS = 6;
@@ -68,16 +65,20 @@ public class DefaultAdmissionTokenGenerator implements AdmissionTokenGenerator {
     if (token == null || token.length() != TOKEN_CHARS || token.charAt(0) != prefixChar) {
       return 0;
     }
-    int offset =  TIME_CHARS + MIXED_CHARS + 1;
+    int offset = TIME_CHARS + MIXED_CHARS + 1;
     String uniqueId = token.substring(1, offset);
     String receivedChecksum = token.substring(offset, offset + CHECKSUM_CHARS);
-    byte[] sha256 = ChallengeGenerationAndVerification.sha256((uniqueId + secret).getBytes(StandardCharsets.ISO_8859_1));
-    // TODO: performance instead of encoding the newly generated checksum, we can decode the received checksum and compare the byte value
+    byte[] sha256 =
+        ChallengeGenerationAndVerification.sha256(
+            (uniqueId + secret).getBytes(StandardCharsets.ISO_8859_1));
+    // TODO: performance instead of encoding the newly generated checksum, we can decode the
+    // received checksum and compare the byte value
     String checkSum = encodeChecksum(sha256);
     if (!checkSum.equals(receivedChecksum)) {
       return 0;
     }
-    return decodeLittleEndianToLong(token.substring(1, TIME_CHARS + 1), ENCODING_RADIX) & 0x0ffffffff * 1000 + MILLIS_START_TIME;
+    return decodeLittleEndianToLong(token.substring(1, TIME_CHARS + 1), ENCODING_RADIX)
+        & 0x0ffffffff * 1000 + MILLIS_START_TIME;
   }
 
   public static long calculateCurrentSecondsTime32bits() {
@@ -96,12 +97,14 @@ public class DefaultAdmissionTokenGenerator implements AdmissionTokenGenerator {
 
   public String newAdmission() {
     byte[] bytes = new byte[MIXED_BYTES];
-    mergeMixed(bytes, THREAD_ID.get(), serverIp4address, TL_SEQUENCE.get().nextLong(), getNextRandom());
+    mergeMixed(
+        bytes, THREAD_ID.get(), serverIp4address, TL_SEQUENCE.get().nextLong(), getNextRandom());
     String variationsChars = encodeUniqueId(bytes);
     String timeChars = calculateTimeChars(calculateCurrentSecondsTime32bits());
     String uniqueId = timeChars + variationsChars;
-    byte[] sha256 = ChallengeGenerationAndVerification.sha256(
-      (uniqueId + secret).getBytes(StandardCharsets.ISO_8859_1));
+    byte[] sha256 =
+        ChallengeGenerationAndVerification.sha256(
+            (uniqueId + secret).getBytes(StandardCharsets.ISO_8859_1));
     String checkSum = encodeChecksum(sha256);
     return prefixChar + uniqueId + checkSum;
   }
@@ -138,7 +141,7 @@ public class DefaultAdmissionTokenGenerator implements AdmissionTokenGenerator {
   }
 
   public static int mergeMixed(
-    byte[] bytes, long threadId, byte[] serverIpv4Address, long sequence, long random) {
+      byte[] bytes, long threadId, byte[] serverIpv4Address, long sequence, long random) {
     int idx = 0;
     bytes[idx++] = (byte) threadId;
     bytes[idx++] = serverIpv4Address[0];
@@ -164,11 +167,11 @@ public class DefaultAdmissionTokenGenerator implements AdmissionTokenGenerator {
   }
 
   private static final char[] ALPHABET =
-    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".toCharArray();
+      "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".toCharArray();
 
   /**
-   * Encode a byte[] to a Base62 string (no padding).
-   * Leading zero‐bytes will be preserved as leading '0' chars if you pad externally.
+   * Encode a byte[] to a Base62 string (no padding). Leading zero‐bytes will be preserved as
+   * leading '0' chars if you pad externally.
    */
   public static String encode(byte[] input, int offset, int length, int base, int padToLength) {
     return pad(encode(input, offset, length, base), padToLength).toString();
@@ -189,5 +192,4 @@ public class DefaultAdmissionTokenGenerator implements AdmissionTokenGenerator {
     }
     return sb;
   }
-
 }

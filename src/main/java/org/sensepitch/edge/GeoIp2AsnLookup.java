@@ -2,7 +2,6 @@ package org.sensepitch.edge;
 
 import com.maxmind.geoip2.DatabaseReader;
 import com.maxmind.geoip2.exception.AddressNotFoundException;
-
 import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
@@ -25,8 +24,7 @@ public class GeoIp2AsnLookup implements AsnLookup {
     try {
       return reader.asn(addr).getAutonomousSystemNumber();
     } catch (AddressNotFoundException ex) {
-     return -1;
+      return -1;
     }
   }
-
 }
