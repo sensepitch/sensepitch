@@ -282,7 +282,7 @@
         <artifactId>serenity-maven-plugin</artifactId>
         <version>${serenity.version}</version>
         <configuration>
-            <reports>single-page-html,navigator</reports>
+            <reports>single-page-html</reports>
         </configuration>
         <executions>
             <execution>
@@ -297,11 +297,6 @@
           <dependency>
             <groupId>net.serenity-bdd</groupId>
             <artifactId>serenity-single-page-report</artifactId>
-            <version>${serenity.version}</version>
-          </dependency>
-          <dependency>
-            <groupId>net.serenity-bdd</groupId>
-            <artifactId>serenity-navigator-report</artifactId>
             <version>${serenity.version}</version>
           </dependency>
         </dependencies>
