@@ -35,10 +35,11 @@ SENSEPITCH_EDGE_LISTEN_SSL_CERT_PATH=ssl/nginx.crt
 SENSEPITCH_EDGE_PROTECTION_DISABLE=true
 SENSEPITCH_EDGE_SITES_0_KEY=localhost
 SENSEPITCH_EDGE_SITES_0_UPSTREAM_TARGET=$UPSTREAM_IP:$UPSTREAM_PORT
+SENSEPITCH_EDGE_SITES_0_UPSTREAM_CONNECTION_POOL_IDLE_TIMEOUT_SECONDS=1
 SENSEPITCH_EDGE_METRICS_ENABLE=true
 export ${!SENSEPITCH_@}
 
-PROXY_URL=https://127.0.0.1:$SENSEPITCH_EDGE_LISTEN_PORT
+PROXY_URL=https://localhost:$SENSEPITCH_EDGE_LISTEN_HTTPS_PORT
 
 # java -jar ../target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar > sensepitch-edge.log 2>&1 &
 java -XX:+UseZGC --enable-native-access=ALL-UNNAMED -jar ../target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar > sensepitch-edge.log 2>&1 &
