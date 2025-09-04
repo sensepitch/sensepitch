@@ -193,13 +193,15 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   }
 
   /**
-   * Write a log if the connection is closed before the complete response is received. Rationale: In
-   * case of a PUT or POST the request may have an effect, so we should also log it.
+   * Write a log if the connection is closed before the full response is received. Rationale: In
+   * case of a PUT or POST the request may have an effect, so we should also log it. In this case
+   * we set contentBytes to 0, because the contentBytes do not reflect
    */
   @Override
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     if (request != null) {
       metrics.ingressRequestsAborted.increment();
+      contentBytes = 0;
       response = ABORTED_RESPONSE;
       log(ctx);
     }
