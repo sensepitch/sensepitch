@@ -11,6 +11,7 @@ import io.netty.handler.codec.http.HttpHeaderValues;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.ssl.NotSslRecordException;
+import io.netty.handler.ssl.SslClosedEngineException;
 import io.netty.handler.ssl.SslHandshakeCompletionEvent;
 import java.io.IOException;
 import java.net.SocketException;
@@ -79,16 +80,22 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
   // java.net.SocketException: Connection reset
   // java.io.IOException: Connection reset by peer java.io.IOException: Connection reset by peer
   // java.nio.channels.ClosedChannelException java.nio.channels.ClosedChannelException
+  // io.netty.handler.ssl.SslClosedEngineException: SSLEngine closed already
+  // io.netty.handler.ssl.SslClosedEngineException: SSLEngine closed already
+  // java.io.IOException: Broken pipe java.io.IOException: Broken pipe
 
   /**
-   * True for all known variants of ingress connection reset. If ingress connections resets we don't
-   * stop writes but simple ignore the exceptions that this might result.
+   * True for all known variants of ingress connection reset or closure while we are still receiving
+   * or sending. If ingress connections resets we don't stop writes but simple ignore the exceptions
+   * that this might result
    */
   boolean isConnectionReset(Throwable cause) {
-    return cause instanceof ClosedChannelException
+    return cause instanceof SslClosedEngineException
+        || cause instanceof ClosedChannelException
         || (cause instanceof IOException
             && cause.getMessage() != null
-            && cause.getMessage().startsWith("Connection reset"))
+            && (cause.getMessage().startsWith("Connection reset")
+                || cause.getMessage().startsWith("Broken pipe")))
         || (cause instanceof SocketException
             && cause.getMessage() != null
             && cause.getMessage().startsWith("Connection reset"));
