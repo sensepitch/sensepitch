@@ -30,7 +30,7 @@ public class DefaultUpstream implements Upstream {
   private static ProxyLogger LOG = ProxyLogger.get(DefaultUpstream.class);
 
   private final Bootstrap bootstrap;
-  private final SimpleChannelPool pool;
+  private final SimpleChannelPool pool = null;
 
   public DefaultUpstream(ProxyContext ctx, UpstreamConfig cfg) {
     ConnectionPoolConfig poolCfg =
@@ -83,6 +83,8 @@ public class DefaultUpstream implements Upstream {
           }
         };
     int maxConnections = poolCfg.maxSize();
+    // FIXME: disable pool for now
+    /*-
     if (maxConnections <= 0) {
       pool = new SimpleChannelPool(bootstrap, channelHandler, ChannelHealthChecker.ACTIVE);
     } else {
@@ -97,6 +99,7 @@ public class DefaultUpstream implements Upstream {
               1,
               true);
     }
+    -*/
   }
 
   void addHttpHandler(ChannelPipeline pipeline) {
@@ -157,7 +160,7 @@ public class DefaultUpstream implements Upstream {
                   @Override
                   public void initChannel(SocketChannel ch) {
                     addHttpHandler(ch.pipeline());
-                    ch.pipeline().replace("forward", "forward", new ForwardHandler(ingress));
+                    ch.pipeline().addLast("forward", new ForwardHandler(ingress));
                   }
                 });
     ChannelFuture f = bs.connect();

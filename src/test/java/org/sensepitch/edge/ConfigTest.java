@@ -54,6 +54,16 @@ public class ConfigTest {
   }
 
   @Test
+  public void configDeflector() throws Exception {
+    Map<String, String> env =
+        Map.of(
+            "SENSEPITCH_EDGE_PROTECTION_DEFLECTOR_TOKEN_GENERATORS_0_PREFIX", "z");
+    ProxyConfig cfg =
+        (ProxyConfig) EnvInjector.injectFromEnv("SENSEPITCH_EDGE_", env, ProxyConfig.builder());
+    assertNotNull(cfg.protection());
+  }
+
+  @Test
   public void testReadConfigFromEnvironmentForMultipleObjects() throws Exception {
     Map<String, String> env =
         Map.of(

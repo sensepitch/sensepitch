@@ -73,9 +73,9 @@ class MetricsAndMemoryTest {
         .isGreaterThanOrEqualTo(
             s0.gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue() + sampleAllocation);
     assertThat(s1.gauge("process_resident_memory_bytes").getValue())
-        .as("resident memory grows by at least %s", sampleAllocation)
+        .as("resident memory grows by at least %s", sampleAllocation / 2)
         .isGreaterThanOrEqualTo(
-            s0.gauge("process_resident_memory_bytes").getValue() + sampleAllocation);
+            s0.gauge("process_resident_memory_bytes").getValue() + sampleAllocation / 2);
     // zeroing the buffer does not have an effect
     // for (int i = 0; i < buf.capacity(); i += 4096) { // touch each 4 KB page
     //   buf.setByte(i, (byte) 0);

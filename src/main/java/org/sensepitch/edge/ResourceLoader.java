@@ -4,7 +4,9 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.util.MissingResourceException;
 import java.util.stream.Collectors;
 
 /**
@@ -23,7 +25,19 @@ public class ResourceLoader {
         return reader.lines().collect(Collectors.joining(System.lineSeparator()));
       }
     } catch (IOException ex) {
-      throw new LinkageError(ex.getMessage(), ex);
+      throw new UncheckedIOException(ex);
     }
   }
+
+  public static byte[] loadBinaryFile(String resourcePath) {
+    try (InputStream in = ResourceLoader.class.getClassLoader().getResourceAsStream(resourcePath)) {
+      if (in == null) {
+        throw new IOException("Resource not found on classpath: " + resourcePath);
+      }
+      return in.readAllBytes();
+    } catch (IOException ex) {
+      throw new UncheckedIOException(ex);
+    }
+  }
+
 }

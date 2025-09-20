@@ -37,21 +37,25 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
 
   private static final ProxyLogger LOG = ProxyLogger.get(DeflectorHandler.class);
 
-  public static final String VERIFICATION_URL = "/.sensepitch.challenge.answer";
-  public static final String htmlTemplate = ResourceLoader.loadTextFile("challenge.html");
-  public static String cookieName = "sensepitch-pass";
+  public static final String CHALLENGE_ANSWER_URL = "/.sensepitch.challenge.complete";
+  public static final String CHALLENGE_STEP_URL = "/.sensepitch.challenge.step";
+  public static final String CHALLENGE_RESOURCES_URL = "/.sensepitch.challenge.files";
+  public static final String htmlTemplate = ResourceLoader.loadTextFile("challenge/challenge.html");
+  public static final String TOKEN_COOKIE_NAME = "sensepitch-tk";
+  public static final String CHALLENGE_COOKIE_NAME = "sensepitch-ch";
+  private static final ResourceFiles challengeFiles = new ResourceFiles("challenge/files/");
 
   /** Request header containing the validated admission token */
-  public static String ADMISSION_TOKEN_HEADER = "X-Sensepitch-Admission-Token";
+  public static String ADMISSION_TOKEN_HEADER = "sensepitch-token";
 
-  public static String TRAFFIC_FLAVOR_HEADER = "X-Sensepitch-Traffic-Flavor";
+  public static String TRAFFIC_FLAVOR_HEADER = "sensepitch-flavor";
 
   public static String FLAVOR_USER = "user";
   public static String FLAVOR_CRAWLER = "crawler";
   public static String FLAVOR_DEFLECT = "deflect";
 
   ChallengeGenerationAndVerification challengeVerification =
-      new ChallengeGenerationAndVerification();
+    new ChallengeGenerationAndVerification();
   private final NoBypassCheck noBypassCheck;
   private final BypassCheck bypassCheck;
   private final AdmissionTokenGenerator tokenGenerator;
@@ -143,7 +147,23 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
           && bypassCheck.allowBypass(ctx.channel(), request)) {
         bypassRequestCounter.increment();
         ctx.fireChannelRead(msg);
-      } else if (request.method() == HttpMethod.GET && request.uri().startsWith(VERIFICATION_URL)) {
+      } else if (request.uri().startsWith(CHALLENGE_STEP_URL)) {
+        request.headers().set(DeflectorHandler.TRAFFIC_FLAVOR_HEADER, DeflectorHandler.FLAVOR_DEFLECT);
+        FullHttpResponse response =
+          new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.NO_CONTENT, Unpooled.EMPTY_BUFFER);
+        // Prevent caching
+        response.headers().set(HttpHeaderNames.CACHE_CONTROL, "no-store, no-cache, must-revalidate, max-age=0");
+        response.headers().set(HttpHeaderNames.PRAGMA, "no-cache");
+        response.headers().set(HttpHeaderNames.EXPIRES, "0");
+        ctx.writeAndFlush(response);
+        ReferenceCountUtil.release(request);
+        skipFollowingContent(ctx);
+      } else if (request.method() == HttpMethod.GET && request.uri().startsWith(CHALLENGE_RESOURCES_URL)) {
+        request.headers().set(DeflectorHandler.TRAFFIC_FLAVOR_HEADER, DeflectorHandler.FLAVOR_DEFLECT);
+        outputChallengeResources(ctx, request);
+        ReferenceCountUtil.release(request);
+        skipFollowingContent(ctx);
+      } else if (request.method() == HttpMethod.GET && request.uri().startsWith(CHALLENGE_ANSWER_URL)) {
         request.headers().set(DeflectorHandler.TRAFFIC_FLAVOR_HEADER, DeflectorHandler.FLAVOR_USER);
         handleChallengeAnswer(ctx, request);
         ReferenceCountUtil.release(request);
@@ -188,15 +208,57 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
     }
   }
 
+  private void outputChallengeResources(ChannelHandlerContext ctx, HttpRequest request) {
+    String uri = request.uri();
+    int idx = uri.lastIndexOf('/');
+    if (idx + 1 >= uri.length()) {
+      FullHttpResponse response =
+        new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.BAD_REQUEST, Unpooled.EMPTY_BUFFER);
+      ctx.writeAndFlush(response);
+      return;
+    }
+    String fileName = uri.substring(idx + 1);
+    ResourceFiles.FileInfo file = challengeFiles.getFile(fileName);
+    if (file == null) {
+      FullHttpResponse response =
+        new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND, Unpooled.EMPTY_BUFFER);
+      ctx.writeAndFlush(response);
+      return;
+    }
+    FullHttpResponse response =
+      new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, file.buf().retainedDuplicate());
+    response.headers().set(HttpHeaderNames.CACHE_CONTROL, "no-store, no-cache, must-revalidate, max-age=0");
+    response.headers().set(HttpHeaderNames.PRAGMA, "no-cache");
+    response.headers().set(HttpHeaderNames.EXPIRES, "0");
+    response.headers().set(HttpHeaderNames.CONTENT_TYPE, file.mimeType());
+    response.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, file.buf().readableBytes());
+    ctx.writeAndFlush(response);
+  }
+
   private void outputChallengeHtml(ChannelHandlerContext ctx) {
-    String msg = htmlTemplate.replace("{{CHALLENGE}}", challengeVerification.generateChallenge());
-    msg = msg.replace("{{VERIFY_URL}}", VERIFICATION_URL);
+    String challenge = challengeVerification.generateChallenge();
+    String msg = htmlTemplate;
+    msg = msg.replaceAll("files/", CHALLENGE_RESOURCES_URL + "/");
+    msg = msg.replace("{{ENDPOINT}}", CHALLENGE_ANSWER_URL);
+    msg = msg.replace("{{STEP}}", CHALLENGE_STEP_URL);
+    msg = msg.replace("{{CHALLENGE}}", challenge);
+    msg = msg.replace("{{VERIFY_URL}}", CHALLENGE_ANSWER_URL);
     msg = msg.replace("{{PREFIX}}", challengeVerification.getTargetPrefix());
     ByteBuf buf = Unpooled.copiedBuffer(msg, CharsetUtil.UTF_8);
     FullHttpResponse response =
         new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.FORBIDDEN, buf);
+    response.headers().set(HttpHeaderNames.CACHE_CONTROL, "no-store, no-cache, must-revalidate, max-age=0");
+    response.headers().set(HttpHeaderNames.PRAGMA, "no-cache");
+    response.headers().set(HttpHeaderNames.EXPIRES, "0");
     response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/html; charset=UTF-8");
     response.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, buf.readableBytes());
+    Cookie cookie = new DefaultCookie(CHALLENGE_COOKIE_NAME, challenge);
+    cookie.setHttpOnly(true);
+    cookie.setSecure(true);
+    cookie.setPath("/");
+    cookie.setMaxAge(60 * 60 * 24 * 30);
+    String encodedCookie = ServerCookieEncoder.STRICT.encode(cookie);
+    response.headers().set(HttpHeaderNames.SET_COOKIE, encodedCookie);
     ctx.writeAndFlush(response);
     challengeSentCounter.increment();
   }
@@ -212,7 +274,7 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
       challengeAnsweredCounter.increment();
       response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
       String cookieValue = tokenGenerator.newAdmission();
-      Cookie cookie = new DefaultCookie(cookieName, cookieValue);
+      Cookie cookie = new DefaultCookie(TOKEN_COOKIE_NAME, cookieValue);
       cookie.setHttpOnly(true);
       cookie.setSecure(true);
       cookie.setPath("/");
@@ -231,7 +293,7 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
     if (cookieHeader != null) {
       Set<Cookie> cookies = ServerCookieDecoder.LAX.decode(cookieHeader);
       for (Cookie c : cookies) {
-        if (c.name().equals(cookieName)) {
+        if (c.name().equals(TOKEN_COOKIE_NAME)) {
           String admissionToken = c.value();
           if (admissionToken == null || admissionToken.isEmpty()) {
             return false;

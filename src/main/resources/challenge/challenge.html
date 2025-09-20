@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Checking for user browser...</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+    <link rel="stylesheet" href="files/style.css" />
+</head>
+<body>
+<!-- CSS-driven probes (background-image via media queries) -->
+<div class="css-probe" aria-hidden="true"></div>
+<!-- <picture>-driven probes (fetch exactly one matching <source>) -->
+<picture>
+<source media="(max-width: 767.98px)" srcset="files/mq-class-phone-768.png" />
+<source media="(min-width: 768px) and (max-width: 1024.98px)" srcset="files/mq-class-tablet-1025.png" />
+<source media="(min-width: 1025px)" srcset="files/mq-class-desktop-1025.png" />
+<img class="probe-img" src="files/mq-class-unknown.png" alt="" decoding="async" loading="eager" />
+</picture>
+<picture>
+<source media="(orientation: portrait)" srcset="files/mq-orientation-landscape.png" />
+<source media="(orientation: landscape)" srcset="files/mq-orientation-landscape.png" />
+<img class="probe-img" src="files/mq-orientation-unknown.png" alt="" decoding="async" loading="eager" />
+</picture>
+<img class="probe-img" alt="" src="files/dpr-1x-default.png" srcset="files/dpr-1x.png 1x, files/dpr-2x.png 2x, files/dpr-3x.png 3x" decoding="async" loading="eager" />
+<div class="center">Connecting to:<br/>www.packingpanic.com<br/><br/>
+    <div id="status">The verification requires JavaScript support and enabled cookies.</div>
+</div>
+<script>
+    var STEP = '{{ENDPOINT}}';
+    var ENDPOINT = '{{ENDPOINT}}';
+    var TARGET_PREFIX = '{{PREFIX}}';
+    var CHALLENGE = '{{CHALLENGE}}';
+</script>
+<script src="files/script.js"></script>
+</body>
+</html>

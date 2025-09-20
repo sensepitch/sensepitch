@@ -30,6 +30,8 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
 
   static ProxyLogger DEBUG = ProxyLogger.get(RequestLoggingHandler.class);
 
+  private static final CountByteIoHandler DUMMY_COUNT_BYTE_IO_HANDLER = new CountByteIoHandler();
+
   /**
    * Construct a mock http request in case we don't have a request, which can happen if the request
    * was malformed or receive timed out. We don't use a HttpRequest singleton, maybe we want to add
@@ -85,6 +87,9 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   @Override
   public void channelActive(ChannelHandlerContext ctx) throws Exception {
     countByteIoHandler = ctx.pipeline().get(CountByteIoHandler.class);
+    if (countByteIoHandler == null) {
+      countByteIoHandler = DUMMY_COUNT_BYTE_IO_HANDLER;
+    }
     connectionEstablishedNanos = ticker.nanoTime();
     super.channelActive(ctx);
   }
