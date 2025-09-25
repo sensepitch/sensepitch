@@ -126,6 +126,8 @@ public class DownstreamHandler extends ChannelDuplexHandler {
                     }
                   });
     } else {
+      // upstream future listener is called within ingress event loop
+      assert ctx.executor().inEventLoop();
       ReferenceCountUtil.release(msg);
       Throwable cause = future.cause();
       // TODO: counter!
@@ -136,13 +138,9 @@ public class DownstreamHandler extends ChannelDuplexHandler {
         return;
       }
       DEBUG.error(ctx.channel(), "unknown upstream connection problem", future.cause());
-      ctx.executor()
-          .execute(
-              () -> {
-                ctx.pipeline().get(RequestLoggingHandler.class).setException(cause);
-                completeWithError(
-                    ctx, HttpResponseStatus.valueOf(502, "Upstream connection problem"));
-              });
+      ctx.pipeline().get(RequestLoggingHandler.class).setException(cause);
+      completeWithError(
+          ctx, HttpResponseStatus.valueOf(502, "Upstream connection problem"));
     }
   }
 
