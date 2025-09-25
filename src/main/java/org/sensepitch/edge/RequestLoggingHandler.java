@@ -137,18 +137,18 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
         // don't send to logging
         // request = MOCK_REQUEST;
       } else {
-        promise
-            .unvoid()
-            .addListener(
-                future -> {
-                  if (request == null) {
-                    return;
-                  }
-                  metrics.ingressRequestsCompleted.increment();
-                  // TODO: switch response in case of error?
-                  setException(future.cause());
-                  log(ctx);
-                });
+        promise = promise.unvoid();
+        promise.addListener(
+            future -> {
+              // DEBUG.info("write complete, success=" + future.isSuccess());
+              if (request == null) {
+                return;
+              }
+              metrics.ingressRequestsCompleted.increment();
+              // TODO: switch response in case of error?
+              setException(future.cause());
+              log(ctx);
+            });
       }
     }
     super.write(ctx, msg, promise);
