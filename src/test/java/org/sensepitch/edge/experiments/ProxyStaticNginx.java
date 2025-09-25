@@ -1,7 +1,12 @@
 package org.sensepitch.edge.experiments;
 
+import java.util.List;
 import java.util.Map;
+
+import org.sensepitch.edge.AdmissionTokenGeneratorConfig;
+import org.sensepitch.edge.BypassConfig;
 import org.sensepitch.edge.ConnectionConfig;
+import org.sensepitch.edge.DeflectorConfig;
 import org.sensepitch.edge.ListenConfig;
 import org.sensepitch.edge.MetricsConfig;
 import org.sensepitch.edge.PrometheusConfig;
@@ -37,17 +42,29 @@ public class ProxyStaticNginx {
                             .certPath("performance-test/ssl/nginx.crt")
                             .build())
                     .build())
-            .upstream(UpstreamConfig.builder().target("172.21.0.3:80").build())
+            .upstream(UpstreamConfig.builder().target("172.21.0.2:80").build())
             // not used
-            .protection(ProtectionConfig.builder().disable(true).build())
+            .protection(ProtectionConfig.builder()
+              .deflector(DeflectorConfig.builder()
+                .tokenGenerators(List.of(
+                  AdmissionTokenGeneratorConfig.builder()
+                    .secret("secret")
+                    .prefix("x")
+                    .build()
+                ))
+                .bypass(BypassConfig.builder()
+                  .uris(List.of("/10kb.img"))
+                  .build())
+                .build())
+              .build())
             .sites(
                 Map.of(
                     "localhost",
                     SiteConfig.builder()
-                        .upstream(UpstreamConfig.builder().target("172.21.0.3:80").build())
+                        .upstream(UpstreamConfig.builder().target("172.21.0.2:80").build())
                         .build()))
             .build();
-    Proxy.dumpConfig(cfg);
+    // Proxy.dumpConfig(cfg);
     new Proxy(cfg).start();
   }
 }

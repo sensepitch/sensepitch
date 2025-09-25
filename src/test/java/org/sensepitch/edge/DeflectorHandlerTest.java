@@ -83,7 +83,7 @@ public class DeflectorHandlerTest {
             super.channelRead(ctx, msg);
           }
         };
-    handler = new DeflectorHandler(cfg);
+    handler = new DeflectorHandler(new Deflector(cfg));
     channel = new EmbeddedChannel(out, handler, in);
   }
 
@@ -99,7 +99,6 @@ public class DeflectorHandlerTest {
   }
 
   void request(HttpRequest req) throws Exception {
-    channel.pipeline().addLast(handler);
     ChannelHandlerContext ctx = channel.pipeline().context(DeflectorHandler.class);
     messageWritten = null;
     passed = false;

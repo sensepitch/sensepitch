@@ -95,14 +95,14 @@ public class DetectCrawler implements BypassCheck {
     if (bypassCheck != null && bypassCheck.allowBypass(channel, request)) {
       request
           .headers()
-          .set(DeflectorHandler.TRAFFIC_FLAVOR_HEADER, DeflectorHandler.FLAVOR_CRAWLER);
+          .set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_CRAWLER);
       return true;
     }
     String ipLabels = IpTraitsHandler.extract(request);
     if (ipLabels != null && ipLabels.contains("crawler")) {
       request
           .headers()
-          .set(DeflectorHandler.TRAFFIC_FLAVOR_HEADER, DeflectorHandler.FLAVOR_CRAWLER);
+          .set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_CRAWLER);
       return true;
     }
     // screen first to be faster for normal browsers
@@ -113,7 +113,7 @@ public class DetectCrawler implements BypassCheck {
       if (agent.contains(entry.getKey()) && entry.getValue().allowBypass(channel, request)) {
         request
             .headers()
-            .set(DeflectorHandler.TRAFFIC_FLAVOR_HEADER, DeflectorHandler.FLAVOR_CRAWLER);
+            .set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_CRAWLER);
         return true;
       }
     }

@@ -61,8 +61,8 @@ public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
                   PassThroughHandler passThroughHandler = new PassThroughHandler();
                   protectionSupplier = () -> passThroughHandler;
                 } else if (protection.deflector() != null) {
-                  DeflectorHandler sharedAdmission = new DeflectorHandler(protection.deflector());
-                  protectionSupplier = () -> sharedAdmission;
+                  var deflector = new Deflector(protection.deflector());
+                  protectionSupplier = () -> new DeflectorHandler(deflector);
                 } else if (protection.cookieGates() != null) {
                   CookieGateHandler handler = new CookieGateHandler(protection.cookieGates());
                   protectionSupplier = () -> handler;

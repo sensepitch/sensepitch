@@ -142,6 +142,8 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [x] YAML based configuration
 - [x] improve default configuration
 - [x] metrics: byte IO count per ingress
+- [ ] test sha256 pow, remove subtle variant
+- [ ] https://docs.perplexity.ai/guides/bots
 - [ ] add netty memory pool statistics to monitoring
 - [ ] documentation, nice examples are: Envoy
 - [ ] config: stop / complain if option is unknown

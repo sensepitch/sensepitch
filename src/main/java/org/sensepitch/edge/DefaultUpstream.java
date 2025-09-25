@@ -83,7 +83,6 @@ public class DefaultUpstream implements Upstream {
           }
         };
     int maxConnections = poolCfg.maxSize();
-    // FIXME: disable pool for now
     /*-
     if (maxConnections <= 0) {
       pool = new SimpleChannelPool(bootstrap, channelHandler, ChannelHealthChecker.ACTIVE);
@@ -107,15 +106,20 @@ public class DefaultUpstream implements Upstream {
   }
 
   @Override
-  public Future<Channel> connect(ChannelHandlerContext downstreamContext) {
+  public Future<Channel> connect(ChannelHandlerContext ingressCtx) {
     if (pool != null) {
-      return getPooledChannel(downstreamContext.channel());
+      return getPooledChannel(ingressCtx.channel());
     } else {
-      ChannelFuture upstreamFuture = connectToUpstream(downstreamContext.channel());
-      Promise<Channel> promise = downstreamContext.executor().newPromise();
+      ChannelFuture upstreamFuture = connectToUpstream(ingressCtx.channel());
+      Promise<Channel> promise = ingressCtx.executor().newPromise();
       upstreamFuture.addListener(
           (ChannelFutureListener)
               cf -> {
+                LOG.info(
+                  ingressCtx.channel().id()
+                    + ">"
+                    + cf.channel().id()
+                    + " upstream connected, forwarding to promise");
                 if (cf.isSuccess()) {
                   promise.setSuccess(cf.channel());
                 } else {
@@ -166,4 +170,5 @@ public class DefaultUpstream implements Upstream {
     ChannelFuture f = bs.connect();
     return f;
   }
+
 }

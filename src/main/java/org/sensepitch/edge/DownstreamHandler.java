@@ -75,7 +75,9 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       // Queue in all content we receive via the listener.
       upstreamChannelFuture.addListener(
           (FutureListener<Channel>)
-              future -> forwardLastContentAndFlush(ctx, future, (LastHttpContent) msg));
+              future -> {
+            forwardLastContentAndFlush(ctx, future, (LastHttpContent) msg);
+          });
     } else if (msg instanceof HttpContent) {
       if (upstreamChannelFuture == null) {
         ReferenceCountUtil.release(msg);
@@ -104,14 +106,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
           .addListener(
               (ChannelFutureListener)
                   f -> {
-                    DEBUG.info(
-                        ctx.channel().id()
-                            + ">"
-                            + future.resultNow().id()
-                            + ", flushed success="
-                            + f.isSuccess()
-                            + ", cause="
-                            + f.cause());
                     // TODO: error counter!
                     if (!f.isSuccess()) {
                       ctx.executor()
@@ -175,6 +169,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     upstreamChannelFuture.addListener(
         (FutureListener<Channel>)
             future -> {
+          assert ctx.executor().inEventLoop();
               if (future.isSuccess()) {
                 upstreamChannelFuture.resultNow().write(request);
                 if (contentExpected) {

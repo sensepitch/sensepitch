@@ -6,6 +6,9 @@ import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.*;
+import io.netty.handler.logging.ByteBufFormat;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.ssl.ClientAuth;
 import io.netty.handler.ssl.OpenSsl;
 import io.netty.handler.ssl.SniHandler;
@@ -237,9 +240,9 @@ public class Proxy implements ProxyContext {
     // logger sits between codec and rest so it sees header modifications
     // from timeout and keep alive below
     pipeline.addLast(new RequestLoggingHandler(metrics, requestLogger));
-    pipeline.addLast(new ClientTimeoutHandler(connectionConfig, metrics));
+    // pipeline.addLast(new ClientTimeoutHandler(connectionConfig, metrics));
     pipeline.addLast(new HttpServerKeepAliveHandler());
-    // ch.pipeline().addLast(new LoggingHandler(LogLevel.INFO, ByteBufFormat.SIMPLE));
+    // pipeline.addLast(new LoggingHandler(LogLevel.INFO, ByteBufFormat.SIMPLE));
     pipeline.addLast(new IpTraitsHandler(ipTraitsLookup));
     //            ch.pipeline().addLast(new ReportIoErrorsHandler("downstream"));
     if (unservicedHostHandler != null) {

@@ -26,7 +26,7 @@ public class StandardOutRequestLogger implements RequestLogger {
       InetSocketAddress addr = (InetSocketAddress) info.channel().remoteAddress();
       remoteHost = addr.getAddress().getHostAddress();
     }
-    String admissionToken = request.headers().get(DeflectorHandler.ADMISSION_TOKEN_HEADER);
+    String admissionToken = request.headers().get(Deflector.ADMISSION_TOKEN_HEADER);
     if (admissionToken == null) {
       admissionToken = "-";
     }
