@@ -178,6 +178,7 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter imple
         skipFollowingContent(ctx);
       }
     } else {
+      // this skips content if completely handled here
       super.channelRead(ctx, msg);
     }
   }
