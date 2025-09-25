@@ -21,11 +21,22 @@ import org.yaml.snakeyaml.nodes.SequenceNode;
 public class ConfigTest {
 
   @Test
-  public void readConfigFromEnvironmentLists() throws Exception {
+  public void readConfigFromEnvironmentTextList() throws Exception {
     Map<String, String> env = Map.of("XX_TEXTS", "/xy,special,123");
     AllFieldTypesConfig cfg =
         (AllFieldTypesConfig) EnvInjector.injectFromEnv("XX_", env, AllFieldTypesConfig.builder());
     assertEquals("[/xy, special, 123]", cfg.texts().toString());
+  }
+
+  @Test
+  public void readConfigFromEnvironmentTextListSeparate() throws Exception {
+    Map<String, String> env = Map.of(
+      "XX_TEXTS_0", "/xy",
+      "XX_TEXTS_1", "special"
+    );
+    AllFieldTypesConfig cfg =
+      (AllFieldTypesConfig) EnvInjector.injectFromEnv("XX_", env, AllFieldTypesConfig.builder());
+    assertEquals("[/xy, special]", cfg.texts().toString());
   }
 
   @Test

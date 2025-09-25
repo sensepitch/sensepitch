@@ -63,14 +63,23 @@ public class EnvInjector {
       String[] sa = env.get(envName).split(",");
       list.addAll(Arrays.asList(sa));
     } else {
-      for (int i = 0; true; i++) {
-        String indexPrefix = envName + "_" + i + "_";
-        if (hasSettingsWithPrefix(env, indexPrefix)) {
-          Method builderMethod = targetType.getMethod("builder");
-          Object nestedTarget = builderMethod.invoke(null);
-          list.add(injectFromEnv(indexPrefix, env, nestedTarget));
-        } else {
-          break;
+      if (targetType.isRecord()) {
+        Method builderMethod = targetType.getMethod("builder");
+        for (int i = 0; true; i++) {
+          String indexPrefix = envName + "_" + i + "_";
+          if (hasSettingsWithPrefix(env, indexPrefix)) {
+            Object nestedTarget = builderMethod.invoke(null);
+            list.add(injectFromEnv(indexPrefix, env, nestedTarget));
+          } else {
+            break;
+          }
+        }
+      } else {
+        for (int i = 0; true; i++) {
+          String indexPrefix = envName + "_" + i;
+          String value = env.get(indexPrefix);
+          if (value == null) { break; }
+          list.add(parseValue(value, targetType));
         }
       }
     }
