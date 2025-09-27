@@ -51,7 +51,7 @@ public class Proxy implements ProxyContext {
   private final EventLoopGroup eventLoopGroup;
   private final RequestLogger requestLogger;
   private final SanitizeHostHandler sanitizeHostHandler;
-  private final SiteSelectorHandler siteSelectorHandler;
+  private final SiteSelector siteSelector;
 
   public Proxy(ProxyConfig config) {
     config = KeyInjector.injectAllMapKeys(config);
@@ -69,8 +69,8 @@ public class Proxy implements ProxyContext {
     metricsBridge.expose(metrics);
     trackIngressConnectionsHandler = metricsBridge.expose(new TrackIngressConnectionsHandler());
     // sslContext = initializeSslContext();
-    siteSelectorHandler = new SiteSelectorHandler(this, config);
-    var servicedHosts = siteSelectorHandler.getServicedHosts();
+    siteSelector = new SiteSelector(this, config);
+    var servicedHosts = siteSelector.getServicedHosts();
     sniMapping = initializeSniMapping(config.listen(), servicedHosts);
     UnservicedHostConfig unservicedHostConfig =
         config.unservicedHost() != null
@@ -239,16 +239,16 @@ public class Proxy implements ProxyContext {
     pipeline.addLast(sanitizeHostHandler);
     // logger sits between codec and rest so it sees header modifications
     // from timeout and keep alive below
-    pipeline.addLast(new RequestLoggingHandler(metrics, requestLogger));
-    // pipeline.addLast(new ClientTimeoutHandler(connectionConfig, metrics));
-    pipeline.addLast(new HttpServerKeepAliveHandler());
     // pipeline.addLast(new LoggingHandler(LogLevel.INFO, ByteBufFormat.SIMPLE));
+    pipeline.addLast(new RequestLoggingHandler(metrics, requestLogger));
+    pipeline.addLast(new NewClientTimeoutHandler(connectionConfig, metrics));
+    pipeline.addLast(new HttpServerKeepAliveHandler());
     pipeline.addLast(new IpTraitsHandler(ipTraitsLookup));
     //            ch.pipeline().addLast(new ReportIoErrorsHandler("downstream"));
     if (unservicedHostHandler != null) {
       pipeline.addLast(unservicedHostHandler);
     }
-    pipeline.addLast("siteSelector", siteSelectorHandler);
+    pipeline.addLast("siteSelector", new SiteSelectorHandler(siteSelector));
     pipeline.addLast("protection", dummy404Handler);
     pipeline.addLast("proxy", dummy404Handler);
     pipeline.addLast("exception", new ExceptionHandler(metrics));

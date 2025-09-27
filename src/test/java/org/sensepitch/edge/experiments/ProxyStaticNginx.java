@@ -34,7 +34,10 @@ public class ProxyStaticNginx {
             .listen(
                 ListenConfig.builder()
                     // testing
-                    .connection(ConnectionConfig.DEFAULT.toBuilder().readTimeoutSeconds(3).build())
+                    .connection(ConnectionConfig.DEFAULT.toBuilder()
+                      .responseTimeoutSeconds(3)
+                      .readTimeoutSeconds(5)
+                      .build())
                     .httpsPort(17443)
                     .ssl(
                         SslConfig.builder()

@@ -115,11 +115,11 @@ public class DefaultUpstream implements Upstream {
       upstreamFuture.addListener(
           (ChannelFutureListener)
               cf -> {
-                LOG.info(
-                  ingressCtx.channel().id()
-                    + ">"
-                    + cf.channel().id()
-                    + " upstream connected, forwarding to promise");
+//                LOG.info(
+//                  ingressCtx.channel().id()
+//                    + ">"
+//                    + cf.channel().id()
+//                    + " upstream connected, forwarding to promise");
                 if (cf.isSuccess()) {
                   promise.setSuccess(cf.channel());
                 } else {

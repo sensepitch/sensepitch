@@ -268,7 +268,7 @@ public class ClientTimeoutHandler extends ReadTimeoutHandler {
       assert evt.state() == IdleState.WRITER_IDLE;
       if (!closed) {
         closed = true;
-        throw new WriteTimeoutException();
+        ctx.fireExceptionCaught(new WriteTimeoutException());
         /*-
         DownstreamProgress.complete(ctx.channel());
         // TODO: send different marker so request logging can detect abort
