@@ -63,8 +63,8 @@ public class SiteSelector {
                   var deflector = new Deflector(protection.deflector());
                   protectionSupplier = () -> new DeflectorHandler(deflector);
                 } else if (protection.cookieGates() != null) {
-                  CookieGateHandler handler = new CookieGateHandler(protection.cookieGates());
-                  protectionSupplier = () -> handler;
+                  var obj = new CookieGate(protection.cookieGates());
+                  protectionSupplier = obj::newHandler;
                 }
               }
               if (protectionSupplier == null) {

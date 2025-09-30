@@ -142,6 +142,7 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [x] YAML based configuration
 - [x] improve default configuration
 - [x] metrics: byte IO count per ingress
+- [ ] Implement server-timing, https://www.w3.org/TR/server-timing/
 - [ ] test sha256 pow, remove subtle variant
 - [ ] https://docs.perplexity.ai/guides/bots
 - [ ] add netty memory pool statistics to monitoring
@@ -232,3 +233,7 @@ iptables -t nat -A OUTPUT -o lo -p tcp --dport 80  -j REDIRECT --to-port 7080
 iptables -t nat -A OUTPUT -o lo -p tcp --dport 443 -j REDIRECT --to-port 7443
 ````
 
+## Blogs about high performance Edge Proxy
+
+- https://dropbox.tech/infrastructure/how-we-migrated-dropbox-from-nginx-to-envoy
+- https://blog.cloudflare.com/pingora-open-source/

@@ -6,9 +6,6 @@ import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.*;
-import io.netty.handler.logging.ByteBufFormat;
-import io.netty.handler.logging.LogLevel;
-import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.ssl.ClientAuth;
 import io.netty.handler.ssl.OpenSsl;
 import io.netty.handler.ssl.SniHandler;
@@ -44,7 +41,7 @@ public class Proxy implements ProxyContext {
   private final MetricsBridge metricsBridge;
   // private final SslContext sslContext;
   private final Mapping<String, SslContext> sniMapping;
-  private final UnservicedHostHandler unservicedHostHandler;
+  private final UnservicedHost unservicedHost;
   // private final DownstreamHandler downstreamHandler;
   // private final UpstreamRouter upstreamRouter;
   private final IpTraitsLookup ipTraitsLookup;
@@ -80,7 +77,7 @@ public class Proxy implements ProxyContext {
       unservicedHostConfig =
           unservicedHostConfig.toBuilder().servicedDomains(servicedHosts).build();
     }
-    unservicedHostHandler = new UnservicedHostHandler(unservicedHostConfig);
+    unservicedHost = new UnservicedHost(unservicedHostConfig);
     Set<String> knownHosts = new HashSet<>();
     knownHosts.addAll(servicedHosts);
     if (config.listen().hosts() != null) {
@@ -245,8 +242,8 @@ public class Proxy implements ProxyContext {
     pipeline.addLast(new HttpServerKeepAliveHandler());
     pipeline.addLast(new IpTraitsHandler(ipTraitsLookup));
     //            ch.pipeline().addLast(new ReportIoErrorsHandler("downstream"));
-    if (unservicedHostHandler != null) {
-      pipeline.addLast(unservicedHostHandler);
+    if (unservicedHost != null) {
+      pipeline.addLast(unservicedHost.newHandler());
     }
     pipeline.addLast("siteSelector", new SiteSelectorHandler(siteSelector));
     pipeline.addLast("protection", dummy404Handler);

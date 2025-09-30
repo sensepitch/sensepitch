@@ -33,7 +33,7 @@ class UnservicedHostHandlerTest {
             .servicedDomains(Set.of("www.foo.com", "bar.com", "www.baz.com"))
             .defaultLocation("https://default.example")
             .build();
-    channel = new EmbeddedChannel(new UnservicedHostHandler(cfg));
+    channel = new EmbeddedChannel(new UnservicedHost(cfg).newHandler());
   }
 
   @Test
@@ -98,7 +98,7 @@ class UnservicedHostHandlerTest {
     HttpResponse resp = writeAndExpectResponse(req);
     assertThat(resp.status()).isEqualTo(TEMPORARY_REDIRECT);
     assertThat(resp.headers().get(HttpHeaderNames.LOCATION))
-        .isEqualTo("https://default.example" + UnservicedHostHandler.NOT_FOUND_URI);
+        .isEqualTo("https://default.example" + UnservicedHost.NOT_FOUND_URI);
   }
 
   @Test

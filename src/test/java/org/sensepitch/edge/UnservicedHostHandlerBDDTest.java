@@ -6,7 +6,7 @@ import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.sensepitch.edge.SanitizeHostHandler.MISSING_HOST;
 import static org.sensepitch.edge.SanitizeHostHandler.UNKNOWN_HOST;
-import static org.sensepitch.edge.UnservicedHostHandler.NOT_FOUND_URI;
+import static org.sensepitch.edge.UnservicedHost.NOT_FOUND_URI;
 
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
@@ -124,7 +124,7 @@ class UnservicedHostHandlerBDDTest {
               .servicedDomains(Set.of("www.foo.com", "bar.com", "www.baz.com"))
               .defaultLocation("https://default.example")
               .build();
-      channel = new EmbeddedChannel(new UnservicedHostHandler(cfg));
+      channel = new EmbeddedChannel(new UnservicedHost(cfg).newHandler());
       return this;
     }
 
