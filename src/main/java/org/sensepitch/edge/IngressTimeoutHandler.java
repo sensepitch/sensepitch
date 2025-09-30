@@ -2,6 +2,7 @@
 package org.sensepitch.edge;
 
 import io.netty.channel.ChannelDuplexHandler;
+import io.netty.channel.ChannelException;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
@@ -20,11 +21,22 @@ import io.netty.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
+ * <p>Watches the request and response pass through and implement timeouts for
+ * the request, response and write. There is only one timeout active at a point in time.
+ * The response timeout is actually a timeout for our upstream. Once the upstream starts responding
+ * the handler switches to write timeout. The write timeout triggers when no write complete any
+ * more, which covers upstream and receiver stalls.
+ *
+ * <p>This must be placed between the http codec handler and the keep alive handler.
+ *
+ *<p>TODO: only works with HttpKeepAliveHandler next, maybe unify TODO: corner case when ingress
+ * still sends and upstream is responding, however, we can do connection: close
+ *
+ * @author Jens Wilke
  */
-@SuppressWarnings("resource")
-public final class NewClientTimeoutHandler extends ChannelDuplexHandler {
+public final class IngressTimeoutHandler extends ChannelDuplexHandler {
 
-  public static ProxyLogger LOG = ProxyLogger.get(NewClientTimeoutHandler.class);
+  public static ProxyLogger LOG = ProxyLogger.get(IngressTimeoutHandler.class);
 
   private final ConnectionConfig config;
   private boolean responding = false;
@@ -32,7 +44,7 @@ public final class NewClientTimeoutHandler extends ChannelDuplexHandler {
   private final ProxyMetrics proxyMetrics;
   private boolean keepAlive;
 
-  public NewClientTimeoutHandler(ConnectionConfig config, ProxyMetrics proxyMetrics) {
+  public IngressTimeoutHandler(ConnectionConfig config, ProxyMetrics proxyMetrics) {
     this.config = config;
     this.proxyMetrics = proxyMetrics;
   }
@@ -97,7 +109,7 @@ public final class NewClientTimeoutHandler extends ChannelDuplexHandler {
           response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
           ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
           // TODO: which one?
-          ctx.fireExceptionCaught(new ClientTimeoutHandler.UpstreamResponseTimeoutException());
+          ctx.fireExceptionCaught(new UpstreamResponseTimeoutException());
           // throw new ClientTimeoutHandler.UpstreamResponseTimeoutException();
         }
       };
@@ -136,7 +148,7 @@ public final class NewClientTimeoutHandler extends ChannelDuplexHandler {
         @Override
         public void fire() {
           // TODO: Metrics
-          ctx.fireExceptionCaught(new ClientTimeoutHandler.WriteTimeoutException());
+          ctx.fireExceptionCaught(new WriteTimeoutException());
         }
       };
     }
@@ -215,5 +227,8 @@ public final class NewClientTimeoutHandler extends ChannelDuplexHandler {
 
   }
 
+  public static class UpstreamResponseTimeoutException extends ChannelException {}
+
+  public static class WriteTimeoutException extends ChannelException {}
 }
 

@@ -238,7 +238,7 @@ public class Proxy implements ProxyContext {
     // from timeout and keep alive below
     // pipeline.addLast(new LoggingHandler(LogLevel.INFO, ByteBufFormat.SIMPLE));
     pipeline.addLast(new RequestLoggingHandler(metrics, requestLogger));
-    pipeline.addLast(new NewClientTimeoutHandler(connectionConfig, metrics));
+    pipeline.addLast(new IngressTimeoutHandler(connectionConfig, metrics));
     pipeline.addLast(new HttpServerKeepAliveHandler());
     pipeline.addLast(new IpTraitsHandler(ipTraitsLookup));
     //            ch.pipeline().addLast(new ReportIoErrorsHandler("downstream"));

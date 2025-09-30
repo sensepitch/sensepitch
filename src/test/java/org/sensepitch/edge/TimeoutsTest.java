@@ -57,7 +57,7 @@ class TimeoutsTest {
           .handlers(
               new FakeSslHandler(),
               new RequestLoggingHandler(new ProxyMetrics(), new StandardOutRequestLogger()),
-              new NewClientTimeoutHandler(cfg, proxyMetrics),
+              new IngressTimeoutHandler(cfg, proxyMetrics),
               new HttpServerKeepAliveHandler(),
               new DownstreamHandler(new MockUpstream(), proxyMetrics),
               new ExceptionHandler(proxyMetrics))
