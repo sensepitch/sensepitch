@@ -1,0 +1,3 @@
+GET https://localhost:17443/10kb.img
+GET https://localhost:17443/NOT_FOUND
+

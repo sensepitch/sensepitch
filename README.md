@@ -142,6 +142,8 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [x] YAML based configuration
 - [x] improve default configuration
 - [x] metrics: byte IO count per ingress
+- [ ] minimise + compress, challenge resources
+- [ ] only allow know HTTP methods
 - [ ] unify timeout with keep alive handler
 - [ ] Implement server-timing, https://www.w3.org/TR/server-timing/
 - [ ] test sha256 pow, remove subtle variant

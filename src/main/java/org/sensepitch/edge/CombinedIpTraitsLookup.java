@@ -39,13 +39,15 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
   public static TrieIpLabelLookup readGoogleBotList() throws IOException {
     TrieIpLabelLookup lookup = new TrieIpLabelLookup();
     ObjectMapper mapper = new ObjectMapper();
-    JsonNode root = mapper.readTree(Proxy.class.getResource("/googlebot.json"));
-    for (JsonNode prefix : root.path("prefixes")) {
-      if (prefix.has("ipv4Prefix")) {
-        final String ipv4Prefix = prefix.get("ipv4Prefix").asText();
-        lookup.insertIpv4(ipv4Prefix, "crawler:googlebot");
-      } else if (prefix.has("ipv6Prefix")) {
-        lookup.insertIpv6(prefix.get("ipv6Prefix").asText(), "crawler:googlebot");
+    for (var file : ResourceLoader.getFileList("crawler-ips/")) {
+      JsonNode root = mapper.readTree(Proxy.class.getResource("/" + file));
+      for (JsonNode prefix : root.path("prefixes")) {
+        if (prefix.has("ipv4Prefix")) {
+          final String ipv4Prefix = prefix.get("ipv4Prefix").asText();
+          lookup.insertIpv4(ipv4Prefix, "crawler:googlebot");
+        } else if (prefix.has("ipv6Prefix")) {
+          lookup.insertIpv6(prefix.get("ipv6Prefix").asText(), "crawler:googlebot");
+        }
       }
     }
     return lookup;

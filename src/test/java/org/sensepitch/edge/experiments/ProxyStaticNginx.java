@@ -45,7 +45,7 @@ public class ProxyStaticNginx {
                             .certPath("performance-test/ssl/nginx.crt")
                             .build())
                     .build())
-            .upstream(UpstreamConfig.builder().target("172.21.0.2:80").build())
+            // .upstream(UpstreamConfig.builder().target("172.21.0.3:80").build())
             // not used
             .protection(ProtectionConfig.builder()
               .deflector(DeflectorConfig.builder()
@@ -64,7 +64,7 @@ public class ProxyStaticNginx {
                 Map.of(
                     "localhost",
                     SiteConfig.builder()
-                        .upstream(UpstreamConfig.builder().target("172.21.0.2:80").build())
+                        .upstream(UpstreamConfig.builder().target("172.21.0.3:80").build())
                         .build()))
             .build();
     // Proxy.dumpConfig(cfg);

@@ -1,5 +1,6 @@
 package org.sensepitch.edge;
 
+import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpRequest;
@@ -25,8 +26,10 @@ public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
         rejectRequest(ctx, HttpResponseStatus.NOT_FOUND);
         return;
       }
-      ctx.pipeline().replace("protection", "protection", suppliers.protectionSupplier().get());
-      ctx.pipeline().replace("proxy", "proxy", suppliers.proxySupplier().get());
+      ChannelHandler protection = suppliers.protectionSupplier().get();
+      ChannelHandler proxy = suppliers.proxySupplier().get();
+      ctx.pipeline().replace("protection", "protection", protection);
+      ctx.pipeline().replace("proxy", "proxy", proxy);
     }
     super.channelRead(ctx, msg);
   }

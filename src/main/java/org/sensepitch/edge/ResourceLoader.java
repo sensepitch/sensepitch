@@ -4,9 +4,15 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.LineNumberReader;
+import java.io.StringReader;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.MissingResourceException;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -38,6 +44,12 @@ public class ResourceLoader {
     } catch (IOException ex) {
       throw new UncheckedIOException(ex);
     }
+  }
+
+  public static Set<String> getFileList(String directoryWithIndex) {
+    String fileList = ResourceLoader.loadTextFile(directoryWithIndex + "index.txt");
+    LineNumberReader reader = new LineNumberReader(new StringReader(fileList));
+    return reader.lines().map(s -> directoryWithIndex + s).collect(Collectors.toSet());
   }
 
 }
