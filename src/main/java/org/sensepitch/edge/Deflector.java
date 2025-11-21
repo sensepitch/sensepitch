@@ -199,7 +199,8 @@ public class Deflector {
       response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
       String cookieValue = tokenGenerator.newAdmission();
       Cookie cookie = new DefaultCookie(TOKEN_COOKIE_NAME, cookieValue);
-      cookie.setHttpOnly(true);
+      // since its not a session, its ok to expose
+      // cookie.setHttpOnly(true);
       cookie.setSecure(true);
       cookie.setPath("/");
       cookie.setMaxAge(60 * 60 * 24 * 30);
