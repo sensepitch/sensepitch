@@ -23,7 +23,7 @@ public class UnservicedHost {
 
   private final Set<String> servicedDomains;
   private final String defaultLocation;
-  private final Map<String, String> domainRedirects = new HashMap<>();
+  private final Map<String, String> redirectToWWW = new HashMap<>();
   public static final String NOT_FOUND_URI = "/NOT_FOUND";
 
   public UnservicedHost(UnservicedHostConfig cfg) {
@@ -34,7 +34,7 @@ public class UnservicedHost {
         .filter(s -> s.startsWith(WWW_PREFIX))
         .map(s -> s.substring(WWW_PREFIX.length()))
         .filter(s -> !servicedDomains.contains(s))
-        .forEach(s -> domainRedirects.put(s, "https://" + WWW_PREFIX + s));
+        .forEach(s -> redirectToWWW.put(s, "https://" + WWW_PREFIX + s));
   }
 
   public Handler newHandler() {
@@ -53,15 +53,16 @@ public class UnservicedHost {
           rejectRequest(ctx, HttpResponseStatus.BAD_REQUEST);
           return;
         } else if (!servicedDomains.contains(host)) {
-          HttpResponseStatus status = HttpResponseStatus.PERMANENT_REDIRECT;
-          String target = domainRedirects.get(host);
-          if (target == null) {
+          String target = redirectToWWW.get(host);
+          HttpResponseStatus status;
+          if (target != null) {
+            // general, permanent redirects better use 301 than 308
+            status = HttpResponseStatus.MOVED_PERMANENTLY;
+          } else {
             target = defaultLocation;
             status = HttpResponseStatus.TEMPORARY_REDIRECT;
           }
-          if (target == null) {
-            rejectRequest(ctx, HttpResponseStatus.NOT_FOUND);
-          } else {
+          if (target != null) {
             // undefined URL should not do a redirect and result in status 200
             if (!"/".equals(request.uri())) {
               target += NOT_FOUND_URI;
@@ -71,7 +72,9 @@ public class UnservicedHost {
             response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
             ctx.writeAndFlush(response);
             skipFollowingContent(ctx);
+            return;
           }
+          rejectRequest(ctx, HttpResponseStatus.NOT_FOUND);
           return;
         }
       }

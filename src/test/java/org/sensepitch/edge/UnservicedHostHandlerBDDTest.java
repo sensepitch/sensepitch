@@ -25,6 +25,8 @@ class UnservicedHostHandlerBDDTest {
   static final HttpResponseStatus STATUS_400_BAD_REQUEST = HttpResponseStatus.BAD_REQUEST;
   static final HttpResponseStatus STATUS_307_TEMPORARY_REDIRECT =
       HttpResponseStatus.TEMPORARY_REDIRECT;
+  static final HttpResponseStatus STATUS_301_MOVED_PERMANENTLY =
+    MOVED_PERMANENTLY;
   static final HttpResponseStatus STATUS_308_PERMANENT_REDIRECT =
       HttpResponseStatus.PERMANENT_REDIRECT;
 
@@ -73,7 +75,7 @@ class UnservicedHostHandlerBDDTest {
     steps
         .given_a_common_example_configuration()
         .when_request_to("foo.com", "/")
-        .then_response_status_is(STATUS_308_PERMANENT_REDIRECT)
+        .then_response_status_is(STATUS_301_MOVED_PERMANENTLY)
         .then_location_header_is("https://www.foo.com");
   }
 
@@ -103,7 +105,7 @@ class UnservicedHostHandlerBDDTest {
         .then_response_status_is(BAD_REQUEST)
         .then_location_header_is_absent()
         .when_request_to("foo.com", "/")
-        .then_response_status_is(STATUS_308_PERMANENT_REDIRECT)
+        .then_response_status_is(STATUS_301_MOVED_PERMANENTLY)
         .then_location_header_is("https://www.foo.com");
   }
 

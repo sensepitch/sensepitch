@@ -78,7 +78,7 @@ class UnservicedHostHandlerTest {
     DefaultHttpRequest req = new DefaultHttpRequest(HTTP_1_1, GET, "/");
     req.headers().set(HttpHeaderNames.HOST, "foo.com");
     HttpResponse resp = writeAndExpectResponse(req);
-    assertThat(resp.status()).isEqualTo(PERMANENT_REDIRECT);
+    assertThat(resp.status()).isEqualTo(MOVED_PERMANENTLY);
     assertThat(resp.headers().get(HttpHeaderNames.LOCATION)).isEqualTo("https://www.foo.com");
   }
 
