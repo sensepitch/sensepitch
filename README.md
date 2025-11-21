@@ -142,6 +142,7 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [x] YAML based configuration
 - [x] improve default configuration
 - [x] metrics: byte IO count per ingress
+- [ ] Integrate https://github.com/cruftex/GoodBots
 - [ ] minimise + compress, challenge resources
 - [ ] only allow know HTTP methods
 - [ ] unify timeout with keep alive handler

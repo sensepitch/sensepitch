@@ -321,6 +321,7 @@
 
     // --- Boot ---
     // If cookie already present, bail out early
+    // FIXME: wrong / needed?
     if (document.cookie && document.cookie.indexOf('sptkn=') !== -1) {
         status.textContent = 'Challenge completed, cookie set.';
         return;

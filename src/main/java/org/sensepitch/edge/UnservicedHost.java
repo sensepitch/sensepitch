@@ -45,8 +45,9 @@ public class UnservicedHost {
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
       if (msg instanceof HttpRequest request) {
-        String host = ((HttpRequest) msg).headers().get(HttpHeaderNames.HOST);
-        if (host == null
+        String host = request.headers().get(HttpHeaderNames.HOST);
+        if (SanitizeHostHandler.UNKNOWN_METHOD.equals(request.method())
+          || host == null
           || SanitizeHostHandler.MISSING_HOST.equals(host)
           || SanitizeHostHandler.UNKNOWN_HOST.equals(host)) {
           rejectRequest(ctx, HttpResponseStatus.BAD_REQUEST);
