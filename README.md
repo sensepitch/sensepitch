@@ -143,6 +143,7 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [x] improve default configuration
 - [x] metrics: byte IO count per ingress
 - [ ] http to https forward
+- [ ] send 404 for any non / URL for unserviced domain?
 - [ ] only allow known HTTP methods
 - [ ] Integrate https://github.com/cruftex/GoodBots
 - [ ] minimise + compress, challenge resources
