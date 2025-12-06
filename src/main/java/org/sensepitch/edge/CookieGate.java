@@ -20,6 +20,11 @@ import java.util.Map;
 import java.util.Set;
 
 /**
+ * The cookie gate checks whether cookie is set. The value of the cookie is
+ * of no relevance. If the cookie is present, the request is processed; otherwise
+ * it is rejected with 404. If a certain URL is configured, the cookie is set for the
+ * second level domain.
+ *
  * @author Jens Wilke
  */
 public class CookieGate {
@@ -63,13 +68,16 @@ public class CookieGate {
       if (msg instanceof HttpRequest request) {
         CookieGateConfig cfg = uri2config.get(request.uri());
         if (cfg != null) {
+          String hostname = request.headers().get(HttpHeaderNames.HOST);
+          String domain = extractSecondLevelDomain(hostname);
           ByteBuf buf = Unpooled.copiedBuffer("welcome", CharsetUtil.UTF_8);
           DefaultFullHttpResponse response =
             new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, buf);
-          Cookie cookie = new DefaultCookie(cfg.name(), "y");
+          Cookie cookie = new DefaultCookie(cfg.name(), "1");
           cookie.setHttpOnly(true);
           cookie.setSecure(true);
           cookie.setPath("/");
+          cookie.setDomain(domain);
           cookie.setMaxAge(60 * 60 * 24 * 30);
           String encodedCookie = ServerCookieEncoder.STRICT.encode(cookie);
           response.headers().set(HttpHeaderNames.SET_COOKIE, encodedCookie);
@@ -89,6 +97,12 @@ public class CookieGate {
       super.channelRead(ctx, msg);
     }
 
+  }
+
+  static String extractSecondLevelDomain(String hostname) {
+    String[] parts = hostname.split("\\.");
+    if (parts.length < 2) { return hostname; }
+    return parts[parts.length - 2] + "." + parts[parts.length - 1];
   }
 
 }
