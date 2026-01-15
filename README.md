@@ -142,6 +142,7 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [x] YAML based configuration
 - [x] improve default configuration
 - [x] metrics: byte IO count per ingress
+- [ ] bypass config should be in the protection and not in the protection providers => we need a proper API for the protection provider
 - [ ] http to https forward
 - [ ] send 404 for any non / URL for unserviced domain?
 - [ ] only allow known HTTP methods
