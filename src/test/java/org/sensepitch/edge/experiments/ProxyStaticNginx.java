@@ -2,7 +2,6 @@ package org.sensepitch.edge.experiments;
 
 import java.util.List;
 import java.util.Map;
-
 import org.sensepitch.edge.AdmissionTokenGeneratorConfig;
 import org.sensepitch.edge.BypassConfig;
 import org.sensepitch.edge.ConnectionConfig;
@@ -34,10 +33,11 @@ public class ProxyStaticNginx {
             .listen(
                 ListenConfig.builder()
                     // testing
-                    .connection(ConnectionConfig.DEFAULT.toBuilder()
-                      .responseTimeoutSeconds(3)
-                      .readTimeoutSeconds(5)
-                      .build())
+                    .connection(
+                        ConnectionConfig.DEFAULT.toBuilder()
+                            .responseTimeoutSeconds(3)
+                            .readTimeoutSeconds(5)
+                            .build())
                     .httpsPort(17443)
                     .ssl(
                         SslConfig.builder()
@@ -47,19 +47,19 @@ public class ProxyStaticNginx {
                     .build())
             // .upstream(UpstreamConfig.builder().target("172.21.0.3:80").build())
             // not used
-            .protection(ProtectionConfig.builder()
-              .deflector(DeflectorConfig.builder()
-                .tokenGenerators(List.of(
-                  AdmissionTokenGeneratorConfig.builder()
-                    .secret("secret")
-                    .prefix("x")
-                    .build()
-                ))
-                .bypass(BypassConfig.builder()
-                  .uris(List.of("/10kb.img"))
-                  .build())
-                .build())
-              .build())
+            .protection(
+                ProtectionConfig.builder()
+                    .deflector(
+                        DeflectorConfig.builder()
+                            .tokenGenerators(
+                                List.of(
+                                    AdmissionTokenGeneratorConfig.builder()
+                                        .secret("secret")
+                                        .prefix("x")
+                                        .build()))
+                            .bypass(BypassConfig.builder().uris(List.of("/10kb.img")).build())
+                            .build())
+                    .build())
             .sites(
                 Map.of(
                     "localhost",

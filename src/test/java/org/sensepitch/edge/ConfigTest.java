@@ -30,12 +30,12 @@ public class ConfigTest {
 
   @Test
   public void readConfigFromEnvironmentTextListSeparate() throws Exception {
-    Map<String, String> env = Map.of(
-      "XX_TEXTS_0", "/xy",
-      "XX_TEXTS_1", "special"
-    );
+    Map<String, String> env =
+        Map.of(
+            "XX_TEXTS_0", "/xy",
+            "XX_TEXTS_1", "special");
     AllFieldTypesConfig cfg =
-      (AllFieldTypesConfig) EnvInjector.injectFromEnv("XX_", env, AllFieldTypesConfig.builder());
+        (AllFieldTypesConfig) EnvInjector.injectFromEnv("XX_", env, AllFieldTypesConfig.builder());
     assertEquals("[/xy, special]", cfg.texts().toString());
   }
 
@@ -67,8 +67,7 @@ public class ConfigTest {
   @Test
   public void configDeflector() throws Exception {
     Map<String, String> env =
-        Map.of(
-            "SENSEPITCH_EDGE_PROTECTION_DEFLECTOR_TOKEN_GENERATORS_0_PREFIX", "z");
+        Map.of("SENSEPITCH_EDGE_PROTECTION_DEFLECTOR_TOKEN_GENERATORS_0_PREFIX", "z");
     ProxyConfig cfg =
         (ProxyConfig) EnvInjector.injectFromEnv("SENSEPITCH_EDGE_", env, ProxyConfig.builder());
     assertNotNull(cfg.protection());

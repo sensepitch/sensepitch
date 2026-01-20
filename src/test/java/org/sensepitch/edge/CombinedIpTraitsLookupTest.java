@@ -1,8 +1,7 @@
 package org.sensepitch.edge;
 
-import org.junit.jupiter.api.Test;
-
 import java.io.IOException;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author Jens Wilke

@@ -2,7 +2,6 @@ package org.sensepitch.edge;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-
 import java.io.File;
 import java.net.URLConnection;
 import java.util.HashMap;
@@ -48,6 +47,5 @@ public class ResourceFiles {
     return mimeType;
   }
 
-  public record FileInfo(ByteBuf buf, String mimeType) { }
-
+  public record FileInfo(ByteBuf buf, String mimeType) {}
 }

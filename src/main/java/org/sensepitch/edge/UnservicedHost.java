@@ -47,9 +47,9 @@ public class UnservicedHost {
       if (msg instanceof HttpRequest request) {
         String host = request.headers().get(HttpHeaderNames.HOST);
         if (SanitizeHostHandler.UNKNOWN_METHOD.equals(request.method())
-          || host == null
-          || SanitizeHostHandler.MISSING_HOST.equals(host)
-          || SanitizeHostHandler.UNKNOWN_HOST.equals(host)) {
+            || host == null
+            || SanitizeHostHandler.MISSING_HOST.equals(host)
+            || SanitizeHostHandler.UNKNOWN_HOST.equals(host)) {
           rejectRequest(ctx, HttpResponseStatus.BAD_REQUEST);
           return;
         } else if (!servicedDomains.contains(host)) {
@@ -81,5 +81,4 @@ public class UnservicedHost {
       super.channelRead(ctx, msg);
     }
   }
-
 }

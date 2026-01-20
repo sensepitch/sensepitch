@@ -1,4 +1,3 @@
-
 package org.sensepitch.edge;
 
 import io.netty.channel.ChannelDuplexHandler;
@@ -17,19 +16,18 @@ import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.concurrent.ScheduledFuture;
-
 import java.util.concurrent.TimeUnit;
 
 /**
- * <p>Watches the request and response pass through and implement timeouts for
- * the request, response and write. There is only one timeout active at a point in time.
- * The response timeout is actually a timeout for our upstream. Once the upstream starts responding
- * the handler switches to write timeout. The write timeout triggers when no write complete any
- * more, which covers upstream and receiver stalls.
+ * Watches the request and response pass through and implement timeouts for the request, response
+ * and write. There is only one timeout active at a point in time. The response timeout is actually
+ * a timeout for our upstream. Once the upstream starts responding the handler switches to write
+ * timeout. The write timeout triggers when no write complete any more, which covers upstream and
+ * receiver stalls.
  *
  * <p>This must be placed between the http codec handler and the keep alive handler.
  *
- *<p>TODO: only works with HttpKeepAliveHandler next, maybe unify TODO: corner case when ingress
+ * <p>TODO: only works with HttpKeepAliveHandler next, maybe unify TODO: corner case when ingress
  * still sends and upstream is responding, however, we can do connection: close
  *
  * @author Jens Wilke
@@ -71,16 +69,18 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
     if (task != null) {
       return;
     }
-    task = new TimeoutTask(ctx, config.readTimeoutSeconds()) {
-      @Override
-      public void fire() {
-        proxyMetrics.ingressReceiveTimeoutFirstRequest.inc();
-        FullHttpResponse response =
-          new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.REQUEST_TIMEOUT);
-        response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
-        ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-      }
-    };
+    task =
+        new TimeoutTask(ctx, config.readTimeoutSeconds()) {
+          @Override
+          public void fire() {
+            proxyMetrics.ingressReceiveTimeoutFirstRequest.inc();
+            FullHttpResponse response =
+                new DefaultFullHttpResponse(
+                    HttpVersion.HTTP_1_1, HttpResponseStatus.REQUEST_TIMEOUT);
+            response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
+            ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+          }
+        };
   }
 
   @Override
@@ -100,19 +100,21 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
     if (!responding && msg instanceof LastHttpContent) {
       // LOG.info("awaiting response");
       task.cancel();
-      task = new TimeoutTask(ctx, config.responseTimeoutSeconds()) {
-        @Override
-        public void fire() {
-          // TODO: Metrics
-          FullHttpResponse response =
-            new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.GATEWAY_TIMEOUT);
-          response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
-          ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-          // TODO: which one?
-          ctx.fireExceptionCaught(new UpstreamResponseTimeoutException());
-          // throw new ClientTimeoutHandler.UpstreamResponseTimeoutException();
-        }
-      };
+      task =
+          new TimeoutTask(ctx, config.responseTimeoutSeconds()) {
+            @Override
+            public void fire() {
+              // TODO: Metrics
+              FullHttpResponse response =
+                  new DefaultFullHttpResponse(
+                      HttpVersion.HTTP_1_1, HttpResponseStatus.GATEWAY_TIMEOUT);
+              response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
+              ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+              // TODO: which one?
+              ctx.fireExceptionCaught(new UpstreamResponseTimeoutException());
+              // throw new ClientTimeoutHandler.UpstreamResponseTimeoutException();
+            }
+          };
     } else {
       if (msg instanceof HttpRequest) {
         responding = false;
@@ -123,7 +125,8 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
   }
 
   @Override
-  public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
+  public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
+      throws Exception {
     if (!responding) {
       // LOG.info("responding");
       responding = true;
@@ -139,36 +142,46 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
         // https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Keep-Alive
         //noinspection deprecation
         response
-          .headers()
-          .set(HttpHeaderNames.KEEP_ALIVE, "timeout=" + config.readTimeoutSeconds() + ", max=123");
+            .headers()
+            .set(
+                HttpHeaderNames.KEEP_ALIVE, "timeout=" + config.readTimeoutSeconds() + ", max=123");
         response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
       }
       task.cancel();
-      task = new TimeoutTask(ctx, config.writeTimeoutSeconds()) {
-        @Override
-        public void fire() {
-          // TODO: Metrics
-          ctx.fireExceptionCaught(new WriteTimeoutException());
-        }
-      };
+      task =
+          new TimeoutTask(ctx, config.writeTimeoutSeconds()) {
+            @Override
+            public void fire() {
+              // TODO: Metrics
+              ctx.fireExceptionCaught(new WriteTimeoutException());
+            }
+          };
     }
-    promise = promise.unvoid().addListener(future -> {
-      task.touch();
-      if (msg instanceof LastHttpContent && keepAlive) {
-        // LOG.info("awaiting another request");
-        task.cancel();
-        task = new TimeoutTask(ctx, config.readTimeoutSeconds()) {
-          @Override
-          public void fire() {
-            proxyMetrics.ingressReceiveTimeoutKeepAlive.inc();
-            FullHttpResponse response =
-              new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.REQUEST_TIMEOUT);
-            response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
-            ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-          }
-        };
-      }
-    });
+    promise =
+        promise
+            .unvoid()
+            .addListener(
+                future -> {
+                  task.touch();
+                  if (msg instanceof LastHttpContent && keepAlive) {
+                    // LOG.info("awaiting another request");
+                    task.cancel();
+                    task =
+                        new TimeoutTask(ctx, config.readTimeoutSeconds()) {
+                          @Override
+                          public void fire() {
+                            proxyMetrics.ingressReceiveTimeoutKeepAlive.inc();
+                            FullHttpResponse response =
+                                new DefaultFullHttpResponse(
+                                    HttpVersion.HTTP_1_1, HttpResponseStatus.REQUEST_TIMEOUT);
+                            response
+                                .headers()
+                                .set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
+                            ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+                          }
+                        };
+                  }
+                });
     super.write(ctx, msg, promise);
   }
 
@@ -224,11 +237,9 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
     }
 
     public abstract void fire();
-
   }
 
   public static class UpstreamResponseTimeoutException extends ChannelException {}
 
   public static class WriteTimeoutException extends ChannelException {}
 }
-

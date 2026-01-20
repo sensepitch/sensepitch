@@ -25,8 +25,7 @@ class UnservicedHostHandlerBDDTest {
   static final HttpResponseStatus STATUS_400_BAD_REQUEST = HttpResponseStatus.BAD_REQUEST;
   static final HttpResponseStatus STATUS_307_TEMPORARY_REDIRECT =
       HttpResponseStatus.TEMPORARY_REDIRECT;
-  static final HttpResponseStatus STATUS_301_MOVED_PERMANENTLY =
-    MOVED_PERMANENTLY;
+  static final HttpResponseStatus STATUS_301_MOVED_PERMANENTLY = MOVED_PERMANENTLY;
   static final HttpResponseStatus STATUS_308_PERMANENT_REDIRECT =
       HttpResponseStatus.PERMANENT_REDIRECT;
 

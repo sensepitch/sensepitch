@@ -8,10 +8,6 @@ import java.io.LineNumberReader;
 import java.io.StringReader;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.MissingResourceException;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -51,5 +47,4 @@ public class ResourceLoader {
     LineNumberReader reader = new LineNumberReader(new StringReader(fileList));
     return reader.lines().map(s -> directoryWithIndex + s).collect(Collectors.toSet());
   }
-
 }

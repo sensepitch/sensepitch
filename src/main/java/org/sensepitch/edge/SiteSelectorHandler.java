@@ -33,5 +33,4 @@ public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
     }
     super.channelRead(ctx, msg);
   }
-
 }

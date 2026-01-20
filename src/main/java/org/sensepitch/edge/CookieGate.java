@@ -20,10 +20,9 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * The cookie gate checks whether cookie is set. The value of the cookie is
- * of no relevance. If the cookie is present, the request is processed; otherwise
- * it is rejected with 404. If a certain URL is configured, the cookie is set for the
- * second level domain.
+ * The cookie gate checks whether cookie is set. The value of the cookie is of no relevance. If the
+ * cookie is present, the request is processed; otherwise it is rejected with 404. If a certain URL
+ * is configured, the cookie is set for the second level domain.
  *
  * @author Jens Wilke
  */
@@ -72,7 +71,7 @@ public class CookieGate {
           String domain = extractSecondLevelDomain(hostname);
           ByteBuf buf = Unpooled.copiedBuffer("welcome", CharsetUtil.UTF_8);
           DefaultFullHttpResponse response =
-            new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, buf);
+              new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, buf);
           Cookie cookie = new DefaultCookie(cfg.name(), "1");
           cookie.setHttpOnly(true);
           cookie.setSecure(true);
@@ -87,7 +86,7 @@ public class CookieGate {
         }
         if (!isCookiePresent(request)) {
           DefaultFullHttpResponse response =
-            new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND);
+              new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND);
           response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
           ctx.writeAndFlush(response);
           skipFollowingContent(ctx);
@@ -96,13 +95,13 @@ public class CookieGate {
       }
       super.channelRead(ctx, msg);
     }
-
   }
 
   static String extractSecondLevelDomain(String hostname) {
     String[] parts = hostname.split("\\.");
-    if (parts.length < 2) { return hostname; }
+    if (parts.length < 2) {
+      return hostname;
+    }
     return parts[parts.length - 2] + "." + parts[parts.length - 1];
   }
-
 }

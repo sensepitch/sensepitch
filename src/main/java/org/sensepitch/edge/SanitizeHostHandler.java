@@ -26,8 +26,8 @@ public class SanitizeHostHandler extends ChannelInboundHandlerAdapter {
 
   /**
    * Alternative host that is set when the host from the client does not match any of the serviced
-   * hosts. The underscore is not a legal character within a hostname. This never collides
-   * with a real existing hostname.
+   * hosts. The underscore is not a legal character within a hostname. This never collides with a
+   * real existing hostname.
    */
   public static final String UNKNOWN_HOST = "unknown_host";
 
@@ -40,22 +40,17 @@ public class SanitizeHostHandler extends ChannelInboundHandlerAdapter {
    */
   public static final String NIL_HOST = "nil_host";
 
-  /**
-   * Replacement for any method that we don't know or support.
-   */
+  /** Replacement for any method that we don't know or support. */
   public static final HttpMethod UNKNOWN_METHOD = new HttpMethod("INVALID");
 
   // public static final HttpMethod UNSUPPORTED_METHOD = new HttpMethod("C/T");
 
   public static final Set<String> SPECIAL_HOSTS = Set.of(UNKNOWN_HOST, MISSING_HOST, NIL_HOST);
 
-  public static final Set<String> SUPPORTED_HTTP_METHODS = Set.of(
-    "GET", "HEAD", "OPTIONS", "POST", "PUT", "DELETE", "PATCH"
-  );
+  public static final Set<String> SUPPORTED_HTTP_METHODS =
+      Set.of("GET", "HEAD", "OPTIONS", "POST", "PUT", "DELETE", "PATCH");
 
-  public static final Set<String> UNSUPPORTED_HTTP_METHODS = Set.of(
-    "CONNECT", "TRACE"
-  );
+  public static final Set<String> UNSUPPORTED_HTTP_METHODS = Set.of("CONNECT", "TRACE");
 
   private final Set<String> knownHosts;
 

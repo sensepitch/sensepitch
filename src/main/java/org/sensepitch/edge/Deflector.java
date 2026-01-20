@@ -7,7 +7,6 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpHeaderNames;
-import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
@@ -17,8 +16,6 @@ import io.netty.handler.codec.http.cookie.DefaultCookie;
 import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
 import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
 import io.netty.util.CharsetUtil;
-import io.netty.util.ReferenceCountUtil;
-
 import java.net.Inet4Address;
 import java.net.SocketException;
 import java.net.UnknownHostException;
@@ -27,7 +24,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.atomic.LongAdder;
 
 /**
  * @author Jens Wilke
@@ -54,7 +50,7 @@ public class Deflector {
   public static String FLAVOR_DEFLECT = "deflect";
 
   ChallengeGenerationAndVerification challengeVerification =
-    new ChallengeGenerationAndVerification();
+      new ChallengeGenerationAndVerification();
   private final NoBypassCheck noBypassCheck;
   private final BypassCheck bypassCheck;
   private final AdmissionTokenGenerator tokenGenerator;
@@ -91,7 +87,7 @@ public class Deflector {
     for (AdmissionTokenGeneratorConfig tc : cfg.tokenGenerators()) {
       char prefix = tc.prefix().charAt(0);
       DefaultAdmissionTokenGenerator generator =
-        new DefaultAdmissionTokenGenerator(serverIpv4Address, prefix, tc.secret());
+          new DefaultAdmissionTokenGenerator(serverIpv4Address, prefix, tc.secret());
       if (firstGenerator == null) {
         firstGenerator = generator;
       }
@@ -131,7 +127,7 @@ public class Deflector {
 
   boolean needsBypass(ChannelHandlerContext ctx, HttpRequest request) {
     return !noBypassCheck.skipBypass(ctx, request)
-      && bypassCheck.allowBypass(ctx.channel(), request);
+        && bypassCheck.allowBypass(ctx.channel(), request);
   }
 
   void outputChallengeResources(ChannelHandlerContext ctx, HttpRequest request) {
@@ -139,7 +135,8 @@ public class Deflector {
     int idx = uri.lastIndexOf('/');
     if (idx + 1 >= uri.length()) {
       FullHttpResponse response =
-        new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.BAD_REQUEST, Unpooled.EMPTY_BUFFER);
+          new DefaultFullHttpResponse(
+              HttpVersion.HTTP_1_1, HttpResponseStatus.BAD_REQUEST, Unpooled.EMPTY_BUFFER);
       ctx.writeAndFlush(response);
       return;
     }
@@ -147,13 +144,17 @@ public class Deflector {
     ResourceFiles.FileInfo file = challengeFiles.getFile(fileName);
     if (file == null) {
       FullHttpResponse response =
-        new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND, Unpooled.EMPTY_BUFFER);
+          new DefaultFullHttpResponse(
+              HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND, Unpooled.EMPTY_BUFFER);
       ctx.writeAndFlush(response);
       return;
     }
     FullHttpResponse response =
-      new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, file.buf().retainedDuplicate());
-    response.headers().set(HttpHeaderNames.CACHE_CONTROL, "no-store, no-cache, must-revalidate, max-age=0");
+        new DefaultFullHttpResponse(
+            HttpVersion.HTTP_1_1, HttpResponseStatus.OK, file.buf().retainedDuplicate());
+    response
+        .headers()
+        .set(HttpHeaderNames.CACHE_CONTROL, "no-store, no-cache, must-revalidate, max-age=0");
     response.headers().set(HttpHeaderNames.PRAGMA, "no-cache");
     response.headers().set(HttpHeaderNames.EXPIRES, "0");
     response.headers().set(HttpHeaderNames.CONTENT_TYPE, file.mimeType());
@@ -172,8 +173,10 @@ public class Deflector {
     msg = msg.replace("{{PREFIX}}", challengeVerification.getTargetPrefix());
     ByteBuf buf = Unpooled.copiedBuffer(msg, CharsetUtil.UTF_8);
     FullHttpResponse response =
-      new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.FORBIDDEN, buf);
-    response.headers().set(HttpHeaderNames.CACHE_CONTROL, "no-store, no-cache, must-revalidate, max-age=0");
+        new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.FORBIDDEN, buf);
+    response
+        .headers()
+        .set(HttpHeaderNames.CACHE_CONTROL, "no-store, no-cache, must-revalidate, max-age=0");
     response.headers().set(HttpHeaderNames.PRAGMA, "no-cache");
     response.headers().set(HttpHeaderNames.EXPIRES, "0");
     response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/html; charset=UTF-8");
@@ -236,5 +239,4 @@ public class Deflector {
     }
     return false;
   }
-
 }

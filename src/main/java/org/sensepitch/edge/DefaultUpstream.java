@@ -9,9 +9,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelPipeline;
-import io.netty.channel.pool.ChannelHealthChecker;
 import io.netty.channel.pool.ChannelPoolHandler;
-import io.netty.channel.pool.FixedChannelPool;
 import io.netty.channel.pool.SimpleChannelPool;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
@@ -115,11 +113,11 @@ public class DefaultUpstream implements Upstream {
       upstreamFuture.addListener(
           (ChannelFutureListener)
               cf -> {
-//                LOG.info(
-//                  ingressCtx.channel().id()
-//                    + ">"
-//                    + cf.channel().id()
-//                    + " upstream connected, forwarding to promise");
+                //                LOG.info(
+                //                  ingressCtx.channel().id()
+                //                    + ">"
+                //                    + cf.channel().id()
+                //                    + " upstream connected, forwarding to promise");
                 if (cf.isSuccess()) {
                   promise.setSuccess(cf.channel());
                 } else {
@@ -170,5 +168,4 @@ public class DefaultUpstream implements Upstream {
     ChannelFuture f = bs.connect();
     return f;
   }
-
 }

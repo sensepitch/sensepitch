@@ -76,8 +76,8 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       upstreamChannelFuture.addListener(
           (FutureListener<Channel>)
               future -> {
-            forwardLastContentAndFlush(ctx, future, (LastHttpContent) msg);
-          });
+                forwardLastContentAndFlush(ctx, future, (LastHttpContent) msg);
+              });
     } else if (msg instanceof HttpContent) {
       if (upstreamChannelFuture == null) {
         ReferenceCountUtil.release(msg);
@@ -133,8 +133,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       }
       DEBUG.error(ctx.channel(), "unknown upstream connection problem", future.cause());
       ctx.pipeline().get(RequestLoggingHandler.class).setException(cause);
-      completeWithError(
-          ctx, HttpResponseStatus.valueOf(502, "Upstream connection problem"));
+      completeWithError(ctx, HttpResponseStatus.valueOf(502, "Upstream connection problem"));
     }
   }
 
@@ -169,7 +168,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     upstreamChannelFuture.addListener(
         (FutureListener<Channel>)
             future -> {
-          assert ctx.executor().inEventLoop();
+              assert ctx.executor().inEventLoop();
               if (future.isSuccess()) {
                 upstreamChannelFuture.resultNow().write(request);
                 if (contentExpected) {

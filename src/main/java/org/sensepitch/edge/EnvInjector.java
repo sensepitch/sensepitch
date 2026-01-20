@@ -78,7 +78,9 @@ public class EnvInjector {
         for (int i = 0; true; i++) {
           String indexPrefix = envName + "_" + i;
           String value = env.get(indexPrefix);
-          if (value == null) { break; }
+          if (value == null) {
+            break;
+          }
           list.add(parseValue(value, targetType));
         }
       }
