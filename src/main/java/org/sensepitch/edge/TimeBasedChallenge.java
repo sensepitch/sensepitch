@@ -3,7 +3,7 @@ package org.sensepitch.edge;
 /**
  * @author Jens Wilke
  */
-public class TimeBasedChallengeString implements ChallengeStringGenerator {
+public class TimeBasedChallenge implements ChallengeGenerator {
 
   static int VERIFY_RANGE_MINUTES = 5;
   static long VERIFY_RANGE = 1000 * 60 * VERIFY_RANGE_MINUTES;

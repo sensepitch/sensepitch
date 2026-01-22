@@ -1,6 +1,8 @@
 package org.sensepitch.edge;
 
 /**
+ * The admission token is issued after passing the PoW challenge.
+ *
  * @author Jens Wilke
  */
 public interface AdmissionTokenGenerator {

@@ -1,9 +1,8 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.sensepitch.edge.TimeBasedChallengeString.generateChallengeString;
-import static org.sensepitch.edge.TimeBasedChallengeString.verifyChallengeString;
+import static org.sensepitch.edge.TimeBasedChallenge.generateChallengeString;
+import static org.sensepitch.edge.TimeBasedChallenge.verifyChallengeString;
 
 import org.junit.jupiter.api.Test;
 
@@ -27,8 +26,8 @@ public class ChallengeTest {
     assertThat(verifyChallengeString("SDkjsdk0aoiewjfoiewjfC")).isEqualTo(0L);
   }
 
-  ChallengeStringGenerator DUMMY_CHALLENGE_GENERATOR =
-      new ChallengeStringGenerator() {
+  ChallengeGenerator DUMMY_CHALLENGE_GENERATOR =
+      new ChallengeGenerator() {
         @Override
         public String generateChallenge() {
           return "";
@@ -46,6 +45,6 @@ public class ChallengeTest {
     String nonce = "1658";
     ChallengeGenerationAndVerification challengeHandler =
         new ChallengeGenerationAndVerification(DUMMY_CHALLENGE_GENERATOR, "888");
-    assertThat(challengeHandler.verifyChallengeParameters(challenge, nonce)).isEqualTo(1);
+    assertThat(challengeHandler.verifyChallengeResponse(challenge, nonce)).isEqualTo(1);
   }
 }

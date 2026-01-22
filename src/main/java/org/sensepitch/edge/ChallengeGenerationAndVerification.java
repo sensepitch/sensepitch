@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.Objects;
 
 /**
  * Generate a challenge and verify the response with the generated nonce.
@@ -12,17 +13,14 @@ import java.util.HexFormat;
  */
 public class ChallengeGenerationAndVerification {
 
-  private final ChallengeStringGenerator challengeStringGenerator;
+  private final ChallengeGenerator challengeGenerator;
   private final String targetPrefix;
 
   public ChallengeGenerationAndVerification(
-      ChallengeStringGenerator challengeStringGenerator, String targetPrefix) {
-    this.challengeStringGenerator = challengeStringGenerator;
+    ChallengeGenerator challengeGenerator, String targetPrefix) {
+    Objects.requireNonNull(targetPrefix);
+    this.challengeGenerator = challengeGenerator;
     this.targetPrefix = targetPrefix;
-  }
-
-  public ChallengeGenerationAndVerification() {
-    this(new TimeBasedChallengeString(), "888");
   }
 
   public String getTargetPrefix() {
@@ -30,19 +28,19 @@ public class ChallengeGenerationAndVerification {
   }
 
   public String generateChallenge() {
-    return challengeStringGenerator.generateChallenge();
+    return challengeGenerator.generateChallenge();
   }
 
   /**
    * Check whether the challenge was created recently and the nonce fits.
    *
    * @return 0 if invalid or time in milliseconds the challenge was created
-   * @see ChallengeStringGenerator#verifyChallenge(String)
+   * @see ChallengeGenerator#verifyChallenge(String)
    */
-  public long verifyChallengeParameters(String challengeString, String nonce) {
-    long t = challengeStringGenerator.verifyChallenge(challengeString);
+  public long verifyChallengeResponse(String challenge, String nonce) {
+    long t = challengeGenerator.verifyChallenge(challenge);
     if (t > 0) {
-      String hex = calculateSha256(challengeString + nonce);
+      String hex = calculateSha256(challenge + nonce);
       if (hex.startsWith(targetPrefix)) {
         return t;
       }
@@ -63,4 +61,5 @@ public class ChallengeGenerationAndVerification {
       throw new UnsatisfiedLinkError(e.getMessage());
     }
   }
+
 }

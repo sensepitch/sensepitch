@@ -49,14 +49,15 @@ public class Deflector {
   public static String FLAVOR_CRAWLER = "crawler";
   public static String FLAVOR_DEFLECT = "deflect";
 
-  ChallengeGenerationAndVerification challengeVerification =
-      new ChallengeGenerationAndVerification();
+  private final ChallengeGenerationAndVerification challengeVerification;
   private final NoBypassCheck noBypassCheck;
   private final BypassCheck bypassCheck;
   private final AdmissionTokenGenerator tokenGenerator;
   private final Map<Character, AdmissionTokenGenerator> tokenGenerators = new HashMap<>();
 
   Deflector(DeflectorConfig cfg) {
+    challengeVerification =
+      new ChallengeGenerationAndVerification(new TimeBasedChallenge(), cfg.hashTargetPrefix());
     if (cfg.noBypass() != null) {
       noBypassCheck = new DefaultNoBypassCheck(cfg.noBypass());
     } else {
@@ -196,7 +197,7 @@ public class Deflector {
     Map<String, List<String>> params = decoder.parameters();
     String challenge = params.get("challenge").getFirst();
     String nonce = params.get("nonce").getFirst();
-    long t = challengeVerification.verifyChallengeParameters(challenge, nonce);
+    long t = challengeVerification.verifyChallengeResponse(challenge, nonce);
     FullHttpResponse response;
     if (t > 0) {
       response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);

@@ -119,7 +119,7 @@ public class DeflectorHandlerTest {
     String challenge =
       findCookieValue(challengeResponse, Deflector.CHALLENGE_COOKIE_NAME);
     assertThat(challenge).isNotNull();
-    String nonce = findNonce(challenge, new ChallengeGenerationAndVerification().getTargetPrefix());
+    String nonce = findNonce(challenge, cfg.hashTargetPrefix());
     request(Deflector.CHALLENGE_ANSWER_URL + "?challenge=" + challenge + "&nonce=" + nonce);
     assertThat(passed).isFalse();
     assertThat(messageWritten)
@@ -143,7 +143,8 @@ public class DeflectorHandlerTest {
 
   private static DeflectorConfig getDeflectorConfig() {
     DeflectorConfig cfg =
-      DeflectorConfig.builder()
+      DeflectorConfig.DEFAULT.toBuilder()
+        .hashTargetPrefix("888")
         .serverIpv4Address("127.0.0.1")
         .bypass(BypassConfig.builder().uris(List.of("/bypass")).build())
         .noBypass(
