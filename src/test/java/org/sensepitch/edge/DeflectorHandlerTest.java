@@ -11,6 +11,7 @@ import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.DefaultHttpRequest;
+import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
@@ -83,6 +84,18 @@ public class DeflectorHandlerTest {
         });
   }
 
+  @Test
+  public void testChallengeResourcesNoCache() throws Exception {
+    DeflectorConfig cfg = getDeflectorConfig();
+    init(cfg);
+    request(Deflector.CHALLENGE_RESOURCES_URL + "/style.css");
+    assertThat(passed).isFalse();
+    expectResponseIsNoCacheOk("text/css; charset=utf-8");
+    request(Deflector.CHALLENGE_RESOURCES_URL + "/script.js");
+    assertThat(passed).isFalse();
+    expectResponseIsNoCacheOk("text/javascript; charset=utf-8");
+  }
+
   private static DeflectorConfig getDeflectorConfig() {
     DeflectorConfig cfg =
       DeflectorConfig.builder()
@@ -104,6 +117,23 @@ public class DeflectorHandlerTest {
             response -> {
               assertThat(response.status().code()).isEqualTo(403);
             });
+  }
+
+  private void expectResponseIsNoCacheOk(String expectedContentType) {
+    assertThat(messageWritten)
+      .isNotNull()
+      .isInstanceOfSatisfying(
+        HttpResponse.class,
+        response -> {
+          assertThat(response.status().code()).isEqualTo(200);
+          assertThat(response.headers().get("Cache-Control"))
+            .isEqualTo("no-store, no-cache, must-revalidate, max-age=0");
+          assertThat(response.headers().get("Pragma")).isEqualTo("no-cache");
+          assertThat(response.headers().get("Expires")).isEqualTo("0");
+          assertThat(response.headers().get(HttpHeaderNames.CONTENT_TYPE))
+            .isEqualTo(expectedContentType);
+          assertThat(response.headers().getInt(HttpHeaderNames.CONTENT_LENGTH)).isGreaterThan(0);
+        });
   }
 
   private void init(DeflectorConfig cfg) {
