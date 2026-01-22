@@ -33,6 +33,7 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter {
       } else if (deflector.needsBypass(ctx, request)) {
         ctx.fireChannelRead(msg);
       } else if (request.uri().startsWith(Deflector.CHALLENGE_STEP_URL)) {
+        // this is just for progress reporting and debugging
         request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_DEFLECT);
         FullHttpResponse response =
             new DefaultFullHttpResponse(

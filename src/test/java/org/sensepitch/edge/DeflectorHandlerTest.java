@@ -28,6 +28,8 @@ public class DeflectorHandlerTest {
   private Channel channel;
   private boolean passed;
   private Object messageWritten;
+  static final String TWITTER = "Twitterbot/1.0";
+  static final String WHATS_APP = "WhatsApp/3.0.0.0 A";
 
   @Test
   public void test() throws Exception {
@@ -36,21 +38,46 @@ public class DeflectorHandlerTest {
             .serverIpv4Address("127.0.0.1")
             .bypass(BypassConfig.builder().uris(List.of("/bypass")).build())
             .noBypass(
-                NoBypassConfig.builder().uris(List.of("/neverBypass", "/bypass/excluded")).build())
+                NoBypassConfig.builder().uris(List.of("/neverbypass", "/bypass/excluded")).build())
             .tokenGenerators(
                 List.of(AdmissionTokenGeneratorConfig.builder().secret("asdf").prefix("X").build()))
             .build();
     init(cfg);
-    request("/bypass");
-    assertThat(passed).isTrue();
-    request("/nobypass");
+    request("/default");
     assertThat(passed).isFalse();
     expectResponseIsChallenge();
+    request("/default", WHATS_APP);
+    assertThat(passed).isTrue();
+    request("/bypass");
+    assertThat(passed).isTrue();
     request("/bypass/excluded");
     assertThat(passed).isFalse();
     expectResponseIsChallenge();
-    request("/nobypass", "Twitterbot/1.0");
+    request("/default/twitter-bot-does-pass", TWITTER);
     assertThat(passed).isTrue();
+  }
+
+  /**
+   *
+   * @throws Exception
+   */
+  @Test
+  public void testWhatsAppImagePreview() throws Exception {
+    DeflectorConfig cfg =
+      DeflectorConfig.builder()
+        .serverIpv4Address("127.0.0.1")
+        .bypass(BypassConfig.builder().uris(List.of("/bypass")).build())
+        .noBypass(
+          NoBypassConfig.builder().uris(List.of("/neverbypass", "/bypass/excluded")).build())
+        .tokenGenerators(
+          List.of(AdmissionTokenGeneratorConfig.builder().secret("asdf").prefix("X").build()))
+        .build();
+    init(cfg);
+    request("/default", WHATS_APP);
+    assertThat(passed).isTrue();
+    request("/neverbypass", WHATS_APP);
+    assertThat(passed).isFalse();
+    expectResponseIsChallenge();
   }
 
   private void expectResponseIsChallenge() {
