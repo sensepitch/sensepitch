@@ -14,7 +14,7 @@ import io.netty.util.ReferenceCountUtil;
 /**
  * @author Jens Wilke
  */
-public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter {
+public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter  implements ProtectorPlugin {
 
   private static final ProxyLogger LOG = ProxyLogger.get(DeflectorHandler.class);
 
@@ -25,46 +25,49 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter {
   }
 
   @Override
+  public boolean mightIntercept(HttpRequest request, ChannelHandlerContext ctx) {
+    if (deflector.checkAdmissionCookie(request)) {
+      request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_USER);
+      return false;
+    } else if (deflector.needsBypass(ctx, request)) {
+      return false;
+    } else if (request.uri().startsWith(Deflector.CHALLENGE_STEP_URL)) {
+      // this is just for progress reporting and debugging
+      request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_DEFLECT);
+      FullHttpResponse response =
+        new DefaultFullHttpResponse(
+          HttpVersion.HTTP_1_1, HttpResponseStatus.NO_CONTENT, Unpooled.EMPTY_BUFFER);
+      // Prevent caching
+      response
+        .headers()
+        .set(HttpHeaderNames.CACHE_CONTROL, "no-store, no-cache, must-revalidate, max-age=0");
+      response.headers().set(HttpHeaderNames.PRAGMA, "no-cache");
+      response.headers().set(HttpHeaderNames.EXPIRES, "0");
+      ctx.writeAndFlush(response);
+    } else if (request.method() == HttpMethod.GET
+      && request.uri().startsWith(Deflector.CHALLENGE_RESOURCES_URL)) {
+      request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_DEFLECT);
+      deflector.outputChallengeResources(ctx, request);
+    } else if (request.method() == HttpMethod.GET
+      && request.uri().startsWith(Deflector.CHALLENGE_ANSWER_URL)) {
+      request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_USER);
+      deflector.handleChallengeAnswer(ctx, request);
+    } else {
+      // TODO: behaviour of non GET requests?
+      request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_DEFLECT);
+      deflector.outputChallengeHtml(ctx);
+    }
+    return true;
+  }
+
+  @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
     if (msg instanceof HttpRequest request) {
-      if (deflector.checkAdmissionCookie(request)) {
-        request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_USER);
-        ctx.fireChannelRead(msg);
-      } else if (deflector.needsBypass(ctx, request)) {
-        ctx.fireChannelRead(msg);
-      } else if (request.uri().startsWith(Deflector.CHALLENGE_STEP_URL)) {
-        // this is just for progress reporting and debugging
-        request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_DEFLECT);
-        FullHttpResponse response =
-            new DefaultFullHttpResponse(
-                HttpVersion.HTTP_1_1, HttpResponseStatus.NO_CONTENT, Unpooled.EMPTY_BUFFER);
-        // Prevent caching
-        response
-            .headers()
-            .set(HttpHeaderNames.CACHE_CONTROL, "no-store, no-cache, must-revalidate, max-age=0");
-        response.headers().set(HttpHeaderNames.PRAGMA, "no-cache");
-        response.headers().set(HttpHeaderNames.EXPIRES, "0");
-        ctx.writeAndFlush(response);
-        ReferenceCountUtil.release(request);
-        skipFollowingContent(ctx);
-      } else if (request.method() == HttpMethod.GET
-          && request.uri().startsWith(Deflector.CHALLENGE_RESOURCES_URL)) {
-        request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_DEFLECT);
-        deflector.outputChallengeResources(ctx, request);
-        ReferenceCountUtil.release(request);
-        skipFollowingContent(ctx);
-      } else if (request.method() == HttpMethod.GET
-          && request.uri().startsWith(Deflector.CHALLENGE_ANSWER_URL)) {
-        request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_USER);
-        deflector.handleChallengeAnswer(ctx, request);
+      if (mightIntercept(request, ctx)) {
         ReferenceCountUtil.release(request);
         skipFollowingContent(ctx);
       } else {
-        // TODO: behaviour of non GET requests?
-        request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_DEFLECT);
-        deflector.outputChallengeHtml(ctx);
-        ReferenceCountUtil.release(request);
-        skipFollowingContent(ctx);
+        ctx.fireChannelRead(msg);
       }
     } else {
       // this skips content if completely handled here
