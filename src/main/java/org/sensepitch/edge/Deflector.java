@@ -58,7 +58,7 @@ public class Deflector {
 
   Deflector(DeflectorConfig cfg) {
     challengeVerification =
-      new ChallengeGenerationAndVerification(new TimeBasedChallenge(), cfg.hashTargetPrefix());
+        new ChallengeGenerationAndVerification(new TimeBasedChallenge(), cfg.hashTargetPrefix());
     powMaxIterations = cfg.powMaxIterations();
     if (cfg.noBypass() != null) {
       noBypassCheck = new DefaultNoBypassCheck(cfg.noBypass());

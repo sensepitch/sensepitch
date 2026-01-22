@@ -17,7 +17,7 @@ public class ChallengeGenerationAndVerification {
   private final String targetPrefix;
 
   public ChallengeGenerationAndVerification(
-    ChallengeGenerator challengeGenerator, String targetPrefix) {
+      ChallengeGenerator challengeGenerator, String targetPrefix) {
     Objects.requireNonNull(targetPrefix);
     this.challengeGenerator = challengeGenerator;
     this.targetPrefix = targetPrefix;
@@ -61,5 +61,4 @@ public class ChallengeGenerationAndVerification {
       throw new UnsatisfiedLinkError(e.getMessage());
     }
   }
-
 }

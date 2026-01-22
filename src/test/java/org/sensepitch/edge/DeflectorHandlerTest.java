@@ -57,7 +57,6 @@ public class DeflectorHandlerTest {
   }
 
   /**
-   *
    * @throws Exception
    */
   @Test
@@ -78,16 +77,16 @@ public class DeflectorHandlerTest {
     request(Deflector.CHALLENGE_STEP_URL);
     assertThat(passed).isFalse();
     assertThat(messageWritten)
-      .isNotNull()
-      .isInstanceOfSatisfying(
-        HttpResponse.class,
-        response -> {
-          assertThat(response.status().code()).isEqualTo(204);
-          assertThat(response.headers().get("Cache-Control"))
-            .isEqualTo("no-store, no-cache, must-revalidate, max-age=0");
-          assertThat(response.headers().get("Pragma")).isEqualTo("no-cache");
-          assertThat(response.headers().get("Expires")).isEqualTo("0");
-        });
+        .isNotNull()
+        .isInstanceOfSatisfying(
+            HttpResponse.class,
+            response -> {
+              assertThat(response.status().code()).isEqualTo(204);
+              assertThat(response.headers().get("Cache-Control"))
+                  .isEqualTo("no-store, no-cache, must-revalidate, max-age=0");
+              assertThat(response.headers().get("Pragma")).isEqualTo("no-cache");
+              assertThat(response.headers().get("Expires")).isEqualTo("0");
+            });
   }
 
   @Test
@@ -109,33 +108,32 @@ public class DeflectorHandlerTest {
     request("/default");
     assertThat(passed).isFalse();
     assertThat(messageWritten)
-      .isNotNull()
-      .isInstanceOfSatisfying(
-        HttpResponse.class,
-        response -> {
-          assertThat(response.status().code()).isEqualTo(403);
-        });
+        .isNotNull()
+        .isInstanceOfSatisfying(
+            HttpResponse.class,
+            response -> {
+              assertThat(response.status().code()).isEqualTo(403);
+            });
     HttpResponse challengeResponse = (HttpResponse) messageWritten;
-    String challenge =
-      findCookieValue(challengeResponse, Deflector.CHALLENGE_COOKIE_NAME);
+    String challenge = findCookieValue(challengeResponse, Deflector.CHALLENGE_COOKIE_NAME);
     assertThat(challenge).isNotNull();
     String nonce = findNonce(challenge, cfg.hashTargetPrefix(), cfg.powMaxIterations());
     request(Deflector.CHALLENGE_ANSWER_URL + "?challenge=" + challenge + "&nonce=" + nonce);
     assertThat(passed).isFalse();
     assertThat(messageWritten)
-      .isNotNull()
-      .isInstanceOfSatisfying(
-        HttpResponse.class,
-        response -> {
-          assertThat(response.status().code()).isEqualTo(200);
-        });
+        .isNotNull()
+        .isInstanceOfSatisfying(
+            HttpResponse.class,
+            response -> {
+              assertThat(response.status().code()).isEqualTo(200);
+            });
     HttpResponse answerResponse = (HttpResponse) messageWritten;
     String token = findCookieValue(answerResponse, Deflector.TOKEN_COOKIE_NAME);
     assertThat(token).isNotNull();
     DefaultHttpRequest req =
-      new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/default");
+        new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/default");
     String cookieHeader =
-      ServerCookieEncoder.STRICT.encode(new DefaultCookie(Deflector.TOKEN_COOKIE_NAME, token));
+        ServerCookieEncoder.STRICT.encode(new DefaultCookie(Deflector.TOKEN_COOKIE_NAME, token));
     req.headers().set(HttpHeaderNames.COOKIE, cookieHeader);
     request(req);
     assertThat(passed).isTrue();
@@ -143,15 +141,15 @@ public class DeflectorHandlerTest {
 
   private static DeflectorConfig getDeflectorConfig() {
     DeflectorConfig cfg =
-      DeflectorConfig.builder()
-        .hashTargetPrefix("8")
-        .serverIpv4Address("127.0.0.1")
-        .bypass(BypassConfig.builder().uris(List.of("/bypass")).build())
-        .noBypass(
-          NoBypassConfig.builder().uris(List.of("/neverbypass", "/bypass/excluded")).build())
-        .tokenGenerators(
-          List.of(AdmissionTokenGeneratorConfig.builder().secret("asdf").prefix("X").build()))
-        .build();
+        DeflectorConfig.builder()
+            .hashTargetPrefix("8")
+            .serverIpv4Address("127.0.0.1")
+            .bypass(BypassConfig.builder().uris(List.of("/bypass")).build())
+            .noBypass(
+                NoBypassConfig.builder().uris(List.of("/neverbypass", "/bypass/excluded")).build())
+            .tokenGenerators(
+                List.of(AdmissionTokenGeneratorConfig.builder().secret("asdf").prefix("X").build()))
+            .build();
     return cfg;
   }
 
@@ -167,19 +165,20 @@ public class DeflectorHandlerTest {
 
   private void expectResponseIsNoCacheOk(String expectedContentType) {
     assertThat(messageWritten)
-      .isNotNull()
-      .isInstanceOfSatisfying(
-        HttpResponse.class,
-        response -> {
-          assertThat(response.status().code()).isEqualTo(200);
-          assertThat(response.headers().get("Cache-Control"))
-            .isEqualTo("no-store, no-cache, must-revalidate, max-age=0");
-          assertThat(response.headers().get("Pragma")).isEqualTo("no-cache");
-          assertThat(response.headers().get("Expires")).isEqualTo("0");
-          assertThat(response.headers().get(HttpHeaderNames.CONTENT_TYPE))
-            .isEqualTo(expectedContentType);
-          assertThat(response.headers().getInt(HttpHeaderNames.CONTENT_LENGTH)).isGreaterThan(0);
-        });
+        .isNotNull()
+        .isInstanceOfSatisfying(
+            HttpResponse.class,
+            response -> {
+              assertThat(response.status().code()).isEqualTo(200);
+              assertThat(response.headers().get("Cache-Control"))
+                  .isEqualTo("no-store, no-cache, must-revalidate, max-age=0");
+              assertThat(response.headers().get("Pragma")).isEqualTo("no-cache");
+              assertThat(response.headers().get("Expires")).isEqualTo("0");
+              assertThat(response.headers().get(HttpHeaderNames.CONTENT_TYPE))
+                  .isEqualTo(expectedContentType);
+              assertThat(response.headers().getInt(HttpHeaderNames.CONTENT_LENGTH))
+                  .isGreaterThan(0);
+            });
   }
 
   private String findCookieValue(HttpResponse response, String cookieName) {
@@ -194,8 +193,7 @@ public class DeflectorHandlerTest {
   }
 
   private String findNonce(String challenge, String targetPrefix, int maxIterations) {
-    int limit =
-      maxIterations > 0 ? maxIterations : DeflectorConfig.DEFAULT_POW_MAX_ITERATIONS;
+    int limit = maxIterations > 0 ? maxIterations : DeflectorConfig.DEFAULT_POW_MAX_ITERATIONS;
     for (long nonce = 0; nonce < limit; nonce++) {
       String hash = sha256Hex(challenge + nonce);
       if (hash.startsWith(targetPrefix)) {
@@ -206,8 +204,8 @@ public class DeflectorHandlerTest {
   }
 
   private String sha256Hex(String value) {
-    byte[] hash = ChallengeGenerationAndVerification.sha256(
-      value.getBytes(StandardCharsets.ISO_8859_1));
+    byte[] hash =
+        ChallengeGenerationAndVerification.sha256(value.getBytes(StandardCharsets.ISO_8859_1));
     return HexFormat.of().formatHex(hash);
   }
 

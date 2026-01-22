@@ -14,7 +14,8 @@ import io.netty.util.ReferenceCountUtil;
 /**
  * @author Jens Wilke
  */
-public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter  implements ProtectorPlugin {
+public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter
+    implements ProtectorPlugin {
 
   private static final ProxyLogger LOG = ProxyLogger.get(DeflectorHandler.class);
 
@@ -35,21 +36,21 @@ public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter  impl
       // this is just for progress reporting and debugging
       request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_DEFLECT);
       FullHttpResponse response =
-        new DefaultFullHttpResponse(
-          HttpVersion.HTTP_1_1, HttpResponseStatus.NO_CONTENT, Unpooled.EMPTY_BUFFER);
+          new DefaultFullHttpResponse(
+              HttpVersion.HTTP_1_1, HttpResponseStatus.NO_CONTENT, Unpooled.EMPTY_BUFFER);
       // Prevent caching
       response
-        .headers()
-        .set(HttpHeaderNames.CACHE_CONTROL, "no-store, no-cache, must-revalidate, max-age=0");
+          .headers()
+          .set(HttpHeaderNames.CACHE_CONTROL, "no-store, no-cache, must-revalidate, max-age=0");
       response.headers().set(HttpHeaderNames.PRAGMA, "no-cache");
       response.headers().set(HttpHeaderNames.EXPIRES, "0");
       ctx.writeAndFlush(response);
     } else if (request.method() == HttpMethod.GET
-      && request.uri().startsWith(Deflector.CHALLENGE_RESOURCES_URL)) {
+        && request.uri().startsWith(Deflector.CHALLENGE_RESOURCES_URL)) {
       request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_DEFLECT);
       deflector.outputChallengeResources(ctx, request);
     } else if (request.method() == HttpMethod.GET
-      && request.uri().startsWith(Deflector.CHALLENGE_ANSWER_URL)) {
+        && request.uri().startsWith(Deflector.CHALLENGE_ANSWER_URL)) {
       request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_USER);
       deflector.handleChallengeAnswer(ctx, request);
     } else {

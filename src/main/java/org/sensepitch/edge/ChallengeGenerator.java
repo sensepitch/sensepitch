@@ -6,8 +6,8 @@ package org.sensepitch.edge;
 public interface ChallengeGenerator {
 
   /**
-   * Generate a challenge string that needs to be solved. A challenge should always contain
-   * a time information and
+   * Generate a challenge string that needs to be solved. A challenge should always contain a time
+   * information and
    */
   String generateChallenge();
 
