@@ -33,15 +33,7 @@ public class DeflectorHandlerTest {
 
   @Test
   public void test() throws Exception {
-    DeflectorConfig cfg =
-        DeflectorConfig.builder()
-            .serverIpv4Address("127.0.0.1")
-            .bypass(BypassConfig.builder().uris(List.of("/bypass")).build())
-            .noBypass(
-                NoBypassConfig.builder().uris(List.of("/neverbypass", "/bypass/excluded")).build())
-            .tokenGenerators(
-                List.of(AdmissionTokenGeneratorConfig.builder().secret("asdf").prefix("X").build()))
-            .build();
+    DeflectorConfig cfg = getDeflectorConfig();
     init(cfg);
     request("/default");
     assertThat(passed).isFalse();
@@ -63,6 +55,35 @@ public class DeflectorHandlerTest {
    */
   @Test
   public void testWhatsAppImagePreview() throws Exception {
+    DeflectorConfig cfg = getDeflectorConfig();
+    init(cfg);
+    request("/default", WHATS_APP);
+    assertThat(passed).isTrue();
+    request("/neverbypass", WHATS_APP);
+    assertThat(passed).isFalse();
+    expectResponseIsChallenge();
+  }
+
+  @Test
+  public void testChallengeStepNoCache() throws Exception {
+    DeflectorConfig cfg = getDeflectorConfig();
+    init(cfg);
+    request(Deflector.CHALLENGE_STEP_URL);
+    assertThat(passed).isFalse();
+    assertThat(messageWritten)
+      .isNotNull()
+      .isInstanceOfSatisfying(
+        HttpResponse.class,
+        response -> {
+          assertThat(response.status().code()).isEqualTo(204);
+          assertThat(response.headers().get("Cache-Control"))
+            .isEqualTo("no-store, no-cache, must-revalidate, max-age=0");
+          assertThat(response.headers().get("Pragma")).isEqualTo("no-cache");
+          assertThat(response.headers().get("Expires")).isEqualTo("0");
+        });
+  }
+
+  private static DeflectorConfig getDeflectorConfig() {
     DeflectorConfig cfg =
       DeflectorConfig.builder()
         .serverIpv4Address("127.0.0.1")
@@ -72,12 +93,7 @@ public class DeflectorHandlerTest {
         .tokenGenerators(
           List.of(AdmissionTokenGeneratorConfig.builder().secret("asdf").prefix("X").build()))
         .build();
-    init(cfg);
-    request("/default", WHATS_APP);
-    assertThat(passed).isTrue();
-    request("/neverbypass", WHATS_APP);
-    assertThat(passed).isFalse();
-    expectResponseIsChallenge();
+    return cfg;
   }
 
   private void expectResponseIsChallenge() {
