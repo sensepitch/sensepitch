@@ -3,6 +3,9 @@
 
     // --- CONFIG ---
     var YIELD_EVERY = 10000; // iterations per chunk
+    var maxIterations = (typeof MAX_ITERATIONS === 'number' && MAX_ITERATIONS > 0)
+        ? MAX_ITERATIONS
+        : 0;
 
     // --- UTIL: visibility with vendor fallbacks ---
     function docHidden() {
@@ -223,6 +226,9 @@
         function chunk() {
             var iterations = 0;
             function step() {
+                if (maxIterations > 0 && nonce >= maxIterations) {
+                    return done(new Error('max iterations exceeded'));
+                }
                 sha256Hex(CHALLENGE + nonce, function (err, hex) {
                     if (!err && hex && hex.indexOf(TARGET_PREFIX) === 0) {
                         return done(null, nonce);
@@ -345,4 +351,3 @@
 //    });
 
 })();
-

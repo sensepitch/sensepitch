@@ -119,7 +119,7 @@ public class DeflectorHandlerTest {
     String challenge =
       findCookieValue(challengeResponse, Deflector.CHALLENGE_COOKIE_NAME);
     assertThat(challenge).isNotNull();
-    String nonce = findNonce(challenge, cfg.hashTargetPrefix());
+    String nonce = findNonce(challenge, cfg.hashTargetPrefix(), cfg.powMaxIterations());
     request(Deflector.CHALLENGE_ANSWER_URL + "?challenge=" + challenge + "&nonce=" + nonce);
     assertThat(passed).isFalse();
     assertThat(messageWritten)
@@ -143,8 +143,8 @@ public class DeflectorHandlerTest {
 
   private static DeflectorConfig getDeflectorConfig() {
     DeflectorConfig cfg =
-      DeflectorConfig.DEFAULT.toBuilder()
-        .hashTargetPrefix("888")
+      DeflectorConfig.builder()
+        .hashTargetPrefix("8")
         .serverIpv4Address("127.0.0.1")
         .bypass(BypassConfig.builder().uris(List.of("/bypass")).build())
         .noBypass(
@@ -193,8 +193,10 @@ public class DeflectorHandlerTest {
     return null;
   }
 
-  private String findNonce(String challenge, String targetPrefix) {
-    for (long nonce = 0; nonce < 1_000_000; nonce++) {
+  private String findNonce(String challenge, String targetPrefix, int maxIterations) {
+    int limit =
+      maxIterations > 0 ? maxIterations : DeflectorConfig.DEFAULT_POW_MAX_ITERATIONS;
+    for (long nonce = 0; nonce < limit; nonce++) {
       String hash = sha256Hex(challenge + nonce);
       if (hash.startsWith(targetPrefix)) {
         return Long.toString(nonce);

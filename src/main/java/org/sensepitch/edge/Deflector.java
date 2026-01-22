@@ -54,10 +54,12 @@ public class Deflector {
   private final BypassCheck bypassCheck;
   private final AdmissionTokenGenerator tokenGenerator;
   private final Map<Character, AdmissionTokenGenerator> tokenGenerators = new HashMap<>();
+  private final int powMaxIterations;
 
   Deflector(DeflectorConfig cfg) {
     challengeVerification =
       new ChallengeGenerationAndVerification(new TimeBasedChallenge(), cfg.hashTargetPrefix());
+    powMaxIterations = cfg.powMaxIterations();
     if (cfg.noBypass() != null) {
       noBypassCheck = new DefaultNoBypassCheck(cfg.noBypass());
     } else {
@@ -172,6 +174,7 @@ public class Deflector {
     msg = msg.replace("{{CHALLENGE}}", challenge);
     msg = msg.replace("{{VERIFY_URL}}", CHALLENGE_ANSWER_URL);
     msg = msg.replace("{{PREFIX}}", challengeVerification.getTargetPrefix());
+    msg = msg.replace("{{MAX_ITERATIONS}}", Integer.toString(powMaxIterations));
     ByteBuf buf = Unpooled.copiedBuffer(msg, CharsetUtil.UTF_8);
     FullHttpResponse response =
         new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.FORBIDDEN, buf);
