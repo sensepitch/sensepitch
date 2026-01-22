@@ -17,6 +17,12 @@ import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
+import io.netty.handler.codec.http.cookie.Cookie;
+import io.netty.handler.codec.http.cookie.DefaultCookie;
+import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
+import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.HexFormat;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -96,6 +102,45 @@ public class DeflectorHandlerTest {
     expectResponseIsNoCacheOk("text/javascript; charset=utf-8");
   }
 
+  @Test
+  public void testChallengeSolveAndReceiveAccessCookie() throws Exception {
+    DeflectorConfig cfg = getDeflectorConfig();
+    init(cfg);
+    request("/default");
+    assertThat(passed).isFalse();
+    assertThat(messageWritten)
+      .isNotNull()
+      .isInstanceOfSatisfying(
+        HttpResponse.class,
+        response -> {
+          assertThat(response.status().code()).isEqualTo(403);
+        });
+    HttpResponse challengeResponse = (HttpResponse) messageWritten;
+    String challenge =
+      findCookieValue(challengeResponse, Deflector.CHALLENGE_COOKIE_NAME);
+    assertThat(challenge).isNotNull();
+    String nonce = findNonce(challenge, new ChallengeGenerationAndVerification().getTargetPrefix());
+    request(Deflector.CHALLENGE_ANSWER_URL + "?challenge=" + challenge + "&nonce=" + nonce);
+    assertThat(passed).isFalse();
+    assertThat(messageWritten)
+      .isNotNull()
+      .isInstanceOfSatisfying(
+        HttpResponse.class,
+        response -> {
+          assertThat(response.status().code()).isEqualTo(200);
+        });
+    HttpResponse answerResponse = (HttpResponse) messageWritten;
+    String token = findCookieValue(answerResponse, Deflector.TOKEN_COOKIE_NAME);
+    assertThat(token).isNotNull();
+    DefaultHttpRequest req =
+      new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/default");
+    String cookieHeader =
+      ServerCookieEncoder.STRICT.encode(new DefaultCookie(Deflector.TOKEN_COOKIE_NAME, token));
+    req.headers().set(HttpHeaderNames.COOKIE, cookieHeader);
+    request(req);
+    assertThat(passed).isTrue();
+  }
+
   private static DeflectorConfig getDeflectorConfig() {
     DeflectorConfig cfg =
       DeflectorConfig.builder()
@@ -134,6 +179,33 @@ public class DeflectorHandlerTest {
             .isEqualTo(expectedContentType);
           assertThat(response.headers().getInt(HttpHeaderNames.CONTENT_LENGTH)).isGreaterThan(0);
         });
+  }
+
+  private String findCookieValue(HttpResponse response, String cookieName) {
+    for (String header : response.headers().getAll(HttpHeaderNames.SET_COOKIE)) {
+      for (Cookie cookie : ServerCookieDecoder.STRICT.decode(header)) {
+        if (cookie.name().equals(cookieName)) {
+          return cookie.value();
+        }
+      }
+    }
+    return null;
+  }
+
+  private String findNonce(String challenge, String targetPrefix) {
+    for (long nonce = 0; nonce < 1_000_000; nonce++) {
+      String hash = sha256Hex(challenge + nonce);
+      if (hash.startsWith(targetPrefix)) {
+        return Long.toString(nonce);
+      }
+    }
+    throw new IllegalStateException("nonce not found for challenge");
+  }
+
+  private String sha256Hex(String value) {
+    byte[] hash = ChallengeGenerationAndVerification.sha256(
+      value.getBytes(StandardCharsets.ISO_8859_1));
+    return HexFormat.of().formatHex(hash);
   }
 
   private void init(DeflectorConfig cfg) {
