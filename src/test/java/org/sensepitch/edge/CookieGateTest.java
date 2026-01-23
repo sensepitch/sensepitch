@@ -91,6 +91,36 @@ public class CookieGateTest {
   }
 
   @Test
+  public void testAccessUriRedirectsWhenConfigured() throws Exception {
+    init(
+        List.of(
+            CookieGateConfig.builder()
+                .name(COOKIE_NAME)
+                .accessUri(ACCESS_URI)
+                .redirectUrl("https://example.com/login")
+                .build()));
+    DefaultHttpRequest req =
+        new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, ACCESS_URI);
+    req.headers().set(HttpHeaderNames.HOST, "example.com");
+    request(req);
+    assertThat(passed).isFalse();
+    assertThat(messageWritten)
+        .isNotNull()
+        .isInstanceOfSatisfying(
+            FullHttpResponse.class,
+            response -> {
+              assertThat(response.status().code()).isEqualTo(302);
+              assertThat(response.headers().get(HttpHeaderNames.LOCATION))
+                  .isEqualTo("https://example.com/login");
+              Cookie cookie =
+                  ClientCookieDecoder.STRICT.decode(
+                      response.headers().get(HttpHeaderNames.SET_COOKIE));
+              assertThat(cookie.name()).isEqualTo(COOKIE_NAME);
+              assertThat(response.content().readableBytes()).isEqualTo(0);
+            });
+  }
+
+  @Test
   public void testCookieAllowsRequestToPass() throws Exception {
     init(List.of(CookieGateConfig.builder().name(COOKIE_NAME).build()));
     DefaultHttpRequest req =

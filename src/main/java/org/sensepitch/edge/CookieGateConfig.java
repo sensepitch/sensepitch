@@ -10,7 +10,8 @@ import lombok.Builder;
  *
  * @param name name of the cookie to check
  * @param accessUri if this URI is requested the cookie is set
+ * @param redirectUrl if set, accessUri responses redirect instead of returning the welcome body
  * @author Jens Wilke
  */
 @Builder(toBuilder = true)
-public record CookieGateConfig(String name, String accessUri) {}
+public record CookieGateConfig(String name, String accessUri, String redirectUrl) {}

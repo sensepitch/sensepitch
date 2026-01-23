@@ -6,7 +6,7 @@ import io.netty.handler.codec.http.HttpRequest;
 /**
  * @author Jens Wilke
  */
-public interface ProtectorPlugin {
+public interface ProtectionPlugin {
 
   /**
    * Inspect http request and either handle it by blocking or allow passage

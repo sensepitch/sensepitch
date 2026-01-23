@@ -14,6 +14,7 @@ import io.netty.handler.codec.http.cookie.DefaultCookie;
 import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
 import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
 import io.netty.util.CharsetUtil;
+import io.netty.util.ReferenceCountUtil;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -60,40 +61,57 @@ public class CookieGate {
     return false;
   }
 
-  public class Handler extends SkippingChannelInboundHandlerAdapter {
+  public class Handler extends SkippingChannelInboundHandlerAdapter implements ProtectionPlugin {
+
+    @Override
+    public boolean mightIntercept(HttpRequest request, ChannelHandlerContext ctx) {
+      CookieGateConfig cfg = uri2config.get(request.uri());
+      if (cfg != null) {
+        String hostname = request.headers().get(HttpHeaderNames.HOST);
+        String domain = extractSecondLevelDomain(hostname);
+        DefaultFullHttpResponse response;
+        if (cfg.redirectUrl() != null) {
+          response =
+              new DefaultFullHttpResponse(
+                  HttpVersion.HTTP_1_1, HttpResponseStatus.FOUND, Unpooled.EMPTY_BUFFER);
+          response.headers().set(HttpHeaderNames.LOCATION, cfg.redirectUrl());
+        } else {
+          ByteBuf buf = Unpooled.copiedBuffer("welcome", CharsetUtil.UTF_8);
+          response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, buf);
+        }
+        Cookie cookie = new DefaultCookie(cfg.name(), "1");
+        cookie.setHttpOnly(true);
+        cookie.setSecure(true);
+        cookie.setPath("/");
+        cookie.setDomain(domain);
+        cookie.setMaxAge(60 * 60 * 24 * 30);
+        String encodedCookie = ServerCookieEncoder.STRICT.encode(cookie);
+        response.headers().set(HttpHeaderNames.SET_COOKIE, encodedCookie);
+        ctx.writeAndFlush(response);
+        return true;
+      }
+      if (!isCookiePresent(request)) {
+        DefaultFullHttpResponse response =
+            new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND);
+        response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
+        ctx.writeAndFlush(response);
+        return true;
+      }
+      return false;
+    }
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
       if (msg instanceof HttpRequest request) {
-        CookieGateConfig cfg = uri2config.get(request.uri());
-        if (cfg != null) {
-          String hostname = request.headers().get(HttpHeaderNames.HOST);
-          String domain = extractSecondLevelDomain(hostname);
-          ByteBuf buf = Unpooled.copiedBuffer("welcome", CharsetUtil.UTF_8);
-          DefaultFullHttpResponse response =
-              new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, buf);
-          Cookie cookie = new DefaultCookie(cfg.name(), "1");
-          cookie.setHttpOnly(true);
-          cookie.setSecure(true);
-          cookie.setPath("/");
-          cookie.setDomain(domain);
-          cookie.setMaxAge(60 * 60 * 24 * 30);
-          String encodedCookie = ServerCookieEncoder.STRICT.encode(cookie);
-          response.headers().set(HttpHeaderNames.SET_COOKIE, encodedCookie);
-          ctx.writeAndFlush(response);
+        if (mightIntercept(request, ctx)) {
+          ReferenceCountUtil.release(request);
           skipFollowingContent(ctx);
-          return;
+        } else {
+          ctx.fireChannelRead(msg);
         }
-        if (!isCookiePresent(request)) {
-          DefaultFullHttpResponse response =
-              new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND);
-          response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
-          ctx.writeAndFlush(response);
-          skipFollowingContent(ctx);
-          return;
-        }
+      } else {
+        super.channelRead(ctx, msg);
       }
-      super.channelRead(ctx, msg);
     }
   }
 
