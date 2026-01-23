@@ -6,6 +6,6 @@ import lombok.Builder;
 /**
  * @author Jens Wilke
  */
-@Builder
+@Builder(toBuilder = true)
 public record BypassConfig(
     DetectCrawlerConfig detectCrawler, List<String> uris, List<String> remotes) {}

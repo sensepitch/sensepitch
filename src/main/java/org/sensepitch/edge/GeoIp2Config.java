@@ -5,5 +5,5 @@ import lombok.Builder;
 /**
  * @author Jens Wilke
  */
-@Builder
+@Builder(toBuilder = true)
 public record GeoIp2Config(String asnDbPath, String countryDbPath) {}

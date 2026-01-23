@@ -5,5 +5,5 @@ import lombok.Builder;
 /**
  * @author Jens Wilke
  */
-@Builder
+@Builder(toBuilder = true)
 public record AdmissionTokenGeneratorConfig(String prefix, String secret) {}

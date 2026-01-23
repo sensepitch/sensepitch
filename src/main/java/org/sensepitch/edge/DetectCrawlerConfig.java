@@ -7,5 +7,5 @@ import lombok.Builder;
  * @param crawlerTsv additional or alternative crawler database
  * @author Jens Wilke
  */
-@Builder
+@Builder(toBuilder = true)
 public record DetectCrawlerConfig(boolean disableBuiltinDatabase, String crawlerTsv) {}

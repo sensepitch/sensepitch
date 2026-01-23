@@ -9,5 +9,5 @@ import lombok.Builder;
  *     database and lookup is needed. See: <a href="https://ipinfo.io/dashboard/lite>IPInfo lite</a>
  * @author Jens Wilke
  */
-@Builder
+@Builder(toBuilder = true)
 public record IpLookupConfig(GeoIp2Config geoIp2, String ipInfoPath) {}
