@@ -15,7 +15,7 @@ import io.netty.util.ReferenceCountUtil;
  * @author Jens Wilke
  */
 public class DeflectorHandler extends SkippingChannelInboundHandlerAdapter
-    implements ProtectorPlugin {
+    implements ProtectionPlugin {
 
   private static final ProxyLogger LOG = ProxyLogger.get(DeflectorHandler.class);
 
