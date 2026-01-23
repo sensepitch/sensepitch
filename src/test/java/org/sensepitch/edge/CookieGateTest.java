@@ -36,7 +36,7 @@ public class CookieGateTest {
   private static final String COOKIE_NAME = "edge-access";
   private static final String ACCESS_URI = "/gate";
 
-  private CookieGate.Handler handler;
+  private ProtectionHandler handler;
   private Channel channel;
   private boolean passed;
   private Object messageWritten;

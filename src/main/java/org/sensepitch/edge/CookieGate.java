@@ -14,7 +14,6 @@ import io.netty.handler.codec.http.cookie.DefaultCookie;
 import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
 import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
 import io.netty.util.CharsetUtil;
-import io.netty.util.ReferenceCountUtil;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,8 +43,12 @@ public class CookieGate {
     }
   }
 
-  public Handler newHandler() {
-    return new Handler();
+  public ProtectionHandler newHandler() {
+    return new ProtectionHandler(new Plugin());
+  }
+
+  public ProtectionPlugin newPlugin() {
+    return new Plugin();
   }
 
   private boolean isCookiePresent(HttpRequest request) {
@@ -61,7 +64,7 @@ public class CookieGate {
     return false;
   }
 
-  public class Handler extends SkippingChannelInboundHandlerAdapter implements ProtectionPlugin {
+  public class Plugin implements ProtectionPlugin {
 
     @Override
     public boolean mightIntercept(HttpRequest request, ChannelHandlerContext ctx) {
@@ -98,20 +101,6 @@ public class CookieGate {
         return true;
       }
       return false;
-    }
-
-    @Override
-    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-      if (msg instanceof HttpRequest request) {
-        if (mightIntercept(request, ctx)) {
-          ReferenceCountUtil.release(request);
-          skipFollowingContent(ctx);
-        } else {
-          ctx.fireChannelRead(msg);
-        }
-      } else {
-        super.channelRead(ctx, msg);
-      }
     }
   }
 

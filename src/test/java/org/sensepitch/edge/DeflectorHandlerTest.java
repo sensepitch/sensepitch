@@ -31,7 +31,7 @@ import org.junit.jupiter.api.Test;
  */
 public class DeflectorHandlerTest {
 
-  private DeflectorHandler handler;
+  private ProtectionHandler handler;
   private Channel channel;
   private boolean passed;
   private Object messageWritten;
@@ -229,7 +229,7 @@ public class DeflectorHandlerTest {
             super.channelRead(ctx, msg);
           }
         };
-    handler = new DeflectorHandler(new Deflector(cfg));
+    handler = new ProtectionHandler(new DeflectorHandler(new Deflector(cfg)));
     channel = new EmbeddedChannel(out, handler, in);
   }
 
@@ -245,7 +245,7 @@ public class DeflectorHandlerTest {
   }
 
   void request(HttpRequest req) throws Exception {
-    ChannelHandlerContext ctx = channel.pipeline().context(DeflectorHandler.class);
+    ChannelHandlerContext ctx = channel.pipeline().context(ProtectionHandler.class);
     messageWritten = null;
     passed = false;
     handler.channelRead(ctx, req);

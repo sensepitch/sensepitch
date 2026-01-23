@@ -55,18 +55,7 @@ public class SiteSelector {
               if (protection == null) {
                 protection = config.protection();
               }
-              if (protection != null) {
-                if (protection.disable()) {
-                  PassThroughHandler passThroughHandler = new PassThroughHandler();
-                  protectionSupplier = () -> passThroughHandler;
-                } else if (protection.deflector() != null) {
-                  var deflector = new Deflector(protection.deflector());
-                  protectionSupplier = () -> new DeflectorHandler(deflector);
-                } else if (protection.cookieGates() != null) {
-                  var obj = new CookieGate(protection.cookieGates());
-                  protectionSupplier = obj::newHandler;
-                }
-              }
+              protectionSupplier = Protection.handlerSupplier(protection);
               if (protectionSupplier == null) {
                 throw new IllegalArgumentException(
                     "Site requires protection scheme or explicit disable");
