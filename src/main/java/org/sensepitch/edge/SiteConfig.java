@@ -11,6 +11,7 @@ public record SiteConfig(
     String host,
     String uri,
     ResponseConfig response,
+    FallbackConfig fallback,
     UpstreamConfig upstream,
     ProtectionConfig protection)
     implements HasKey {}
