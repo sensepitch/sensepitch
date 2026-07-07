@@ -7,21 +7,21 @@ import lombok.Builder;
 */
 @Builder(toBuilder = true)
 public record FallbackConfig(
-        String pathToUnavailablePage,
+        String unavailablePage,
         String unavailableText,
-        String pathToErrorPage,
+        String errorPage,
         String errorText
 ) {
-    public static final String DEFAULT_PATH_TO_UNAVAILABLE_PAGE = "/unavailable.html";
+    public static final String DEFAULT_UNAVAILABLE_PAGE = "/unavailable.html";
     public static final String DEFAULT_UNAVAILABLE_TEXT = "Service Unavailable";
-    public static final String DEFAULT_PATH_TO_ERROR_PAGE = "/error.html";
+    public static final String DEFAULT_ERROR_PAGE = "/error.html";
     public static final String DEFAULT_ERROR_TEXT = "Internal Server Error";
 
     public static final FallbackConfig DEFAULT =
             FallbackConfig.builder()
-                    .pathToUnavailablePage(DEFAULT_PATH_TO_UNAVAILABLE_PAGE)
+                    .unavailablePage(DEFAULT_UNAVAILABLE_PAGE)
                     .unavailableText(DEFAULT_UNAVAILABLE_TEXT)
-                    .pathToErrorPage(DEFAULT_PATH_TO_ERROR_PAGE)
+                    .errorPage(DEFAULT_ERROR_PAGE)
                     .errorText(DEFAULT_ERROR_TEXT)
                     .build();
 }
