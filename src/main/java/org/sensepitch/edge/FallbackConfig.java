@@ -4,7 +4,7 @@ import lombok.Builder;
 
 /**
  * @author Raid Thabet
-*/
+ */
 @Builder(toBuilder = true)
 public record FallbackConfig(
         String unavailablePage,
@@ -24,4 +24,14 @@ public record FallbackConfig(
                     .errorPage(DEFAULT_ERROR_PAGE)
                     .errorText(DEFAULT_ERROR_TEXT)
                     .build();
+
+    public FallbackConfig merge(FallbackConfig o) {
+        if (o == null) return this;
+        return FallbackConfig.builder()
+                .unavailablePage(o.unavailablePage() != null ? o.unavailablePage() : unavailablePage)
+                .unavailableText(o.unavailableText() != null ? o.unavailableText() : unavailableText)
+                .errorPage(o.errorPage() != null ? o.errorPage() : errorPage)
+                .errorText(o.errorText() != null ? o.errorText() : errorText)
+                .build();
+    }
 }
