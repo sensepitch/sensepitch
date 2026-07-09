@@ -12,9 +12,9 @@ public record FallbackConfig(
         String errorPage,
         String errorText
 ) {
-    public static final String DEFAULT_UNAVAILABLE_PAGE = "/unavailable.html";
+    public static final String DEFAULT_UNAVAILABLE_PAGE = "fallback/unavailable.html";
     public static final String DEFAULT_UNAVAILABLE_TEXT = "Service Unavailable";
-    public static final String DEFAULT_ERROR_PAGE = "/error.html";
+    public static final String DEFAULT_ERROR_PAGE = "fallback/error.html";
     public static final String DEFAULT_ERROR_TEXT = "Internal Server Error";
 
     public static final FallbackConfig DEFAULT =
