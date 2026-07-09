@@ -213,6 +213,12 @@ class CompleteTest {
     }
 
     @Step
+    Steps then_the_response_header_is(CharSequence name, String value) {
+      assertThat(response.headers().get(name)).isEqualTo(value);
+      return this;
+    }
+
+    @Step
     Steps then_channel_closed() {
       assertThat(ingressChannel.isActive()).isFalse();
       return this;
