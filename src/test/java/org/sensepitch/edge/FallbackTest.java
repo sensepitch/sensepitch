@@ -19,6 +19,7 @@ import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpResponseStatus;
 
 import java.io.IOException;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,6 +27,9 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.sensepitch.edge.config.RecordConstructor;
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.nodes.Node;
 
 /**
  * Tests {@link FallbackHandler} against the aggregated {@link FullHttpResponse} shape (as the
@@ -50,7 +54,7 @@ public class FallbackTest {
      * Mirrors {@code SiteSelector}: DEFAULT overridden by global, overridden by the site.
      */
     private static FallbackConfig merged(FallbackConfig site) {
-        return FallbackConfig.DEFAULT.merge(GLOBAL).merge(site);
+        return FallbackConfig.DEFAULTS.merge(GLOBAL).merge(site);
     }
 
     private void init(FallbackConfig cfg) {
@@ -80,6 +84,43 @@ public class FallbackTest {
         if (channel != null) {
             channel.finishAndReleaseAll();
         }
+    }
+
+    // --- config parse + merge: root cause and regression for the DEFAULT-seeding clobber ---
+
+    private static FallbackConfig parse(String yaml) {
+        Node root = new Yaml().compose(new StringReader(yaml));
+        return RecordConstructor.construct(FallbackConfig.class, root);
+    }
+
+    /** A partial config must parse sparse: fields the YAML never set stay null, not seeded from defaults. */
+    @Test
+    public void partialConfigParsesSparse() {
+        FallbackConfig cfg = parse("unavailableText: site2 down\n");
+
+        assertThat(cfg.unavailableText()).isEqualTo("site2 down");
+        assertThat(cfg.errorText())
+                .as("field not present in YAML must stay null, not be seeded from defaults")
+                .isNull();
+        assertThat(cfg.errorPage()).isNull();
+        assertThat(cfg.unavailablePage()).isNull();
+    }
+
+    /** A site overriding one field must not wipe a global override on another. */
+    @Test
+    public void siteOverrideDoesNotClobberGlobal() {
+        FallbackConfig global = parse("errorText: global error\n");
+        FallbackConfig site = parse("unavailableText: site2 down\n");
+
+        // Mirrors SiteSelector.constructFallbackSupplier resolution order.
+        FallbackConfig resolved = FallbackConfig.DEFAULTS.merge(global).merge(site);
+
+        assertThat(resolved.unavailablePage()).isEqualTo("fallback/unavailable.html");
+        assertThat(resolved.errorPage()).isEqualTo("fallback/error.html");
+        assertThat(resolved.unavailableText()).as("site override applies").isEqualTo("site2 down");
+        assertThat(resolved.errorText())
+                .as("global error text must survive: the site never overrode it")
+                .isEqualTo("global error");
     }
 
     @Test

@@ -17,7 +17,7 @@ public record FallbackConfig(
     public static final String DEFAULT_ERROR_PAGE = "fallback/error.html";
     public static final String DEFAULT_ERROR_TEXT = "Internal Server Error";
 
-    public static final FallbackConfig DEFAULT =
+    public static final FallbackConfig DEFAULTS =
             FallbackConfig.builder()
                     .unavailablePage(DEFAULT_UNAVAILABLE_PAGE)
                     .unavailableText(DEFAULT_UNAVAILABLE_TEXT)

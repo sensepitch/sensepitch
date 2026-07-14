@@ -87,7 +87,7 @@ public class SiteSelector {
     }
 
     private Supplier<ChannelHandler> constructFallbackSupplier(FallbackConfig globalFallback, FallbackConfig siteFallback) {
-        FallbackConfig config = FallbackConfig.DEFAULT.merge(globalFallback).merge(siteFallback);
+        FallbackConfig config = FallbackConfig.DEFAULTS.merge(globalFallback).merge(siteFallback);
         FallbackHandler handler = new FallbackHandler(config);
 
         return () -> handler;
