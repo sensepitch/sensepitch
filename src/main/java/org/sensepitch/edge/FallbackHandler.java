@@ -35,13 +35,26 @@ public class FallbackHandler extends ChannelOutboundHandlerAdapter {
     private static final AttributeKey<Boolean> SUPPRESSING =
             AttributeKey.valueOf(FallbackHandler.class, "suppressing");
 
+    private final ResponseConfig unavailable;   // fallbackConfig.unavailableResponse()
+
+    private final ResponseConfig error;
+
     private final byte[] unavailableContent;
 
     private final byte[] errorContent;
 
     public FallbackHandler(FallbackConfig fallbackConfig) {
-        unavailableContent = loadOrDefault(fallbackConfig.unavailablePage(), fallbackConfig.unavailableText());
-        errorContent = loadOrDefault(fallbackConfig.errorPage(), fallbackConfig.errorText());
+        this.unavailable = fallbackConfig.unavailableResponse();
+        this.error = fallbackConfig.errorResponse();
+
+        unavailableContent = loadOrDefault(
+                this.unavailable.file(),
+                this.unavailable.text()
+        );
+        errorContent = loadOrDefault(
+                this.error.file(),
+                this.error.text()
+        );
     }
 
     @Override
@@ -66,7 +79,7 @@ public class FallbackHandler extends ChannelOutboundHandlerAdapter {
         // Head of a streamed response: check for 5xx and replace if needed. The following body chunks will be dropped.
         if (msg instanceof HttpResponse resp) {
             int status = resp.status().code();
-            boolean replace = status == 503 || status == 500;
+            boolean replace = status == 503 || status == 500; // does this streamed response get swapped for the fallback?
             suppressing.set(replace);
             if (replace) {
                 FullHttpResponse fallback = buildFallback(ctx, resp);
@@ -90,15 +103,26 @@ public class FallbackHandler extends ChannelOutboundHandlerAdapter {
         super.write(ctx, msg, promise);
     }
 
-    /**
-     * Builds a self-contained fallback response for a 500/503 {@code source} response. Copies the
-     * source's protocol version, status and {@code Connection} header (to preserve its keep-alive
-     * or close decision), then sets {@code Content-Type} and {@code Content-Length} for the chosen
-     * fallback body ({@link #unavailableContent} for 503, otherwise {@link #errorContent}). The
-     * {@code source} is only read here; releasing it is the caller's responsibility.
-     */
     private FullHttpResponse buildFallback(ChannelHandlerContext ctx, HttpResponse source) {
-        byte[] content = (source.status().code() == 503) ? unavailableContent : errorContent;
+        boolean isDown = source.status().code() == 503;
+        ResponseConfig cfg = isDown ? unavailable : error;
+        ResponseConfig.Redirect redirect = cfg.resolvedRedirect();
+
+        // Redirect fallback
+        if (redirect != null) {
+            int code = redirect.status();
+            FullHttpResponse redirectResponse = new DefaultFullHttpResponse(
+                    source.protocolVersion(), HttpResponseStatus.valueOf(code), ctx.alloc().buffer(0));
+            if (source.headers().contains(HttpHeaderNames.CONNECTION)) {
+                redirectResponse.headers().set(HttpHeaderNames.CONNECTION, source.headers().get(HttpHeaderNames.CONNECTION));
+            }
+            redirectResponse.headers().set(HttpHeaderNames.LOCATION, redirect.location());
+            redirectResponse.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, 0);
+            return redirectResponse;
+        }
+
+        // Page fallback
+        byte[] content = isDown ? unavailableContent : errorContent;
         FullHttpResponse fallback = new DefaultFullHttpResponse(
                 source.protocolVersion(),
                 source.status(),
