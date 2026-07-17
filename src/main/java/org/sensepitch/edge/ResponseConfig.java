@@ -22,9 +22,6 @@ public record ResponseConfig(
      *         {@code temporaryRedirect}), no body</li>
      *     <li><b>page</b>: {@code text} or {@code file} (with optional {@code contentType})</li>
      * </ul>
-     * {@code status} is neutral: it sets the response code for either kind (a page may carry an
-     * explicit status, e.g. {@code status: 503} with a body), so it is not a redirect signal.
-     * {@code location} (or the redirect aliases) is the sole discriminator.
      */
     public ResponseConfig {
         boolean redirect = location != null

@@ -15,6 +15,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import static org.sensepitch.edge.FallbackConfig.DEFAULT_CONTENT_TYPE;
+
 /**
  * Replaces upstream 500/503 responses with an operator-configured fallback page (or text). Handles
  * both the aggregated {@link FullHttpResponse} (stub upstream) and the streamed form a real backend
@@ -130,7 +132,7 @@ public class FallbackHandler extends ChannelOutboundHandlerAdapter {
         if (source.headers().contains(HttpHeaderNames.CONNECTION)) {
             fallback.headers().set(HttpHeaderNames.CONNECTION, source.headers().get(HttpHeaderNames.CONNECTION));
         }
-        fallback.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/html; charset=UTF-8");
+        fallback.headers().set(HttpHeaderNames.CONTENT_TYPE, cfg.contentType() != null ? cfg.contentType() : DEFAULT_CONTENT_TYPE);
         fallback.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, content.length);
         return fallback;
     }

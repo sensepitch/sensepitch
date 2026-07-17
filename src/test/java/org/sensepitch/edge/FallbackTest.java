@@ -1,11 +1,16 @@
 package org.sensepitch.edge;
 
+import static io.netty.handler.codec.http.HttpResponseStatus.FOUND;
 import static io.netty.handler.codec.http.HttpResponseStatus.INTERNAL_SERVER_ERROR;
+import static io.netty.handler.codec.http.HttpResponseStatus.MOVED_PERMANENTLY;
 import static io.netty.handler.codec.http.HttpResponseStatus.NOT_FOUND;
 import static io.netty.handler.codec.http.HttpResponseStatus.OK;
+import static io.netty.handler.codec.http.HttpResponseStatus.PERMANENT_REDIRECT;
 import static io.netty.handler.codec.http.HttpResponseStatus.SERVICE_UNAVAILABLE;
+import static io.netty.handler.codec.http.HttpResponseStatus.TEMPORARY_REDIRECT;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
@@ -32,27 +37,33 @@ import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.nodes.Node;
 
 /**
- * Tests {@link FallbackHandler} against the aggregated {@link FullHttpResponse} shape (as the
- * in-process {@code response:} stub produces); the streamed shape is covered in
- * {@link FallbackStreamingTest}. Each test uses the config {@code SiteSelector} would build
- * (DEFAULT overridden by global overridden by site) so the layering is exercised too.
- *
  * @author Raid Thabet
  */
 public class FallbackTest {
 
+    private static final String HTML = "text/html; charset=UTF-8";
+
     private static final FallbackConfig GLOBAL =
             FallbackConfig.builder()
-                    .unavailableText("global-unavailable") // 18 bytes
-                    .errorText("global-error") // 12 bytes
+                    .unavailableResponse(page("global-unavailable"))
+                    .errorResponse(page("global-error"))
                     .build();
 
     private EmbeddedChannel channel;
     private Object messageWritten;
 
-    /**
-     * Mirrors {@code SiteSelector}: DEFAULT overridden by global, overridden by the site.
-     */
+    private static ResponseConfig page(String text) {
+        return ResponseConfig.builder().text(text).build();
+    }
+
+    private static FallbackConfig siteUnavailable(ResponseConfig r) {
+        return FallbackConfig.builder().unavailableResponse(r).build();
+    }
+
+    private static FallbackConfig siteError(ResponseConfig r) {
+        return FallbackConfig.builder().errorResponse(r).build();
+    }
+
     private static FallbackConfig merged(FallbackConfig site) {
         return FallbackConfig.DEFAULTS.merge(GLOBAL).merge(site);
     }
@@ -69,9 +80,6 @@ public class FallbackTest {
         channel = new EmbeddedChannel(capture, new FallbackHandler(cfg));
     }
 
-    /**
-     * Sends one aggregated upstream response of the given status through the handler.
-     */
     private void upstreamResponds(HttpResponseStatus status, String body) {
         messageWritten = null;
         channel.writeOutbound(
@@ -86,276 +94,239 @@ public class FallbackTest {
         }
     }
 
-    // --- config parse + merge: root cause and regression for the DEFAULT-seeding clobber ---
+    private void assertPage(HttpResponseStatus status, String body, String contentType) {
+        assertThat(messageWritten)
+                .isInstanceOfSatisfying(
+                        FullHttpResponse.class,
+                        r -> {
+                            assertThat(r.status()).isEqualTo(status);
+                            assertThat(r.content().toString(StandardCharsets.UTF_8)).isEqualTo(body);
+                            assertThat(r.headers().get(HttpHeaderNames.CONTENT_TYPE)).isEqualTo(contentType);
+                            assertThat(r.headers().get(HttpHeaderNames.CONTENT_LENGTH))
+                                    .isEqualTo(String.valueOf(body.getBytes(StandardCharsets.UTF_8).length));
+                        });
+    }
+
+    private void assertPage(HttpResponseStatus status, String body) {
+        assertPage(status, body, HTML);
+    }
+
+    private void assertRedirect(HttpResponseStatus status, String location) {
+        assertThat(messageWritten)
+                .isInstanceOfSatisfying(
+                        FullHttpResponse.class,
+                        r -> {
+                            assertThat(r.status()).isEqualTo(status);
+                            assertThat(r.headers().get(HttpHeaderNames.LOCATION)).isEqualTo(location);
+                            assertThat(r.headers().get(HttpHeaderNames.CONTENT_LENGTH)).isEqualTo("0");
+                            assertThat(r.content().readableBytes()).isZero();
+                        });
+    }
+
+    private void assertPassThrough(HttpResponseStatus status, String body) {
+        assertThat(messageWritten)
+                .isInstanceOfSatisfying(
+                        FullHttpResponse.class,
+                        r -> {
+                            assertThat(r.status()).isEqualTo(status);
+                            assertThat(r.content().toString(StandardCharsets.UTF_8)).isEqualTo(body);
+                        });
+    }
 
     private static FallbackConfig parse(String yaml) {
         Node root = new Yaml().compose(new StringReader(yaml));
         return RecordConstructor.construct(FallbackConfig.class, root);
     }
 
-    /** A partial config must parse sparse: fields the YAML never set stay null, not seeded from defaults. */
     @Test
     public void partialConfigParsesSparse() {
-        FallbackConfig cfg = parse("unavailableText: site2 down\n");
+        FallbackConfig cfg = parse("unavailableResponse:\n  text: site2 down\n");
 
-        assertThat(cfg.unavailableText()).isEqualTo("site2 down");
-        assertThat(cfg.errorText())
-                .as("field not present in YAML must stay null, not be seeded from defaults")
+        assertThat(cfg.unavailableResponse()).isNotNull();
+        assertThat(cfg.unavailableResponse().text()).isEqualTo("site2 down");
+        assertThat(cfg.unavailableResponse().file()).isNull();
+        assertThat(cfg.unavailableResponse().permanentRedirect()).isNull();
+        assertThat(cfg.unavailableResponse().temporaryRedirect()).isNull();
+        assertThat(cfg.unavailableResponse().location()).isNull();
+        assertThat(cfg.unavailableResponse().contentType()).isNull();
+        assertThat(cfg.unavailableResponse().status()).isEqualTo(0);
+        assertThat(cfg.errorResponse())
+                .as("slot not present in YAML must stay null, not be seeded from defaults")
                 .isNull();
-        assertThat(cfg.errorPage()).isNull();
-        assertThat(cfg.unavailablePage()).isNull();
     }
 
-    /** A site overriding one field must not wipe a global override on another. */
     @Test
-    public void siteOverrideDoesNotClobberGlobal() {
-        FallbackConfig global = parse("errorText: global error\n");
-        FallbackConfig site = parse("unavailableText: site2 down\n");
+    public void siteOverrideDoesNotBeatGlobal() {
+        FallbackConfig global = parse("errorResponse:\n  text: global error\n");
+        FallbackConfig site = parse("unavailableResponse:\n  text: site2 down\n");
 
-        // Mirrors SiteSelector.constructFallbackSupplier resolution order.
         FallbackConfig resolved = FallbackConfig.DEFAULTS.merge(global).merge(site);
 
-        assertThat(resolved.unavailablePage()).isEqualTo("fallback/unavailable.html");
-        assertThat(resolved.errorPage()).isEqualTo("fallback/error.html");
-        assertThat(resolved.unavailableText()).as("site override applies").isEqualTo("site2 down");
-        assertThat(resolved.errorText())
-                .as("global error text must survive: the site never overrode it")
+        assertThat(resolved.unavailableResponse().text()).as("site override applies").isEqualTo("site2 down");
+        assertThat(resolved.errorResponse().text())
+                .as("global error slot must survive: the site never overrode it")
                 .isEqualTo("global error");
+    }
+
+    @Test
+    public void redirectAndPageInSameResponseFailsToParse() {
+        assertThatThrownBy(() -> parse("unavailableResponse:\n  location: /elsewhere\n  text: hi\n"))
+                .rootCause()
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     public void testGlobalUnavailable() {
         init(merged(null));
         upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
-        assertThat(messageWritten)
-                .isInstanceOfSatisfying(
-                        FullHttpResponse.class,
-                        response -> {
-                            assertThat(response.status()).isEqualTo(SERVICE_UNAVAILABLE);
-                            assertThat(response.content().toString(StandardCharsets.UTF_8))
-                                    .isEqualTo("global-unavailable");
-                            assertThat(response.headers().get(HttpHeaderNames.CONTENT_TYPE))
-                                    .isEqualTo("text/html; charset=UTF-8");
-                            assertThat(response.headers().get(HttpHeaderNames.CONTENT_LENGTH)).isEqualTo("18");
-                        });
+        assertPage(SERVICE_UNAVAILABLE, "global-unavailable");
     }
 
     @Test
     public void testGlobalError() {
         init(merged(null));
         upstreamResponds(INTERNAL_SERVER_ERROR, "ignored-origin-body");
-        assertThat(messageWritten)
-                .isInstanceOfSatisfying(
-                        FullHttpResponse.class,
-                        response -> {
-                            assertThat(response.status()).isEqualTo(INTERNAL_SERVER_ERROR);
-                            assertThat(response.content().toString(StandardCharsets.UTF_8)).isEqualTo("global-error");
-                            assertThat(response.headers().get(HttpHeaderNames.CONTENT_LENGTH)).isEqualTo("12");
-                        });
+        assertPage(INTERNAL_SERVER_ERROR, "global-error");
     }
 
     @Test
-    public void testSiteOverridesUnavailableText() {
-        init(merged(FallbackConfig.builder().unavailableText("site3-unavailable").build()));
+    public void testSiteOverridesUnavailable() {
+        init(merged(siteUnavailable(page("site3-unavailable"))));
         upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
-        assertThat(messageWritten)
-                .isInstanceOfSatisfying(
-                        FullHttpResponse.class,
-                        response -> {
-                            assertThat(response.content().toString(StandardCharsets.UTF_8))
-                                    .isEqualTo("site3-unavailable");
-                            assertThat(response.headers().get(HttpHeaderNames.CONTENT_LENGTH)).isEqualTo("17");
-                        });
+        assertPage(SERVICE_UNAVAILABLE, "site3-unavailable");
+    }
+
+    @Test
+    public void testSiteInheritsGlobalError() {
+        init(merged(siteUnavailable(page("site is down"))));
+        upstreamResponds(INTERNAL_SERVER_ERROR, "ignored-origin-body");
+        assertPage(INTERNAL_SERVER_ERROR, "global-error");
+    }
+
+    @Test
+    public void testSiteTextSlotDropsDefaultFile() {
+        init(FallbackConfig.DEFAULTS.merge(siteUnavailable(page("we are down"))));
+        upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
+        // NOT the bundled fallback/unavailable.html; the whole DEFAULTS slot (file included) was replaced.
+        assertPage(SERVICE_UNAVAILABLE, "we are down");
+    }
+
+    @Test
+    public void testCustomContentType() {
+        init(merged(siteUnavailable(
+                ResponseConfig.builder().text("{\"down\":true}").contentType("application/json").build())));
+        upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
+        assertPage(SERVICE_UNAVAILABLE, "{\"down\":true}", "application/json");
     }
 
     @Test
     public void testOkPassesThrough() {
         init(merged(null));
         upstreamResponds(OK, "real-body");
-        assertThat(messageWritten)
-                .isInstanceOfSatisfying(
-                        FullHttpResponse.class,
-                        response -> {
-                            assertThat(response.status()).isEqualTo(OK);
-                            assertThat(response.content().toString(StandardCharsets.UTF_8)).isEqualTo("real-body");
-                        });
+        assertPassThrough(OK, "real-body");
     }
 
     @Test
     public void testNon5xxPassesThrough() {
         init(merged(null));
         upstreamResponds(NOT_FOUND, "real-404");
-        assertThat(messageWritten)
-                .isInstanceOfSatisfying(
-                        FullHttpResponse.class,
-                        response -> {
-                            assertThat(response.status()).isEqualTo(NOT_FOUND);
-                            assertThat(response.content().toString(StandardCharsets.UTF_8)).isEqualTo("real-404");
-                        });
+        assertPassThrough(NOT_FOUND, "real-404");
     }
 
     @Test
     public void testUnavailablePageFromClasspath() {
-        init(merged(FallbackConfig.builder()
-                        .unavailablePage("fallback/unavailable_page.html")
-                        .unavailableText("service is unavailable")
-                        .build()
-                )
-        );
+        init(merged(siteUnavailable(ResponseConfig.builder()
+                .file("fallback/unavailable_page.html")
+                .text("service is unavailable")
+                .build())));
         upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
-        assertThat(messageWritten)
-                .isInstanceOfSatisfying(
-                        FullHttpResponse.class,
-                        response -> {
-                            assertThat(response.content().toString(StandardCharsets.UTF_8)).isEqualTo("<html>down</html>");
-                            assertThat(response.headers().get(HttpHeaderNames.CONTENT_TYPE))
-                                    .isEqualTo("text/html; charset=UTF-8");
-                            assertThat(response.headers().get(HttpHeaderNames.CONTENT_LENGTH)).isEqualTo("17");
-                        });
-    }
-
-    @Test
-    public void testUnavailablePageNotFoundFallsBackToGlobalText() {
-        init(merged(FallbackConfig.builder().unavailablePage("fallback/non_existent_page.html").build()));
-        upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
-        assertThat(messageWritten)
-                .isInstanceOfSatisfying(
-                        FullHttpResponse.class,
-                        response -> {
-                            assertThat(response.content().toString(StandardCharsets.UTF_8)).isEqualTo("global-unavailable");
-                            assertThat(response.headers().get(HttpHeaderNames.CONTENT_LENGTH)).isEqualTo("18");
-                        });
-    }
-
-    @Test
-    public void testUnavailablePageNotFoundFallsBackToSiteText() {
-        init(merged(FallbackConfig.builder()
-                        .unavailablePage("fallback/non_existent_page.html")
-                        .unavailableText("service unavailable")
-                        .build()
-                )
-        );
-        upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
-        assertThat(messageWritten)
-                .isInstanceOfSatisfying(
-                        FullHttpResponse.class,
-                        response -> {
-                            assertThat(response.content().toString(StandardCharsets.UTF_8)).isEqualTo("service unavailable");
-                            assertThat(response.headers().get(HttpHeaderNames.CONTENT_LENGTH)).isEqualTo("19");
-                        });
+        assertPage(SERVICE_UNAVAILABLE, "<html>down</html>");
     }
 
     @Test
     public void testErrorPageFromClasspath() {
-        init(merged(FallbackConfig.builder()
-                        .errorPage("fallback/error_page.html")
-                        .errorText("internal server error")
-                        .build()
-                )
-        );
+        init(merged(siteError(ResponseConfig.builder()
+                .file("fallback/error_page.html")
+                .text("internal server error")
+                .build())));
         upstreamResponds(INTERNAL_SERVER_ERROR, "ignored-origin-body");
-        assertThat(messageWritten)
-                .isInstanceOfSatisfying(
-                        FullHttpResponse.class,
-                        response -> {
-                            assertThat(response.content().toString(StandardCharsets.UTF_8)).isEqualTo("<html>error</html>");
-                            assertThat(response.headers().get(HttpHeaderNames.CONTENT_LENGTH)).isEqualTo("18");
-                        });
+        assertPage(INTERNAL_SERVER_ERROR, "<html>error</html>");
+    }
+
+    @Test
+    public void testMissingFileFallsBackToSlotText() {
+        init(merged(siteUnavailable(ResponseConfig.builder()
+                .file("fallback/non_existent_page.html")
+                .text("service unavailable")
+                .build())));
+        upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
+        assertPage(SERVICE_UNAVAILABLE, "service unavailable");
     }
 
     @Test
     public void testUnavailablePageFromDiskFile(@TempDir Path tempDir) throws IOException {
-        Path page = tempDir.resolve("down.html");
-        Files.writeString(page, "<html>disk-down</html>");
+        Path pageFile = tempDir.resolve("down.html");
+        Files.writeString(pageFile, "<html>disk-down</html>");
 
-        init(merged(FallbackConfig.builder()
-                        .unavailablePage(page.toAbsolutePath().toString())
-                        .unavailableText("service is unavailable")
-                        .build()
-                )
-        );
+        init(merged(siteUnavailable(ResponseConfig.builder()
+                .file(pageFile.toAbsolutePath().toString())
+                .text("service is unavailable")
+                .build())));
         upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
-        assertThat(messageWritten)
-                .isInstanceOfSatisfying(
-                        FullHttpResponse.class,
-                        response -> {
-                            assertThat(response.content().toString(StandardCharsets.UTF_8)).isEqualTo("<html>disk-down</html>");
-                            assertThat(response.headers().get(HttpHeaderNames.CONTENT_LENGTH)).isEqualTo("22");
-                        });
+        assertPage(SERVICE_UNAVAILABLE, "<html>disk-down</html>");
     }
 
     @Test
-    public void testSiteUnavailableText() {
-        init(merged(FallbackConfig.builder().unavailableText("service is unavailable").build()));
+    public void testUnavailableRedirectDefaults302() {
+        init(merged(siteUnavailable(
+                ResponseConfig.builder().location("https://status.example/").build())));
         upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
-        assertThat(messageWritten)
-                .isInstanceOfSatisfying(
-                        FullHttpResponse.class,
-                        response -> {
-                            assertThat(response.content().toString(StandardCharsets.UTF_8)).isEqualTo("service is unavailable");
-                            assertThat(response.headers().get(HttpHeaderNames.CONTENT_LENGTH)).isEqualTo("22");
-                        });
+        assertRedirect(FOUND, "https://status.example/");
     }
 
     @Test
-    public void testSiteErrorText() {
-        init(merged(FallbackConfig.builder().errorText("internal server error").build()));
-        upstreamResponds(INTERNAL_SERVER_ERROR, "ignored-origin-body");
-        assertThat(messageWritten)
-                .isInstanceOfSatisfying(
-                        FullHttpResponse.class,
-                        response -> {
-                            assertThat(response.content().toString(StandardCharsets.UTF_8)).isEqualTo("internal server error");
-                            assertThat(response.headers().get(HttpHeaderNames.CONTENT_LENGTH)).isEqualTo("21");
-                        });
-    }
-
-    @Test
-    public void testUnavailablePageBeatsText() {
-        init(
-                merged(
-                        FallbackConfig.builder()
-                                .unavailablePage("fallback/unavailable_page.html")
-                                .unavailableText("service is unavailable")
-                                .build()));
+    public void testUnavailableRedirectHonorsExplicitStatus() {
+        init(merged(siteUnavailable(
+                ResponseConfig.builder().location("https://status.example/").status(301).build())));
         upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
-        assertThat(messageWritten)
-                .isInstanceOfSatisfying(
-                        FullHttpResponse.class,
-                        response -> {
-                            assertThat(response.content().toString(StandardCharsets.UTF_8)).isEqualTo("<html>down</html>");
-                            assertThat(response.headers().get(HttpHeaderNames.CONTENT_LENGTH)).isEqualTo("17");
-                        });
+        assertRedirect(MOVED_PERMANENTLY, "https://status.example/");
     }
 
     @Test
-    public void testErrorPageBeatsText() {
-        init(
-                merged(
-                        FallbackConfig.builder()
-                                .errorPage("fallback/error_page.html")
-                                .errorText("internal server error")
-                                .build()));
+    public void testErrorPermanentRedirect() {
+        init(merged(siteError(
+                ResponseConfig.builder().permanentRedirect("https://elsewhere.example/").build())));
         upstreamResponds(INTERNAL_SERVER_ERROR, "ignored-origin-body");
-        assertThat(messageWritten)
-                .isInstanceOfSatisfying(
-                        FullHttpResponse.class,
-                        response -> {
-                            assertThat(response.content().toString(StandardCharsets.UTF_8)).isEqualTo("<html>error</html>");
-                            assertThat(response.headers().get(HttpHeaderNames.CONTENT_LENGTH)).isEqualTo("18");
-                        });
+        assertRedirect(PERMANENT_REDIRECT, "https://elsewhere.example/");
     }
 
     @Test
-    public void testSiteInheritsGlobalError() {
-        init(merged(FallbackConfig.builder().unavailableText("service is unavailable").build()));
+    public void testErrorTemporaryRedirect() {
+        init(merged(siteError(
+                ResponseConfig.builder().temporaryRedirect("https://elsewhere.example/").build())));
         upstreamResponds(INTERNAL_SERVER_ERROR, "ignored-origin-body");
-        assertThat(messageWritten)
-                .isInstanceOfSatisfying(
-                        FullHttpResponse.class,
-                        response -> {
-                            assertThat(response.content().toString(StandardCharsets.UTF_8)).isEqualTo("global-error");
-                            assertThat(response.headers().get(HttpHeaderNames.CONTENT_LENGTH)).isEqualTo("12");
-                        });
+        assertRedirect(TEMPORARY_REDIRECT, "https://elsewhere.example/");
+    }
+
+    @Test
+    public void testSitePageReplacesGlobalRedirect() {
+        FallbackConfig globalRedirect =
+                FallbackConfig.builder()
+                        .unavailableResponse(
+                                ResponseConfig.builder().permanentRedirect("http://origin.example/data").build())
+                        .build();
+        FallbackConfig site = siteUnavailable(page("SITE3: down for maintenance"));
+
+        init(FallbackConfig.DEFAULTS.merge(globalRedirect).merge(site));
+        upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
+        // page served, no Location header logic involved; the global redirect is gone entirely
+        assertPage(SERVICE_UNAVAILABLE, "SITE3: down for maintenance");
+    }
+
+    @Test
+    public void testEmptySlotServesLastResortText() {
+        init(merged(siteUnavailable(ResponseConfig.builder().build())));
+        upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
+        assertPage(SERVICE_UNAVAILABLE, "Unknown problem occurred");
     }
 }
