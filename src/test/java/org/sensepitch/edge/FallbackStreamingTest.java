@@ -256,4 +256,34 @@ public class FallbackStreamingTest {
 
         ch.finishAndReleaseAll();
     }
+    
+    @Test
+    public void testStreamedRedirectPreservesConnectionCloseHeader() {
+        FallbackConfig redirectCfg =
+                FallbackConfig.builder()
+                        .unavailableResponse(
+                                ResponseConfig.builder().temporaryRedirect("https://status.example/").build())
+                        .build();
+        List<Object> out = new ArrayList<>();
+        EmbeddedChannel ch = new EmbeddedChannel(capture(out), new FallbackHandler(FallbackConfig.DEFAULTS.merge(redirectCfg)));
+
+        DefaultHttpResponse head = new DefaultHttpResponse(HTTP_1_1, SERVICE_UNAVAILABLE);
+        head.headers().set(HttpHeaderNames.CONNECTION, "close");
+        ch.writeOutbound(head, LastHttpContent.EMPTY_LAST_CONTENT);
+
+        HttpResponse response = null;
+        for (Object o : out) {
+            if (o instanceof HttpResponse r) {
+                response = r;
+                break;
+            }
+        }
+        
+        assertThat(response).isNotNull();
+        assertThat(response.status()).isEqualTo(TEMPORARY_REDIRECT);
+        assertThat(response.headers().get(HttpHeaderNames.CONNECTION)).isEqualTo("close");
+
+        ch.finishAndReleaseAll();
+    }
+    
 }
