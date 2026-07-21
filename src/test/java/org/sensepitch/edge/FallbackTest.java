@@ -254,9 +254,17 @@ public class FallbackTest {
         upstreamResponds(NOT_FOUND, "real-404");
         assertPassThrough(NOT_FOUND, "real-404");
     }
-
+    
     @Test
     public void testUnavailablePageFromClasspath() {
+        init(merged(siteUnavailable(
+                ResponseConfig.builder().file("fallback/unavailable_page.html").build())));
+        upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
+        assertPage(SERVICE_UNAVAILABLE, "<html>down</html>");
+    }
+
+    @Test
+    public void testUnavailablePageFromClasspathWithText() {
         init(merged(siteUnavailable(ResponseConfig.builder()
                 .file("fallback/unavailable_page.html")
                 .text("service is unavailable")
