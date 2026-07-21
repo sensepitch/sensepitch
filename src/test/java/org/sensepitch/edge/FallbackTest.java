@@ -176,6 +176,13 @@ public class FallbackTest {
     }
 
     @Test
+    public void redirectWithNon3xxStatusFails() {
+        assertThatThrownBy(() ->
+                ResponseConfig.builder().location("/elsewhere").status(200).build())
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     public void testGlobalUnavailable() {
         init(merged(null));
         upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
@@ -209,6 +216,21 @@ public class FallbackTest {
         upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
         // NOT the bundled fallback/unavailable.html; the whole DEFAULTS slot (file included) was replaced.
         assertPage(SERVICE_UNAVAILABLE, "we are down");
+    }
+
+    @Test
+    public void testPageHonorsExplicitStatus() {
+        init(merged(siteUnavailable(
+                ResponseConfig.builder().text("down for maintenance").status(200).build())));
+        upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
+        assertPage(OK, "down for maintenance");
+    }
+
+    @Test
+    public void testPageWithoutStatusKeepsOriginStatus() {
+        init(merged(siteUnavailable(page("still down"))));
+        upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
+        assertPage(SERVICE_UNAVAILABLE, "still down");
     }
 
     @Test

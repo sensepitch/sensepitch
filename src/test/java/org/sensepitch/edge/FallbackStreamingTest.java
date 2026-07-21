@@ -121,6 +121,43 @@ public class FallbackStreamingTest {
     }
 
     @Test
+    public void testPageHonorsExplicitStatus() {
+        FallbackConfig cfg =
+                FallbackConfig.builder()
+                        .unavailableResponse(
+                                ResponseConfig.builder().text("down page").status(200).build())
+                        .errorResponse(ResponseConfig.builder().text("err").build())
+                        .build();
+        List<Object> out = new ArrayList<>();
+        EmbeddedChannel ch = new EmbeddedChannel(capture(out), new FallbackHandler(cfg));
+
+        ch.writeOutbound(
+                new DefaultHttpResponse(HTTP_1_1, SERVICE_UNAVAILABLE),
+                chunk("origin-body"),
+                LastHttpContent.EMPTY_LAST_CONTENT);
+
+        HttpResponse head = null;
+        for (Object o : out) {
+            if (o instanceof HttpResponse r) {
+                head = r;
+                break;
+            }
+        }
+        assertThat(head).isNotNull();
+        assertThat(head.status()).isEqualTo(OK);
+
+        StringBuilder sb = new StringBuilder();
+        for (Object o : out) {
+            if (o instanceof HttpContent c) {
+                sb.append(c.content().toString(StandardCharsets.UTF_8));
+            }
+        }
+        assertThat(sb.toString()).isEqualTo("down page");
+
+        ch.finishAndReleaseAll();
+    }
+
+    @Test
     public void testMultiChunkBodyFullySwallowed() {
         DefaultHttpContent c1 = chunk("chunk-1");
         DefaultHttpContent c2 = chunk("chunk-2");

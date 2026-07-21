@@ -1,5 +1,6 @@
 package org.sensepitch.edge;
 
+import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
@@ -114,7 +115,7 @@ public class FallbackHandler extends ChannelOutboundHandlerAdapter {
         if (redirect != null) {
             int code = redirect.status();
             FullHttpResponse redirectResponse = new DefaultFullHttpResponse(
-                    source.protocolVersion(), HttpResponseStatus.valueOf(code), ctx.alloc().buffer(0));
+                    source.protocolVersion(), HttpResponseStatus.valueOf(code), Unpooled.EMPTY_BUFFER);
             if (source.headers().contains(HttpHeaderNames.CONNECTION)) {
                 redirectResponse.headers().set(HttpHeaderNames.CONNECTION, source.headers().get(HttpHeaderNames.CONNECTION));
             }
@@ -125,9 +126,12 @@ public class FallbackHandler extends ChannelOutboundHandlerAdapter {
 
         // Page fallback
         byte[] content = isDown ? unavailableContent : errorContent;
+        HttpResponseStatus status = cfg.status() != 0
+                ? HttpResponseStatus.valueOf(cfg.status())
+                : source.status();
         FullHttpResponse fallback = new DefaultFullHttpResponse(
                 source.protocolVersion(),
-                source.status(),
+                status,
                 ctx.alloc().buffer().writeBytes(content));
         if (source.headers().contains(HttpHeaderNames.CONNECTION)) {
             fallback.headers().set(HttpHeaderNames.CONNECTION, source.headers().get(HttpHeaderNames.CONNECTION));
