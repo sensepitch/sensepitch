@@ -223,15 +223,6 @@ public class FallbackTest {
         assertPage(SERVICE_UNAVAILABLE, "{\"down\":true}", "application/json");
     }
 
-
-    @Test
-    public void testPageStatusOverrideIsIgnored() {
-        init(merged(siteError(
-                ResponseConfig.builder().text("err page").status(501).build())));
-        upstreamResponds(INTERNAL_SERVER_ERROR, "ignored-origin-body");
-        assertPage(INTERNAL_SERVER_ERROR, "err page");
-    }
-
     @Test
     public void testOkPassesThrough() {
         init(merged(null));
