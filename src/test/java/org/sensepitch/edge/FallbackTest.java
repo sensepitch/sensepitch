@@ -4,6 +4,7 @@ import static io.netty.handler.codec.http.HttpResponseStatus.FOUND;
 import static io.netty.handler.codec.http.HttpResponseStatus.INTERNAL_SERVER_ERROR;
 import static io.netty.handler.codec.http.HttpResponseStatus.MOVED_PERMANENTLY;
 import static io.netty.handler.codec.http.HttpResponseStatus.NOT_FOUND;
+import static io.netty.handler.codec.http.HttpResponseStatus.NOT_IMPLEMENTED;
 import static io.netty.handler.codec.http.HttpResponseStatus.OK;
 import static io.netty.handler.codec.http.HttpResponseStatus.PERMANENT_REDIRECT;
 import static io.netty.handler.codec.http.HttpResponseStatus.SERVICE_UNAVAILABLE;
@@ -140,7 +141,10 @@ public class FallbackTest {
 
     @Test
     public void partialConfigParsesSparse() {
-        FallbackConfig cfg = parse("unavailableResponse:\n  text: site2 down\n");
+        FallbackConfig cfg = parse("""
+            unavailableResponse:
+                text: site2 down
+            """);
 
         assertThat(cfg.unavailableResponse()).isNotNull();
         assertThat(cfg.unavailableResponse().text()).isEqualTo("site2 down");
@@ -256,6 +260,13 @@ public class FallbackTest {
     }
     
     @Test
+    public void testOtherServerErrorStatusesPassThroughUnmodified() {
+        init(merged(null));
+        upstreamResponds(NOT_IMPLEMENTED, "real-501");
+        assertPassThrough(NOT_IMPLEMENTED, "real-501");
+    }
+
+    @Test
     public void testUnavailablePageFromClasspath() {
         init(merged(siteUnavailable(
                 ResponseConfig.builder().file("fallback/unavailable_page.html").build())));
@@ -320,6 +331,14 @@ public class FallbackTest {
                 ResponseConfig.builder().location("https://status.example/").status(301).build())));
         upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
         assertRedirect(MOVED_PERMANENTLY, "https://status.example/");
+    }
+
+    @Test
+    public void testUnavailablePermanentRedirect() {
+        init(merged(siteUnavailable(
+                ResponseConfig.builder().permanentRedirect("https://elsewhere.example/").build())));
+        upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
+        assertRedirect(PERMANENT_REDIRECT, "https://elsewhere.example/");
     }
 
     @Test

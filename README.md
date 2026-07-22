@@ -234,6 +234,43 @@ Example Paypal
 - IP: 173.0.81.140
 
 
+## Fallback / maintenance pages
+
+If the upstream returns `503` or `500`, or the streamed response head arrives with one of those
+statuses, Sensepitch Edge can serve a page or redirect instead of forwarding the upstream error.
+This is configured under `fallback:`, either globally or per site:
+
+````yaml
+fallback:
+  unavailableResponse:
+    file: /etc/sensepitch/unavailable.html
+    contentType: text/html; charset=UTF-8
+  errorResponse:
+    text: "Something is broken, please try again later"
+sites:
+  www.example.com:
+  www.example.de:
+    fallback:
+      unavailableResponse:
+        text: "Kaputt, versuch es später nochmal."
+````
+
+`unavailableResponse` applies to upstream `503`, `errorResponse` to upstream `500`. Each slot is
+one of:
+
+- page: `text` (plain body) and/or `file` with an optional `contentType` (default `text/html; charset=UTF-8`). If
+  both `file` and `text` are set, `file` wins; if the file can't be read, `text` is used instead.
+- redirect: `location` (optionally with `status`, defaults to `302`), or the shorthand
+  `permanentRedirect` (always `308`) / `temporaryRedirect` (always `307`)
+
+You can't mix page fields (`text`/`file`) with redirect fields (`location`/`permanentRedirect`/
+`temporaryRedirect`)
+
+Configuration is layered, `built-in defaults > global fallback > site fallback`, merging happens **per
+slot, as a whole object**, not per field: if a site sets `unavailableResponse`, that entire slot
+(including any inherited `file`/`contentType`) is replaced by what the site specified, while an
+`errorResponse` the site doesn't mention keeps inheriting from global or default config.
+
 ## Local testing
 
 ````

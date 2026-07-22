@@ -1,6 +1,7 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Map;
 import net.serenitybdd.annotations.Step;
@@ -120,6 +121,21 @@ class ProxyConstructBDDTest {
             .metrics(MetricsConfig.builder().enable(false).build())
             .build();
     steps.given_the_configuration(config).then_expect_initialized_without_exception();
+  }
+
+  @Test
+  void testResponseConfigMixingTextAndLocationFailsParsing() {
+    assertThatThrownBy(
+            () ->
+                SiteConfig.builder()
+                    .response(
+                        ResponseConfig.builder()
+                            .text("demo")
+                            .location("https://elsewhere.example/")
+                            .build())
+                    .build())
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("redirect and a page");
   }
 
   static class Steps extends ExtendableSteps<Steps> {}
