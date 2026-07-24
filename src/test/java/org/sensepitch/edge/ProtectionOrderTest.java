@@ -41,7 +41,8 @@ public class ProtectionOrderTest {
     ProtectionConfig protection =
         ProtectionConfig.builder()
             .deflector(deflectorConfig())
-            .cookieGates(List.of(CookieGateConfig.builder().name(COOKIE_NAME).accessUri(ACCESS_URI).build()))
+            .cookieGates(
+                List.of(CookieGateConfig.builder().name(COOKIE_NAME).accessUri(ACCESS_URI).build()))
             .build();
     Supplier<ChannelHandler> supplier = Protection.handlerSupplier(protection);
     assertThat(supplier).isNotNull();

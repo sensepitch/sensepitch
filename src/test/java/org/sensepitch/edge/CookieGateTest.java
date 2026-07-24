@@ -20,9 +20,9 @@ import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
+import io.netty.handler.codec.http.cookie.ClientCookieDecoder;
 import io.netty.handler.codec.http.cookie.Cookie;
 import io.netty.handler.codec.http.cookie.DefaultCookie;
-import io.netty.handler.codec.http.cookie.ClientCookieDecoder;
 import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -55,8 +55,7 @@ public class CookieGateTest {
             FullHttpResponse.class,
             response -> {
               assertThat(response.status().code()).isEqualTo(200);
-              assertThat(response.headers().get(HttpHeaderNames.SET_COOKIE))
-                  .isNotBlank();
+              assertThat(response.headers().get(HttpHeaderNames.SET_COOKIE)).isNotBlank();
               String payload =
                   ByteBufUtil.getBytes(response.content()).length == 0
                       ? ""
@@ -125,8 +124,7 @@ public class CookieGateTest {
     init(List.of(CookieGateConfig.builder().name(COOKIE_NAME).build()));
     DefaultHttpRequest req =
         new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/private");
-    String cookieHeader =
-        ServerCookieEncoder.STRICT.encode(new DefaultCookie(COOKIE_NAME, "1"));
+    String cookieHeader = ServerCookieEncoder.STRICT.encode(new DefaultCookie(COOKIE_NAME, "1"));
     req.headers().set(HttpHeaderNames.COOKIE, cookieHeader);
     request(req);
     assertThat(passed).isTrue();

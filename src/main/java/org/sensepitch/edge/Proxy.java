@@ -245,7 +245,8 @@ public class Proxy implements ProxyContext {
     if (unservicedHost != null) {
       pipeline.addLast(unservicedHost.newHandler());
     }
-    ChannelHandler initialFallbackHandler = new FallbackHandler(FallbackConfig.DEFAULTS.merge(config.fallback()));
+    ChannelHandler initialFallbackHandler =
+        new FallbackHandler(FallbackConfig.DEFAULTS.merge(config.fallback()));
     pipeline.addLast("siteSelector", new SiteSelectorHandler(siteSelector));
     pipeline.addLast("fallback", initialFallbackHandler);
     pipeline.addLast("protection", dummy404Handler);

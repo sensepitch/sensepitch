@@ -34,8 +34,7 @@ public class Protection {
       plugins.add(new DeflectorHandler(deflector));
     }
     if (!plugins.isEmpty()) {
-      ProtectionPlugin plugin =
-          plugins.size() == 1 ? plugins.get(0) : new ProtectionChain(plugins);
+      ProtectionPlugin plugin = plugins.size() == 1 ? plugins.get(0) : new ProtectionChain(plugins);
       if (bypass != null) {
         plugin = new BypassProtectionPlugin(bypass, plugin);
       }

@@ -9,5 +9,6 @@ import lombok.Builder;
 @Builder(toBuilder = true)
 public record ProtectionConfig(
     boolean disable,
-    ProtectionBypassConfig bypass, DeflectorConfig deflector,
+    ProtectionBypassConfig bypass,
+    DeflectorConfig deflector,
     List<CookieGateConfig> cookieGates) {}
