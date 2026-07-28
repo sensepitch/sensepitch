@@ -36,6 +36,9 @@ public record ResponseConfig(
     if (redirect && status != 0 && (status < 300 || status > 399)) {
       throw new IllegalArgumentException("redirect status must be 3xx, was: " + status);
     }
+    if (text != null && file != null) {
+      throw new IllegalArgumentException("page is text OR file, not both");
+    }
   }
 
   /**

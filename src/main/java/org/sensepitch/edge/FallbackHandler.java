@@ -11,8 +11,11 @@ import io.netty.handler.codec.http.*;
 import io.netty.util.Attribute;
 import io.netty.util.AttributeKey;
 import io.netty.util.ReferenceCountUtil;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,7 +30,9 @@ import java.nio.file.Path;
 @ChannelHandler.Sharable
 public class FallbackHandler extends ChannelOutboundHandlerAdapter {
 
-  static ProxyLogger LOG = ProxyLogger.get(FallbackHandler.class);
+  private static final String CLASSPATH_PREFIX = "classpath:";
+
+  private static final String FILE_PREFIX = "file:";
 
   /**
    * Per-connection flag: {@code TRUE} while the origin body chunks of a streamed 5xx response are
@@ -147,37 +152,58 @@ public class FallbackHandler extends ChannelOutboundHandlerAdapter {
   }
 
   /**
-   * Load an HTML page for the fallback response. Tries, in order:
+   * Load the fallback page body. When {@code location} is set, its scheme selects the source:
    *
-   * <ol>
-   *   <li>a file on disk at {@code path} (operator-provided override)
-   *   <li>a classpath resource at {@code path} (bundled default page)
-   *   <li>{@code defaultText} as plain UTF-8 (last-resort)
-   * </ol>
+   * <ul>
+   *   <li>{@code classpath:<path>} - a bundled resource on the classpath, only
+   *   <li>{@code file:<path>} - a file on disk, only
+   *   <li>no scheme - try the filesystem first, then fall back to the classpath
+   * </ul>
+   *
+   * A resource that resolves to nothing is a hard configuration error that fails construction. When
+   * {@code location} is {@code null} the {@code text} (or a last-resort string) is used as a plain
+   * UTF-8 body.
    */
-  private static byte[] loadOrDefault(String path, String defaultText) {
-    // in case a file is provided
-    if (path != null) {
-      try {
-        Path filePath = Path.of(path);
-        if (Files.isReadable(filePath)) {
-          return Files.readAllBytes(filePath);
-        }
+  private static byte[] loadOrDefault(String location, String text) {
+    if (location != null) {
+      try (InputStream in = openResource(location)) {
+        return in.readAllBytes();
       } catch (IOException e) {
-        LOG.error("Failed to read fallback page from file: " + path, e);
-      }
-
-      try (InputStream in = FallbackHandler.class.getClassLoader().getResourceAsStream(path)) {
-        if (in != null) {
-          return in.readAllBytes();
-        }
-      } catch (IOException e) {
-        LOG.error("Failed to read fallback page from classpath: " + path, e);
+        throw new UncheckedIOException("Failed to read fallback page: " + location, e);
       }
     }
-
-    // in case a file is not provided or not found
-    String text = defaultText != null ? defaultText : "Unknown problem occurred";
+    text = text != null ? text : "Unknown problem occurred";
     return text.getBytes(StandardCharsets.UTF_8);
+  }
+
+  /**
+   * Open the resource named by {@code location}. An explicit {@code classpath:} or {@code file:}
+   * scheme picks exactly that source; a bare (schemeless) location is tried on the filesystem first
+   * and then on the classpath.
+   */
+  private static InputStream openResource(String location) throws IOException {
+    if (location.startsWith(CLASSPATH_PREFIX)) {
+      return openClasspath(location.substring(CLASSPATH_PREFIX.length()));
+    }
+    if (location.startsWith(FILE_PREFIX)) {
+      return new FileInputStream(location.substring(FILE_PREFIX.length()));
+    }
+    // No scheme: try the filesystem first, then the classpath.
+    Path filePath = Path.of(location);
+    if (Files.isReadable(filePath)) {
+      return Files.newInputStream(filePath);
+    }
+    return openClasspath(location);
+  }
+
+  private static InputStream openClasspath(String path) throws IOException {
+    if (path.startsWith("/")) {
+      path = path.substring(1);
+    }
+    InputStream in = FallbackHandler.class.getClassLoader().getResourceAsStream(path);
+    if (in == null) {
+      throw new FileNotFoundException("Classpath resource not found: " + path);
+    }
+    return in;
   }
 }

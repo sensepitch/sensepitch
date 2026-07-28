@@ -26,6 +26,7 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 
 import java.io.IOException;
 import java.io.StringReader;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -269,39 +270,56 @@ public class FallbackTest {
     @Test
     public void testUnavailablePageFromClasspath() {
         init(merged(siteUnavailable(
+                ResponseConfig.builder().file("classpath:fallback/unavailable_page.html").build())));
+        upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
+        assertPage(SERVICE_UNAVAILABLE, "<html>down</html>");
+    }
+
+    @Test
+    public void testFileAndTextTogetherRejected() {
+        assertThatThrownBy(() -> ResponseConfig.builder()
+                .file("classpath:fallback/unavailable_page.html")
+                .text("service is unavailable")
+                .build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("not both");
+    }
+
+    @Test
+    public void testErrorPageFromClasspath() {
+        init(merged(siteError(
+                ResponseConfig.builder().file("classpath:fallback/error_page.html").build())));
+        upstreamResponds(INTERNAL_SERVER_ERROR, "ignored-origin-body");
+        assertPage(INTERNAL_SERVER_ERROR, "<html>error</html>");
+    }
+
+    @Test
+    public void testMissingFileHardFails() {
+        FallbackConfig cfg = merged(siteUnavailable(
+                ResponseConfig.builder().file("classpath:fallback/non_existent_page.html").build()));
+        assertThatThrownBy(() -> new FallbackHandler(cfg))
+                .isInstanceOf(UncheckedIOException.class)
+                .hasMessageContaining("non_existent_page.html");
+    }
+
+    @Test
+    public void testSchemelessResolvesViaClasspath() {
+        // no scheme, not on disk -> falls through to the classpath resource
+        init(merged(siteUnavailable(
                 ResponseConfig.builder().file("fallback/unavailable_page.html").build())));
         upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
         assertPage(SERVICE_UNAVAILABLE, "<html>down</html>");
     }
 
     @Test
-    public void testUnavailablePageFromClasspathWithText() {
-        init(merged(siteUnavailable(ResponseConfig.builder()
-                .file("fallback/unavailable_page.html")
-                .text("service is unavailable")
-                .build())));
+    public void testSchemelessPrefersFilesystem(@TempDir Path tempDir) throws IOException {
+        Path pageFile = tempDir.resolve("down.html");
+        Files.writeString(pageFile, "<html>disk-first</html>");
+        // no scheme, exists on disk -> filesystem wins over any classpath resource
+        init(merged(siteUnavailable(
+                ResponseConfig.builder().file(pageFile.toAbsolutePath().toString()).build())));
         upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
-        assertPage(SERVICE_UNAVAILABLE, "<html>down</html>");
-    }
-
-    @Test
-    public void testErrorPageFromClasspath() {
-        init(merged(siteError(ResponseConfig.builder()
-                .file("fallback/error_page.html")
-                .text("internal server error")
-                .build())));
-        upstreamResponds(INTERNAL_SERVER_ERROR, "ignored-origin-body");
-        assertPage(INTERNAL_SERVER_ERROR, "<html>error</html>");
-    }
-
-    @Test
-    public void testMissingFileFallsBackToSlotText() {
-        init(merged(siteUnavailable(ResponseConfig.builder()
-                .file("fallback/non_existent_page.html")
-                .text("service unavailable")
-                .build())));
-        upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
-        assertPage(SERVICE_UNAVAILABLE, "service unavailable");
+        assertPage(SERVICE_UNAVAILABLE, "<html>disk-first</html>");
     }
 
     @Test
@@ -309,10 +327,8 @@ public class FallbackTest {
         Path pageFile = tempDir.resolve("down.html");
         Files.writeString(pageFile, "<html>disk-down</html>");
 
-        init(merged(siteUnavailable(ResponseConfig.builder()
-                .file(pageFile.toAbsolutePath().toString())
-                .text("service is unavailable")
-                .build())));
+        init(merged(siteUnavailable(
+                ResponseConfig.builder().file("file:" + pageFile.toAbsolutePath()).build())));
         upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
         assertPage(SERVICE_UNAVAILABLE, "<html>disk-down</html>");
     }
