@@ -54,8 +54,9 @@ public class FallbackHandler extends ChannelOutboundHandlerAdapter {
     this.unavailable = fallbackConfig.unavailableResponse();
     this.error = fallbackConfig.errorResponse();
 
-    unavailableContent = loadOrDefault(this.unavailable.file(), this.unavailable.text());
-    errorContent = loadOrDefault(this.error.file(), this.error.text());
+    // don't load a body for redirects at all
+    unavailableContent = unavailable.resolvedRedirect() != null ? null : pageBody(this.unavailable);
+    errorContent = error.resolvedRedirect() != null ? null : pageBody(this.error);
   }
 
   @Override
@@ -152,28 +153,34 @@ public class FallbackHandler extends ChannelOutboundHandlerAdapter {
   }
 
   /**
-   * Load the fallback page body. When {@code location} is set, its scheme selects the source:
+   * Build the page body for a page (non-redirect) {@code cfg}: the resource named by {@link
+   * ResponseConfig#file()} (see {@link #openResource} for how the location is resolved), or else
+   * the inline {@link ResponseConfig#text()} as UTF-8. {@link ResponseConfig} already rejects
+   * setting both, and the constructor skips redirects, so this is reached only for page configs.
    *
-   * <ul>
-   *   <li>{@code classpath:<path>} - a bundled resource on the classpath, only
-   *   <li>{@code file:<path>} - a file on disk, only
-   *   <li>no scheme - try the filesystem first, then fall back to the classpath
-   * </ul>
-   *
-   * A resource that resolves to nothing is a hard configuration error that fails construction. When
-   * {@code location} is {@code null} the {@code text} (or a last-resort string) is used as a plain
-   * UTF-8 body.
+   * @throws IllegalArgumentException if {@code cfg} has neither {@code file} nor {@code text} (an
+   *     empty page config)
    */
-  private static byte[] loadOrDefault(String location, String text) {
-    if (location != null) {
-      try (InputStream in = openResource(location)) {
-        return in.readAllBytes();
-      } catch (IOException e) {
-        throw new UncheckedIOException("Failed to read fallback page: " + location, e);
-      }
+  private static byte[] pageBody(ResponseConfig cfg) {
+    if (cfg.file() != null) {
+      return readResource(cfg.file());
     }
-    text = text != null ? text : "Unknown problem occurred";
-    return text.getBytes(StandardCharsets.UTF_8);
+    if (cfg.text() != null) {
+      return cfg.text().getBytes(StandardCharsets.UTF_8);
+    }
+    throw new IllegalArgumentException("page config has neither file nor text");
+  }
+
+  /**
+   * Read the resource fully; an unresolvable location is a configuration error that fails
+   * construction.
+   */
+  private static byte[] readResource(String file) {
+    try (InputStream in = openResource(file)) {
+      return in.readAllBytes();
+    } catch (IOException e) {
+      throw new UncheckedIOException("Failed to read fallback page: " + file, e);
+    }
   }
 
   /**
