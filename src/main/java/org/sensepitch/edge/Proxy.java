@@ -18,6 +18,7 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.InetSocketAddress;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Set;
@@ -216,10 +217,11 @@ public class Proxy implements ProxyContext {
                   addHttpHandlers(pipeline);
                 }
               });
+      String addr = config.listen().address();
       int port = config.listen().httpsPort();
-      ChannelFuture f = sb.bind(port).sync();
+      ChannelFuture f = sb.bind(new InetSocketAddress(addr, port)).sync();
       System.out.println("Open SSL: " + OpenSsl.versionString());
-      System.out.println("Proxy listening on port " + port);
+      System.out.println("Proxy listening on " + addr + ":" + port);
       LOG.trace("tracing enabled");
       f.channel().closeFuture().sync();
     } finally {

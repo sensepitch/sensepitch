@@ -30,6 +30,34 @@
 - Keep commits focused and mention the primary behavior change.
 - PRs should include: a concise description, any relevant configuration changes, and screenshots/log snippets when behavior is user-visible.
 
+## Quick Lookup
+
+### Key files
+| File | Purpose |
+|---|---|
+| `Main.java` | Entry point, loads config from YAML or env vars, starts `Proxy` |
+| `Proxy.java` | Netty `ServerBootstrap`, channel pipeline, SSL setup, `start()` |
+| `ProxyConfig.java` | Root config record (holds `listen`, `sites`, `metrics`, etc.) |
+| `ListenConfig.java` | Listen/bind settings (`address`, `httpsPort`, `ssl`, `hosts`, `snis`) |
+
+### Configuration loading
+- **Env vars**: prefix `SENSEPITCH_EDGE_`, camelCase → UPPER_SNAKE_CASE (e.g. `SENSEPITCH_EDGE_LISTEN_ADDRESS`)
+- **YAML file**: first CLI arg, deserialized via SnakeYAML into records
+- All config is Lombok `@Builder(toBuilder = true)` records
+
+### Testing patterns
+- **`EmbeddedChannel`**: Most tests use in-process Netty channels, no real TCP
+- **`ExtendableSteps`**: BDD-style step classes in `*BDDTest.java` files
+- **`proxy.addHttpHandlers(pipeline)`**: The key entry to test only the HTTP pipeline without a real server socket
+- SSL test certs: `classpath:ssl/test.key` and `classpath:ssl/test.crt`
+
+## Agent Workflow Reminders
+
+- **Run `./mvnw spotless:check` BEFORE making any edits** to establish the formatting baseline. This ensures your diff only contains your changes, not unrelated reformatting.
+- **Run `./mvnw spotless:apply` only on your changed files** after editing, or run it project-wide and then verify via `git diff` that no unrelated files were touched. If Spotless reformatted unrelated files, revert them with `git checkout -- <file>` before committing.
+- **Run tests before AND after** your changes to confirm you didn't break anything.
+- **Check `git diff` before committing** to review exactly what changed — reject any accidental reformatting of unrelated files.
+
 ## Security & Configuration Tips
 - Test TLS keys/certs live under `src/test/resources/ssl/` and `src/test/resources/letsencrypt/`; do not reuse these in production.
 - Logging for tests is configured via `test-logging.properties` and `src/test/resources/log4j2.xml`.
