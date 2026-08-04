@@ -59,7 +59,7 @@ public class FallbackStreamingTest {
 
   @BeforeEach
   void setUp() {
-    channel = new EmbeddedChannel(capture(written), new FallbackHandler(CONFIG));
+    channel = new EmbeddedChannel(capture(written), new Fallback(CONFIG).newHandler());
   }
 
   @AfterEach
@@ -130,7 +130,7 @@ public class FallbackStreamingTest {
             .errorResponse(ResponseConfig.builder().text("err").build())
             .build();
     List<Object> out = new ArrayList<>();
-    EmbeddedChannel ch = new EmbeddedChannel(capture(out), new FallbackHandler(cfg));
+    EmbeddedChannel ch = new EmbeddedChannel(capture(out), new Fallback(cfg).newHandler());
 
     ch.writeOutbound(
         new DefaultHttpResponse(HTTP_1_1, SERVICE_UNAVAILABLE),
@@ -239,7 +239,7 @@ public class FallbackStreamingTest {
             .errorResponse(ResponseConfig.builder().text("err").build())
             .build();
     List<Object> out = new ArrayList<>();
-    EmbeddedChannel ch = new EmbeddedChannel(capture(out), new FallbackHandler(redirectCfg));
+    EmbeddedChannel ch = new EmbeddedChannel(capture(out), new Fallback(redirectCfg).newHandler());
 
     DefaultHttpContent originChunk = chunk("origin-body");
     ch.writeOutbound(
@@ -273,7 +273,7 @@ public class FallbackStreamingTest {
     List<Object> out = new ArrayList<>();
     EmbeddedChannel ch =
         new EmbeddedChannel(
-            capture(out), new FallbackHandler(FallbackConfig.DEFAULTS.merge(redirectCfg)));
+            capture(out), new Fallback(FallbackConfig.DEFAULTS.merge(redirectCfg)).newHandler());
 
     DefaultHttpResponse head = new DefaultHttpResponse(HTTP_1_1, SERVICE_UNAVAILABLE);
     head.headers().set(HttpHeaderNames.CONNECTION, "close");

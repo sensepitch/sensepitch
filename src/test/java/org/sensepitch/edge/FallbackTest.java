@@ -77,7 +77,7 @@ public class FallbackTest {
             ctx.write(msg, promise);
           }
         };
-    channel = new EmbeddedChannel(capture, new FallbackHandler(cfg));
+    channel = new EmbeddedChannel(capture, new Fallback(cfg).newHandler());
   }
 
   private void upstreamResponds(HttpResponseStatus status, String body) {
@@ -318,7 +318,7 @@ public class FallbackTest {
                 ResponseConfig.builder()
                     .file("classpath:fallback/non_existent_page.html")
                     .build()));
-    assertThatThrownBy(() -> new FallbackHandler(cfg))
+    assertThatThrownBy(() -> new Fallback(cfg))
         .isInstanceOf(UncheckedIOException.class)
         .hasMessageContaining("non_existent_page.html");
   }
@@ -425,9 +425,11 @@ public class FallbackTest {
   }
 
   @Test
-  public void testEmptySlotServesLastResortText() {
-    init(merged(siteUnavailable(ResponseConfig.builder().build())));
-    upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
-    assertPage(SERVICE_UNAVAILABLE, "Unknown problem occurred");
+  public void testEmptySlotHardFails() {
+    // an empty slot replaces the whole default slot, leaving no file and no text to serve
+    FallbackConfig cfg = merged(siteUnavailable(ResponseConfig.builder().build()));
+    assertThatThrownBy(() -> new Fallback(cfg))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("neither file nor text");
   }
 }

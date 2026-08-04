@@ -87,11 +87,10 @@ public class SiteSelector {
   }
 
   private Supplier<ChannelHandler> constructFallbackSupplier(
-      FallbackConfig globalFallback, FallbackConfig siteFallback) {
-    FallbackConfig config = FallbackConfig.DEFAULTS.merge(globalFallback).merge(siteFallback);
-    FallbackHandler handler = new FallbackHandler(config);
+      FallbackConfig global, FallbackConfig site) {
+    Fallback fallback = new Fallback(FallbackConfig.DEFAULTS.merge(global).merge(site));
 
-    return () -> handler;
+    return () -> fallback.newHandler();
   }
 
   private Supplier<ChannelHandler> constructProxySupplier(ProxyContext ctx, SiteConfig site) {

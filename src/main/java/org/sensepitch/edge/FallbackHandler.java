@@ -3,44 +3,25 @@ package org.sensepitch.edge;
 import static org.sensepitch.edge.FallbackConfig.DEFAULT_CONTENT_TYPE;
 
 import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.http.*;
-import io.netty.util.Attribute;
-import io.netty.util.AttributeKey;
 import io.netty.util.ReferenceCountUtil;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 
 /**
  * Replaces upstream 500/503 responses with an operator-configured fallback page (or text). Handles
  * both the aggregated {@link FullHttpResponse} (stub upstream) and the streamed form a real backend
  * produces ({@link HttpResponse} head + {@link HttpContent} chunks + {@link LastHttpContent}).
- *
  * @author Raid Thabet
  */
-@ChannelHandler.Sharable
 public class FallbackHandler extends ChannelOutboundHandlerAdapter {
 
-  private static final String CLASSPATH_PREFIX = "classpath:";
-
-  private static final String FILE_PREFIX = "file:";
-
   /**
-   * Per-connection flag: {@code TRUE} while the origin body chunks of a streamed 5xx response are
-   * being dropped after its head was replaced with the fallback. Stored on the channel (not as an
-   * instance field) so the handler can remain {@link ChannelHandler.Sharable @Sharable}.
+   * {@code true} while the origin body chunks of a streamed 5xx response are being dropped after
+   * its head was replaced with the fallback.
    */
-  private static final AttributeKey<Boolean> SUPPRESSING =
-      AttributeKey.valueOf(FallbackHandler.class, "suppressing");
+  private boolean suppressing;
 
   private final ResponseConfig unavailable; // fallbackConfig.unavailableResponse()
 
@@ -50,13 +31,15 @@ public class FallbackHandler extends ChannelOutboundHandlerAdapter {
 
   private final byte[] errorContent;
 
-  public FallbackHandler(FallbackConfig fallbackConfig) {
+  /**
+   * @param unavailableContent body of the 503 page fallback, {@code null} if it is a redirect
+   * @param errorContent body of the 500 page fallback, {@code null} if it is a redirect
+   */
+  FallbackHandler(FallbackConfig fallbackConfig, byte[] unavailableContent, byte[] errorContent) {
     this.unavailable = fallbackConfig.unavailableResponse();
     this.error = fallbackConfig.errorResponse();
-
-    // don't load a body for redirects at all
-    unavailableContent = unavailable.resolvedRedirect() != null ? null : pageBody(this.unavailable);
-    errorContent = error.resolvedRedirect() != null ? null : pageBody(this.error);
+    this.unavailableContent = unavailableContent;
+    this.errorContent = errorContent;
   }
 
   @Override
@@ -78,8 +61,6 @@ public class FallbackHandler extends ChannelOutboundHandlerAdapter {
 
     // Streamed response (real backend when site.response is not configured)
 
-    Attribute<Boolean> suppressing = ctx.channel().attr(SUPPRESSING);
-
     // Head of a streamed response: check for 5xx and replace if needed. The following body chunks
     // will be dropped.
     if (msg instanceof HttpResponse resp) {
@@ -87,7 +68,7 @@ public class FallbackHandler extends ChannelOutboundHandlerAdapter {
       boolean replace =
           status == 503
               || status == 500; // does this streamed response get swapped for the fallback?
-      suppressing.set(replace);
+      suppressing = replace;
       if (replace) {
         FullHttpResponse fallback = buildFallback(ctx, resp);
         ReferenceCountUtil.release(msg);
@@ -98,11 +79,11 @@ public class FallbackHandler extends ChannelOutboundHandlerAdapter {
     }
 
     // Origin body chunks of a streamed response we already replaced: drop them.
-    if (Boolean.TRUE.equals(suppressing.get()) && msg instanceof HttpContent chunk) {
+    if (suppressing && msg instanceof HttpContent chunk) {
       chunk.release();
       promise.setSuccess();
       if (msg instanceof LastHttpContent) {
-        suppressing.set(Boolean.FALSE);
+        suppressing = false;
       }
       return;
     }
@@ -150,67 +131,5 @@ public class FallbackHandler extends ChannelOutboundHandlerAdapter {
             cfg.contentType() != null ? cfg.contentType() : DEFAULT_CONTENT_TYPE);
     fallback.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, content.length);
     return fallback;
-  }
-
-  /**
-   * Build the page body for a page (non-redirect) {@code cfg}: the resource named by {@link
-   * ResponseConfig#file()} (see {@link #openResource} for how the location is resolved), or else
-   * the inline {@link ResponseConfig#text()} as UTF-8. {@link ResponseConfig} already rejects
-   * setting both, and the constructor skips redirects, so this is reached only for page configs.
-   *
-   * @throws IllegalArgumentException if {@code cfg} has neither {@code file} nor {@code text} (an
-   *     empty page config)
-   */
-  private static byte[] pageBody(ResponseConfig cfg) {
-    if (cfg.file() != null) {
-      return readResource(cfg.file());
-    }
-    if (cfg.text() != null) {
-      return cfg.text().getBytes(StandardCharsets.UTF_8);
-    }
-    throw new IllegalArgumentException("page config has neither file nor text");
-  }
-
-  /**
-   * Read the resource fully; an unresolvable location is a configuration error that fails
-   * construction.
-   */
-  private static byte[] readResource(String file) {
-    try (InputStream in = openResource(file)) {
-      return in.readAllBytes();
-    } catch (IOException e) {
-      throw new UncheckedIOException("Failed to read fallback page: " + file, e);
-    }
-  }
-
-  /**
-   * Open the resource named by {@code location}. An explicit {@code classpath:} or {@code file:}
-   * scheme picks exactly that source; a bare (schemeless) location is tried on the filesystem first
-   * and then on the classpath.
-   */
-  private static InputStream openResource(String location) throws IOException {
-    if (location.startsWith(CLASSPATH_PREFIX)) {
-      return openClasspath(location.substring(CLASSPATH_PREFIX.length()));
-    }
-    if (location.startsWith(FILE_PREFIX)) {
-      return new FileInputStream(location.substring(FILE_PREFIX.length()));
-    }
-    // No scheme: try the filesystem first, then the classpath.
-    Path filePath = Path.of(location);
-    if (Files.isReadable(filePath)) {
-      return Files.newInputStream(filePath);
-    }
-    return openClasspath(location);
-  }
-
-  private static InputStream openClasspath(String path) throws IOException {
-    if (path.startsWith("/")) {
-      path = path.substring(1);
-    }
-    InputStream in = FallbackHandler.class.getClassLoader().getResourceAsStream(path);
-    if (in == null) {
-      throw new FileNotFoundException("Classpath resource not found: " + path);
-    }
-    return in;
   }
 }
