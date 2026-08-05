@@ -18,6 +18,14 @@ import java.nio.file.Path;
  */
 public class Fallback {
 
+  /**
+   * A resolved redirect.
+   *
+   * @param status 3xx status code
+   * @param location target URL for the {@code Location} header
+   */
+  public record Redirect(int status, String location) {}
+
   private static final String CLASSPATH_PREFIX = "classpath:";
 
   private static final String FILE_PREFIX = "file:";
@@ -52,7 +60,7 @@ public class Fallback {
    *     text} (an empty page config)
    */
   private static byte[] pageBody(ResponseConfig cfg) {
-    if (cfg.resolvedRedirect() != null) {
+    if (resolvedRedirect(cfg.location(), cfg.status()) != null) {
       return null;
     }
     if (cfg.file() != null) {
@@ -105,5 +113,10 @@ public class Fallback {
       throw new FileNotFoundException("Classpath resource not found: " + path);
     }
     return in;
+  }
+
+  public static Redirect resolvedRedirect(String location, int status) {
+    if (location != null) return new Redirect(status, location);
+    return null;
   }
 }

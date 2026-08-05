@@ -94,7 +94,7 @@ public class FallbackHandler extends ChannelOutboundHandlerAdapter {
   private FullHttpResponse buildFallback(ChannelHandlerContext ctx, HttpResponse source) {
     boolean isDown = source.status().code() == 503;
     ResponseConfig cfg = isDown ? unavailable : error;
-    ResponseConfig.Redirect redirect = cfg.resolvedRedirect();
+    Fallback.Redirect redirect = Fallback.resolvedRedirect(cfg.location(), cfg.status());
 
     // Redirect fallback
     if (redirect != null) {

@@ -7,6 +7,7 @@ import static io.netty.handler.codec.http.HttpResponseStatus.NOT_FOUND;
 import static io.netty.handler.codec.http.HttpResponseStatus.NOT_IMPLEMENTED;
 import static io.netty.handler.codec.http.HttpResponseStatus.OK;
 import static io.netty.handler.codec.http.HttpResponseStatus.PERMANENT_REDIRECT;
+import static io.netty.handler.codec.http.HttpResponseStatus.SEE_OTHER;
 import static io.netty.handler.codec.http.HttpResponseStatus.SERVICE_UNAVAILABLE;
 import static io.netty.handler.codec.http.HttpResponseStatus.TEMPORARY_REDIRECT;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
@@ -150,8 +151,6 @@ public class FallbackTest {
     assertThat(cfg.unavailableResponse()).isNotNull();
     assertThat(cfg.unavailableResponse().text()).isEqualTo("site2 down");
     assertThat(cfg.unavailableResponse().file()).isNull();
-    assertThat(cfg.unavailableResponse().permanentRedirect()).isNull();
-    assertThat(cfg.unavailableResponse().temporaryRedirect()).isNull();
     assertThat(cfg.unavailableResponse().location()).isNull();
     assertThat(cfg.unavailableResponse().contentType()).isNull();
     assertThat(cfg.unavailableResponse().status()).isEqualTo(0);
@@ -185,7 +184,37 @@ public class FallbackTest {
   @Test
   public void redirectWithNon3xxStatusFails() {
     assertThatThrownBy(() -> ResponseConfig.builder().location("/elsewhere").status(200).build())
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("redirect status must be one of [301, 302, 303, 307, 308], was: 200");
+  }
+
+  /** 3xx, but not a code a {@code Location} header means anything for. */
+  @Test
+  public void redirectWithNonRedirect3xxStatusFails() {
+    assertThatThrownBy(() -> ResponseConfig.builder().location("/elsewhere").status(304).build())
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("was: 304");
+    assertThatThrownBy(() -> ResponseConfig.builder().location("/elsewhere").status(305).build())
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("was: 305");
+  }
+
+  @Test
+  public void pageStatusOutsideHttpRangeFails() {
+    assertThatThrownBy(() -> ResponseConfig.builder().text("hi").status(42).build())
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("status must be 100..599, was: 42");
+  }
+
+  /** A page with no explicit status keeps the sentinel 0, meaning "inherit the origin status". */
+  @Test
+  public void pageWithoutStatusKeepsZeroSentinel() {
+    assertThat(page("down").status()).isZero();
+  }
+
+  @Test
+  public void redirectWithoutStatusNormalizesTo302() {
+    assertThat(ResponseConfig.builder().location("/elsewhere").build().status()).isEqualTo(302);
   }
 
   @Test
@@ -384,7 +413,10 @@ public class FallbackTest {
     init(
         merged(
             siteUnavailable(
-                ResponseConfig.builder().permanentRedirect("https://elsewhere.example/").build())));
+                ResponseConfig.builder()
+                    .location("https://elsewhere.example/")
+                    .status(308)
+                    .build())));
     upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
     assertRedirect(PERMANENT_REDIRECT, "https://elsewhere.example/");
   }
@@ -394,7 +426,10 @@ public class FallbackTest {
     init(
         merged(
             siteError(
-                ResponseConfig.builder().permanentRedirect("https://elsewhere.example/").build())));
+                ResponseConfig.builder()
+                    .location("https://elsewhere.example/")
+                    .status(308)
+                    .build())));
     upstreamResponds(INTERNAL_SERVER_ERROR, "ignored-origin-body");
     assertRedirect(PERMANENT_REDIRECT, "https://elsewhere.example/");
   }
@@ -404,9 +439,25 @@ public class FallbackTest {
     init(
         merged(
             siteError(
-                ResponseConfig.builder().temporaryRedirect("https://elsewhere.example/").build())));
+                ResponseConfig.builder()
+                    .location("https://elsewhere.example/")
+                    .status(307)
+                    .build())));
     upstreamResponds(INTERNAL_SERVER_ERROR, "ignored-origin-body");
     assertRedirect(TEMPORARY_REDIRECT, "https://elsewhere.example/");
+  }
+
+  @Test
+  public void testUnavailableSeeOtherRedirect() {
+    init(
+        merged(
+            siteUnavailable(
+                ResponseConfig.builder()
+                    .location("https://status.example/")
+                    .status(303)
+                    .build())));
+    upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
+    assertRedirect(SEE_OTHER, "https://status.example/");
   }
 
   @Test
@@ -414,7 +465,10 @@ public class FallbackTest {
     FallbackConfig globalRedirect =
         FallbackConfig.builder()
             .unavailableResponse(
-                ResponseConfig.builder().permanentRedirect("http://origin.example/data").build())
+                ResponseConfig.builder()
+                    .location("http://origin.example/data")
+                    .status(308)
+                    .build())
             .build();
     FallbackConfig site = siteUnavailable(page("SITE3: down for maintenance"));
 
@@ -424,12 +478,22 @@ public class FallbackTest {
     assertPage(SERVICE_UNAVAILABLE, "SITE3: down for maintenance");
   }
 
+  /**
+   * An empty slot has neither a redirect target nor a page body. This is now rejected when the
+   * record is constructed, so such a slot can never reach {@link Fallback} to be merged at all.
+   */
   @Test
   public void testEmptySlotHardFails() {
-    // an empty slot replaces the whole default slot, leaving no file and no text to serve
-    FallbackConfig cfg = merged(siteUnavailable(ResponseConfig.builder().build()));
-    assertThatThrownBy(() -> new Fallback(cfg))
+    assertThatThrownBy(() -> ResponseConfig.builder().build())
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("neither file nor text");
+        .hasMessageContaining("response should be one of");
+  }
+
+  @Test
+  public void redirectAndPageInSameResponseRejected() {
+    assertThatThrownBy(
+            () -> ResponseConfig.builder().location("/elsewhere").text("we are down").build())
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("response should be one of");
   }
 }

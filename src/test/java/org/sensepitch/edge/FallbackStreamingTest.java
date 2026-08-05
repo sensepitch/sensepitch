@@ -235,7 +235,7 @@ public class FallbackStreamingTest {
     FallbackConfig redirectCfg =
         FallbackConfig.builder()
             .unavailableResponse(
-                ResponseConfig.builder().temporaryRedirect("https://status.example/").build())
+                ResponseConfig.builder().location("https://status.example/").status(307).build())
             .errorResponse(ResponseConfig.builder().text("err").build())
             .build();
     List<Object> out = new ArrayList<>();
@@ -268,7 +268,7 @@ public class FallbackStreamingTest {
     FallbackConfig redirectCfg =
         FallbackConfig.builder()
             .unavailableResponse(
-                ResponseConfig.builder().temporaryRedirect("https://status.example/").build())
+                ResponseConfig.builder().location("https://status.example/").status(307).build())
             .build();
     List<Object> out = new ArrayList<>();
     EmbeddedChannel ch =

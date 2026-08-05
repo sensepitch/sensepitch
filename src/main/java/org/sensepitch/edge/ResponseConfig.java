@@ -2,6 +2,8 @@ package org.sensepitch.edge;
 
 import lombok.Builder;
 
+import java.util.List;
+
 /**
  * @author Jens Wilke
  */
@@ -10,49 +12,40 @@ public record ResponseConfig(
     String text,
     int status,
     String location,
-    String permanentRedirect,
-    String temporaryRedirect,
     String contentType,
     String file) {
+
   /**
-   * A response is exactly one of two kinds; setting fields from both is a misconfiguration:
-   *
-   * <ul>
-   *   <li><b>redirect</b>: {@code location} (or {@code permanentRedirect}/ {@code
-   *       temporaryRedirect}), no body
-   *   <li><b>page</b>: {@code text} or {@code file} (with optional {@code contentType})
-   * </ul>
+   * Status codes a redirect may use. Deliberately narrower than the whole 3xx range: 300, 304, 305
+   * and 306 are 3xx but are not redirects a {@code Location} header makes sense for.
    */
+  private static final List<Integer> REDIRECT_CODES = List.of(301, 302, 303, 307, 308);
+
+  private static final int DEFAULT_REDIRECT_STATUS = 302;
+
   public ResponseConfig {
-    boolean redirect = location != null || permanentRedirect != null || temporaryRedirect != null;
-    boolean page = text != null || file != null;
-    if (redirect && page) {
+    boolean isRedirect = location != null;
+    boolean hasPageBody = text != null || file != null;
+    if (isRedirect && hasPageBody || !isRedirect && !hasPageBody) {
       throw new IllegalArgumentException(
           """
-                            response is both a redirect and a page; use ONE of:
-                              redirect -> location (optionally with a 3xx status)
-                              page     -> text or file (optionally with an explicit status)""");
+          response should be one of:
+            redirect -> location (optionally with an explicit redirect status)
+            page     -> text or file (optionally with an explicit status)""");
     }
-    if (redirect && status != 0 && (status < 300 || status > 399)) {
-      throw new IllegalArgumentException("redirect status must be 3xx, was: " + status);
+    if (isRedirect) {
+      if (status == 0) {
+        status = DEFAULT_REDIRECT_STATUS;
+      } else if (!REDIRECT_CODES.contains(status)) {
+        throw new IllegalArgumentException(
+            "redirect status must be one of " + REDIRECT_CODES + ", was: " + status);
+      }
     }
     if (text != null && file != null) {
       throw new IllegalArgumentException("page is text OR file, not both");
     }
-  }
-
-  /**
-   * A resolved redirect.
-   *
-   * @param status 3xx status code
-   * @param location target URL for the {@code Location} header
-   */
-  public record Redirect(int status, String location) {}
-
-  public Redirect resolvedRedirect() {
-    if (permanentRedirect != null) return new Redirect(308, permanentRedirect);
-    if (temporaryRedirect != null) return new Redirect(307, temporaryRedirect);
-    if (location != null) return new Redirect(status != 0 ? status : 302, location);
-    return null;
+    if (status != 0 && (status < 100 || status > 599)) {
+      throw new IllegalArgumentException("status must be 100..599, was: " + status);
+    }
   }
 }
