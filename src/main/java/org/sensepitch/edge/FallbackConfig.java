@@ -8,9 +8,7 @@ import lombok.Builder;
 @Builder(toBuilder = true)
 public record FallbackConfig(ResponseConfig unavailableResponse, ResponseConfig errorResponse) {
   public static final String DEFAULT_UNAVAILABLE_FILE = "classpath:fallback/unavailable.html";
-  public static final String DEFAULT_UNAVAILABLE_TEXT = "Service Unavailable";
   public static final String DEFAULT_ERROR_FILE = "classpath:fallback/error.html";
-  public static final String DEFAULT_ERROR_TEXT = "Internal Server Error";
   public static final String DEFAULT_CONTENT_TYPE = "text/html; charset=UTF-8";
 
   public static final FallbackConfig DEFAULTS =

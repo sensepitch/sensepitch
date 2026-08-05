@@ -1,19 +1,14 @@
 package org.sensepitch.edge;
 
-import lombok.Builder;
-
 import java.util.List;
+import lombok.Builder;
 
 /**
  * @author Jens Wilke
  */
 @Builder(toBuilder = true)
 public record ResponseConfig(
-    String text,
-    int status,
-    String location,
-    String contentType,
-    String file) {
+    String text, int status, String location, String contentType, String file) {
 
   /**
    * Status codes a redirect may use. Deliberately narrower than the whole 3xx range: 300, 304, 305

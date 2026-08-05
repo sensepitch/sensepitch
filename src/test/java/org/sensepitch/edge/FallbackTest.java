@@ -452,10 +452,7 @@ public class FallbackTest {
     init(
         merged(
             siteUnavailable(
-                ResponseConfig.builder()
-                    .location("https://status.example/")
-                    .status(303)
-                    .build())));
+                ResponseConfig.builder().location("https://status.example/").status(303).build())));
     upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
     assertRedirect(SEE_OTHER, "https://status.example/");
   }
@@ -465,10 +462,7 @@ public class FallbackTest {
     FallbackConfig globalRedirect =
         FallbackConfig.builder()
             .unavailableResponse(
-                ResponseConfig.builder()
-                    .location("http://origin.example/data")
-                    .status(308)
-                    .build())
+                ResponseConfig.builder().location("http://origin.example/data").status(308).build())
             .build();
     FallbackConfig site = siteUnavailable(page("SITE3: down for maintenance"));
 

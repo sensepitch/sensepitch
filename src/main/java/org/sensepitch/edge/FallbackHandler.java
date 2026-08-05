@@ -13,6 +13,7 @@ import io.netty.util.ReferenceCountUtil;
  * Replaces upstream 500/503 responses with an operator-configured fallback page (or text). Handles
  * both the aggregated {@link FullHttpResponse} (stub upstream) and the streamed form a real backend
  * produces ({@link HttpResponse} head + {@link HttpContent} chunks + {@link LastHttpContent}).
+ *
  * @author Raid Thabet
  */
 public class FallbackHandler extends ChannelOutboundHandlerAdapter {
@@ -48,88 +49,130 @@ public class FallbackHandler extends ChannelOutboundHandlerAdapter {
 
     // Aggregated response (full http response from embedded channel when site.response is
     // configured)
-    if (msg instanceof FullHttpResponse full) {
-      int status = full.status().code();
-      if (status == 503 || status == 500) {
-        FullHttpResponse fallback = buildFallback(ctx, full);
-        ReferenceCountUtil.release(full);
-        ctx.write(fallback, promise);
-        return;
-      }
-      // non-5xx aggregated response falls through and is forwarded unchanged
+    if (msg instanceof FullHttpResponse aggregated) {
+      handleAggregatedResponse(ctx, aggregated, promise);
+      return;
     }
 
     // Streamed response (real backend when site.response is not configured)
-
-    // Head of a streamed response: check for 5xx and replace if needed. The following body chunks
-    // will be dropped.
-    if (msg instanceof HttpResponse resp) {
-      int status = resp.status().code();
-      boolean replace =
-          status == 503
-              || status == 500; // does this streamed response get swapped for the fallback?
-      suppressing = replace;
-      if (replace) {
-        FullHttpResponse fallback = buildFallback(ctx, resp);
-        ReferenceCountUtil.release(msg);
-        ctx.write(fallback, promise);
-        return;
-      }
-      // non-5xx head falls through and is forwarded unchanged
+    if (msg instanceof HttpResponse head) {
+      handleStreamedHead(ctx, head, promise);
+      return;
     }
-
-    // Origin body chunks of a streamed response we already replaced: drop them.
-    if (suppressing && msg instanceof HttpContent chunk) {
-      chunk.release();
-      promise.setSuccess();
-      if (msg instanceof LastHttpContent) {
-        suppressing = false;
-      }
+    if (msg instanceof HttpContent chunk) {
+      handleStreamedContent(ctx, chunk, promise);
       return;
     }
 
     super.write(ctx, msg, promise);
   }
 
+  private void handleAggregatedResponse(
+      ChannelHandlerContext ctx, FullHttpResponse aggregated, ChannelPromise promise)
+      throws Exception {
+    if (!isFallbackStatus(aggregated.status().code())) {
+      suppressing = false;
+      super.write(ctx, aggregated, promise);
+      return;
+    }
+    writeFallback(ctx, aggregated, promise);
+  }
+
+  private void handleStreamedHead(
+      ChannelHandlerContext ctx, HttpResponse head, ChannelPromise promise) throws Exception {
+    suppressing = isFallbackStatus(head.status().code());
+    if (!suppressing) {
+      super.write(ctx, head, promise);
+      return;
+    }
+    writeFallback(ctx, head, promise);
+  }
+
+  private void handleStreamedContent(
+      ChannelHandlerContext ctx, HttpContent chunk, ChannelPromise promise) throws Exception {
+    if (!suppressing) {
+      super.write(ctx, chunk, promise);
+      return;
+    }
+    chunk.release();
+    promise.setSuccess();
+    if (chunk instanceof LastHttpContent) {
+      suppressing = false;
+    }
+  }
+
+  private void writeFallback(
+      ChannelHandlerContext ctx, HttpResponse source, ChannelPromise promise) {
+    FullHttpResponse fallback = buildFallback(ctx, source);
+    ReferenceCountUtil.release(source);
+    ctx.write(fallback, promise);
+  }
+
   private FullHttpResponse buildFallback(ChannelHandlerContext ctx, HttpResponse source) {
-    boolean isDown = source.status().code() == 503;
-    ResponseConfig cfg = isDown ? unavailable : error;
+    boolean serviceUnavailable =
+        source.status().code() == HttpResponseStatus.SERVICE_UNAVAILABLE.code();
+    ResponseConfig cfg = serviceUnavailable ? unavailable : error;
     Fallback.Redirect redirect = Fallback.resolvedRedirect(cfg.location(), cfg.status());
 
-    // Redirect fallback
     if (redirect != null) {
-      int code = redirect.status();
-      FullHttpResponse redirectResponse =
-          new DefaultFullHttpResponse(
-              source.protocolVersion(), HttpResponseStatus.valueOf(code), Unpooled.EMPTY_BUFFER);
-      if (source.headers().contains(HttpHeaderNames.CONNECTION)) {
-        redirectResponse
-            .headers()
-            .set(HttpHeaderNames.CONNECTION, source.headers().get(HttpHeaderNames.CONNECTION));
-      }
-      redirectResponse.headers().set(HttpHeaderNames.LOCATION, redirect.location());
-      redirectResponse.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, 0);
-      return redirectResponse;
+      return buildRedirectFallback(source, redirect);
     }
+    byte[] content = serviceUnavailable ? unavailableContent : errorContent;
+    return buildPageFallback(ctx, source, cfg, content);
+  }
 
-    // Page fallback
-    byte[] content = isDown ? unavailableContent : errorContent;
+  private FullHttpResponse buildRedirectFallback(HttpResponse source, Fallback.Redirect redirect) {
+    FullHttpResponse redirectResponse =
+        new DefaultFullHttpResponse(
+            source.protocolVersion(),
+            HttpResponseStatus.valueOf(redirect.status()),
+            Unpooled.EMPTY_BUFFER);
+    if (source.headers().contains(HttpHeaderNames.CONNECTION)) {
+      copyConnectionHeaderIfPresent(source, redirectResponse);
+    }
+    setLocationAndLengthHeaders(redirectResponse, redirect.location());
+    return redirectResponse;
+  }
+
+  private FullHttpResponse buildPageFallback(
+      ChannelHandlerContext ctx, HttpResponse source, ResponseConfig cfg, byte[] content) {
     HttpResponseStatus status =
         cfg.status() != 0 ? HttpResponseStatus.valueOf(cfg.status()) : source.status();
     FullHttpResponse fallback =
         new DefaultFullHttpResponse(
             source.protocolVersion(), status, ctx.alloc().buffer().writeBytes(content));
     if (source.headers().contains(HttpHeaderNames.CONNECTION)) {
-      fallback
+      copyConnectionHeaderIfPresent(source, fallback);
+    }
+    setContentTypeAndLengthHeaders(fallback, cfg, content);
+    return fallback;
+  }
+
+  private boolean isFallbackStatus(int status) {
+    return status == HttpResponseStatus.SERVICE_UNAVAILABLE.code()
+        || status == HttpResponseStatus.INTERNAL_SERVER_ERROR.code();
+  }
+
+  private void copyConnectionHeaderIfPresent(HttpResponse source, FullHttpResponse response) {
+    if (source.headers().contains(HttpHeaderNames.CONNECTION)) {
+      response
           .headers()
           .set(HttpHeaderNames.CONNECTION, source.headers().get(HttpHeaderNames.CONNECTION));
     }
+  }
+
+  private void setContentTypeAndLengthHeaders(
+      FullHttpResponse fallback, ResponseConfig cfg, byte[] content) {
     fallback
         .headers()
         .set(
             HttpHeaderNames.CONTENT_TYPE,
             cfg.contentType() != null ? cfg.contentType() : DEFAULT_CONTENT_TYPE);
     fallback.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, content.length);
-    return fallback;
+  }
+
+  private void setLocationAndLengthHeaders(FullHttpResponse response, String location) {
+    response.headers().set(HttpHeaderNames.LOCATION, location);
+    response.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, 0);
   }
 }

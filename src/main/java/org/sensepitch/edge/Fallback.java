@@ -1,6 +1,5 @@
 package org.sensepitch.edge;
 
-import io.netty.channel.ChannelHandler;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
