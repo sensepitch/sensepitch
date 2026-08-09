@@ -97,15 +97,10 @@ public class SiteSelector {
     Upstream upstream;
     if (site.response() != null) {
       ResponseConfig response = site.response();
-      HttpResponseStatus status;
+      HttpResponseStatus status = HttpResponseStatus.valueOf(response.status());
       String location;
       if (response.location() != null) {
         location = response.location();
-        if (response.status() != 0) {
-          status = HttpResponseStatus.valueOf(response.status());
-        } else {
-          status = HttpResponseStatus.FOUND;
-        }
       } else {
         location = null;
         if (response.status() != 0) {
@@ -118,6 +113,8 @@ public class SiteSelector {
       if (text == null && location == null) {
         throw new IllegalArgumentException("Response requires redirect location or text");
       }
+      // status is reassigned above, so capture an effectively final copy for the anonymous upstream
+      HttpResponseStatus finalStatus = status;
       upstream =
           new Upstream() {
             @Override
@@ -138,7 +135,7 @@ public class SiteSelector {
                                 }
                                 FullHttpResponse response =
                                     new DefaultFullHttpResponse(
-                                        HttpVersion.HTTP_1_1, status, content);
+                                        HttpVersion.HTTP_1_1, finalStatus, content);
                                 response
                                     .headers()
                                     .set(HttpHeaderNames.CONTENT_LENGTH, content.readableBytes());

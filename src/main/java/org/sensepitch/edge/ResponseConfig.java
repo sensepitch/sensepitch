@@ -4,19 +4,28 @@ import java.util.List;
 import lombok.Builder;
 
 /**
+ * A configured response, either a page or a redirect, never a mix of both:
+ *
+ * <ul>
+ *   <li>page: {@code text} (plain body) or {@code file} (see {@link Fallback} for how a file
+ *       location is resolved), with an optional {@code contentType} (default {@link
+ *       FallbackConfig#DEFAULT_CONTENT_TYPE}). Setting both {@code text} and {@code file} is
+ *       rejected.
+ *   <li>redirect: {@code location}, optionally with {@code status}
+ * </ul>
+ *
+ * @param status response status code, {@code 0} if unset. A redirect defaults to {@link
+ *     #DEFAULT_REDIRECT_STATUS} and must otherwise be one of {@link #REDIRECT_STATUS_CODES}. A page may
+ *     use any code in 100..599.
  * @author Jens Wilke
  */
 @Builder(toBuilder = true)
 public record ResponseConfig(
     String text, int status, String location, String contentType, String file) {
 
-  /**
-   * Status codes a redirect may use. Deliberately narrower than the whole 3xx range: 300, 304, 305
-   * and 306 are 3xx but are not redirects a {@code Location} header makes sense for.
-   */
-  private static final List<Integer> REDIRECT_CODES = List.of(301, 302, 303, 307, 308);
+  public static final List<Integer> REDIRECT_STATUS_CODES = List.of(301, 302, 303, 307, 308);
 
-  private static final int DEFAULT_REDIRECT_STATUS = 302;
+  public static final int DEFAULT_REDIRECT_STATUS = 302;
 
   public ResponseConfig {
     boolean isRedirect = location != null;
@@ -31,9 +40,9 @@ public record ResponseConfig(
     if (isRedirect) {
       if (status == 0) {
         status = DEFAULT_REDIRECT_STATUS;
-      } else if (!REDIRECT_CODES.contains(status)) {
+      } else if (!REDIRECT_STATUS_CODES.contains(status)) {
         throw new IllegalArgumentException(
-            "redirect status must be one of " + REDIRECT_CODES + ", was: " + status);
+            "redirect status must be one of " + REDIRECT_STATUS_CODES + ", was: " + status);
       }
     }
     if (text != null && file != null) {

@@ -135,7 +135,7 @@ class ProxyConstructBDDTest {
                             .build())
                     .build())
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("redirect and a page");
+        .hasMessageContaining("response should be one of");
   }
 
   static class Steps extends ExtendableSteps<Steps> {}
