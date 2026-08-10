@@ -49,6 +49,8 @@ public class SiteSelector {
         .values()
         .forEach(
             site -> {
+              Supplier<ChannelHandler> fallbackSupplier =
+                  constructFallbackSupplier(config.fallback(), site.fallback());
               Supplier<ChannelHandler> proxySupplier = constructProxySupplier(ctx, site);
               Supplier<ChannelHandler> protectionSupplier = null;
               ProtectionConfig protection = site.protection();
@@ -60,7 +62,7 @@ public class SiteSelector {
                 throw new IllegalArgumentException(
                     "Site requires protection scheme or explicit disable");
               }
-              var suppliers = new Suppliers(protectionSupplier, proxySupplier);
+              var suppliers = new Suppliers(fallbackSupplier, protectionSupplier, proxySupplier);
               String host = site.host();
               if (host == null) {
                 host = site.key();
@@ -84,25 +86,21 @@ public class SiteSelector {
             });
   }
 
+  private Supplier<ChannelHandler> constructFallbackSupplier(
+      FallbackConfig global, FallbackConfig site) {
+    Fallback fallback = new Fallback(FallbackConfig.DEFAULTS.merge(global).merge(site));
+
+    return () -> fallback.newHandler();
+  }
+
   private Supplier<ChannelHandler> constructProxySupplier(ProxyContext ctx, SiteConfig site) {
     Upstream upstream;
     if (site.response() != null) {
       ResponseConfig response = site.response();
-      HttpResponseStatus status;
+      HttpResponseStatus status = HttpResponseStatus.valueOf(response.status());
       String location;
-      if (response.permanentRedirect() != null) {
-        location = response.permanentRedirect();
-        status = HttpResponseStatus.PERMANENT_REDIRECT;
-      } else if (response.temporaryRedirect() != null) {
-        location = response.temporaryRedirect();
-        status = HttpResponseStatus.TEMPORARY_REDIRECT;
-      } else if (response.location() != null) {
+      if (response.location() != null) {
         location = response.location();
-        if (response.status() != 0) {
-          status = HttpResponseStatus.valueOf(response.status());
-        } else {
-          status = HttpResponseStatus.FOUND;
-        }
       } else {
         location = null;
         if (response.status() != 0) {
@@ -115,6 +113,8 @@ public class SiteSelector {
       if (text == null && location == null) {
         throw new IllegalArgumentException("Response requires redirect location or text");
       }
+      // status is reassigned above, so capture an effectively final copy for the anonymous upstream
+      HttpResponseStatus finalStatus = status;
       upstream =
           new Upstream() {
             @Override
@@ -135,7 +135,7 @@ public class SiteSelector {
                                 }
                                 FullHttpResponse response =
                                     new DefaultFullHttpResponse(
-                                        HttpVersion.HTTP_1_1, status, content);
+                                        HttpVersion.HTTP_1_1, finalStatus, content);
                                 response
                                     .headers()
                                     .set(HttpHeaderNames.CONTENT_LENGTH, content.readableBytes());
@@ -194,5 +194,7 @@ public class SiteSelector {
   }
 
   record Suppliers(
-      Supplier<ChannelHandler> protectionSupplier, Supplier<ChannelHandler> proxySupplier) {}
+      Supplier<ChannelHandler> fallbackSupplier,
+      Supplier<ChannelHandler> protectionSupplier,
+      Supplier<ChannelHandler> proxySupplier) {}
 }

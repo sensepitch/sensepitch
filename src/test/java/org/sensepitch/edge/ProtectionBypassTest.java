@@ -40,8 +40,7 @@ public class ProtectionBypassTest {
         ProtectionConfig.builder()
             .bypass(new ProtectionBypassConfig(List.of(ACCESS_URI), null))
             .cookieGates(
-                List.of(
-                    CookieGateConfig.builder().name(COOKIE_NAME).accessUri(ACCESS_URI).build()))
+                List.of(CookieGateConfig.builder().name(COOKIE_NAME).accessUri(ACCESS_URI).build()))
             .build();
     Supplier<ChannelHandler> supplier = Protection.handlerSupplier(protection);
     assertThat(supplier).isNotNull();

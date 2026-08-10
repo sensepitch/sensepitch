@@ -248,6 +248,7 @@ public class Proxy implements ProxyContext {
       pipeline.addLast(unservicedHost.newHandler());
     }
     pipeline.addLast("siteSelector", new SiteSelectorHandler(siteSelector));
+    pipeline.addLast("fallback", dummy404Handler);
     pipeline.addLast("protection", dummy404Handler);
     pipeline.addLast("proxy", dummy404Handler);
     pipeline.addLast("exception", new ExceptionHandler(metrics));

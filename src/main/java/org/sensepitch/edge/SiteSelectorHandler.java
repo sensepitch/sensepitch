@@ -26,8 +26,11 @@ public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
         rejectRequest(ctx, HttpResponseStatus.NOT_FOUND);
         return;
       }
+      ChannelHandler fallback = suppliers.fallbackSupplier().get();
       ChannelHandler protection = suppliers.protectionSupplier().get();
       ChannelHandler proxy = suppliers.proxySupplier().get();
+
+      ctx.pipeline().replace("fallback", "fallback", fallback);
       ctx.pipeline().replace("protection", "protection", protection);
       ctx.pipeline().replace("proxy", "proxy", proxy);
     }

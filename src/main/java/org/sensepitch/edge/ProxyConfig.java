@@ -12,6 +12,7 @@ public record ProxyConfig(
     ListenConfig listen,
     UnservicedHostConfig unservicedHost,
     IpLookupConfig ipLookup,
+    FallbackConfig fallback,
     UpstreamConfig upstream,
     ProtectionConfig protection,
     Map<String, SiteConfig> sites) {}
