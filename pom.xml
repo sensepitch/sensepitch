@@ -16,11 +16,14 @@
     <junit.version>5.9.2</junit.version>
     <assertj.version>3.27.3</assertj.version>
     <lombok.version>1.18.44</lombok.version>
+    <jacoco.version>0.8.13</jacoco.version>
     <serenity.version>4.2.34</serenity.version>
     <bytebuddy.version>1.17.8</bytebuddy.version>
     <log4j.version>2.25.1</log4j.version>
     <!-- colon-free, so it can be part of a file name on any platform -->
     <maven.build.timestamp.format>yyyyMMddHHmmssSSS</maven.build.timestamp.format>
+    <!-- overwritten by jacoco prepare-agent; empty default keeps surefire working when jacoco is skipped -->
+    <jacocoArgLine></jacocoArgLine>
   </properties>
 
   <dependencies>
@@ -227,12 +230,37 @@
         <configuration>
           <argLine>-javaagent:${project.build.directory}/byte-buddy-agent.jar
             -XX:NativeMemoryTracking=summary</argLine>
+          <argLine>@{jacocoArgLine} -javaagent:${project.build.directory}/byte-buddy-agent.jar</argLine>
           <systemPropertyVariables>
             <!-- JUL log config for tests, this is not automatically picked up and actually does not need to live in the resources  -->
             <java.util.logging.config.file>${project.basedir}/test-logging.properties</java.util.logging.config.file>
           </systemPropertyVariables>
         </configuration>
     </plugin>
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>${jacoco.version}</version>
+        <executions>
+          <execution>
+            <id>jacoco-prepare-agent</id>
+            <goals>
+              <goal>prepare-agent</goal>
+            </goals>
+            <configuration>
+              <propertyName>jacocoArgLine</propertyName>
+            </configuration>
+          </execution>
+          <execution>
+            <!-- report to target/site/jacoco/index.html -->
+            <id>jacoco-report</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>report</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
