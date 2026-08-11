@@ -18,7 +18,7 @@
     <lombok.version>1.18.44</lombok.version>
     <jacoco.version>0.8.13</jacoco.version>
     <serenity.version>4.2.34</serenity.version>
-    <bytebuddy.version>1.17.8</bytebuddy.version>
+    <bytebuddy.version>1.15.11</bytebuddy.version>
     <log4j.version>2.25.1</log4j.version>
     <!-- colon-free, so it can be part of a file name on any platform -->
     <maven.build.timestamp.format>yyyyMMddHHmmssSSS</maven.build.timestamp.format>
@@ -264,7 +264,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.14.1</version>
+        <version>3.8.1</version>
         <configuration>
           <annotationProcessorPaths>
             <path>
@@ -400,11 +400,10 @@
       <plugin>
         <groupId>com.diffplug.spotless</groupId>
         <artifactId>spotless-maven-plugin</artifactId>
-        <version>3.9.0</version>
+        <version>2.44.0</version>
         <configuration>
           <java>
             <googleJavaFormat>
-              <version>1.36.1</version>
               <style>GOOGLE</style>
             </googleJavaFormat>
           </java>
