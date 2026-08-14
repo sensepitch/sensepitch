@@ -14,6 +14,7 @@ import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandler;
@@ -485,5 +486,26 @@ public class FallbackTest {
             () -> ResponseConfig.builder().location("/elsewhere").text("we are down").build())
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("response should be one of");
+  }
+
+  @Test
+  public void testClasspathLocationWithLeadingSlashResolves() {
+    init(
+        merged(
+            siteUnavailable(
+                ResponseConfig.builder()
+                    .file("classpath:/fallback/unavailable_page.html")
+                    .build())));
+    upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
+    assertPage(SERVICE_UNAVAILABLE, "<html>down</html>");
+  }
+
+  @Test
+  public void testNonHttpMessagePassesThrough() {
+    init(merged(null));
+    messageWritten = null;
+    ByteBuf raw = Unpooled.copiedBuffer("raw-bytes", StandardCharsets.UTF_8);
+    channel.writeOutbound(raw);
+    assertThat(messageWritten).isSameAs(raw);
   }
 }
