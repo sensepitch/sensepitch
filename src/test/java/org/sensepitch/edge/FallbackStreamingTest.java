@@ -42,6 +42,7 @@ public class FallbackStreamingTest {
           .build();
 
   private EmbeddedChannel channel;
+  private final List<EmbeddedChannel> locallyBuiltChannels = new ArrayList<>();
   private final List<Object> written = new ArrayList<>();
 
   private static ChannelOutboundHandler capture(List<Object> sink) {
@@ -62,6 +63,7 @@ public class FallbackStreamingTest {
   @AfterEach
   void tearDown() {
     channel.finishAndReleaseAll();
+    locallyBuiltChannels.forEach(EmbeddedChannel::finishAndReleaseAll);
   }
 
   private HttpResponse response() {
@@ -128,7 +130,7 @@ public class FallbackStreamingTest {
             .build();
     List<Object> out = new ArrayList<>();
     EmbeddedChannel ch = new EmbeddedChannel(capture(out), new Fallback(cfg).newHandler());
-
+    locallyBuiltChannels.add(ch);
     ch.writeOutbound(
         new DefaultHttpResponse(HTTP_1_1, SERVICE_UNAVAILABLE),
         chunk("origin-body"),
@@ -151,8 +153,6 @@ public class FallbackStreamingTest {
       }
     }
     assertThat(sb.toString()).isEqualTo("down page");
-
-    ch.finishAndReleaseAll();
   }
 
   @Test
@@ -235,6 +235,7 @@ public class FallbackStreamingTest {
             .build();
     List<Object> out = new ArrayList<>();
     EmbeddedChannel ch = new EmbeddedChannel(capture(out), new Fallback(redirectCfg).newHandler());
+    locallyBuiltChannels.add(ch);
 
     DefaultHttpContent originChunk = chunk("origin-body");
     ch.writeOutbound(
@@ -254,8 +255,6 @@ public class FallbackStreamingTest {
     assertThat(head.headers().get(HttpHeaderNames.LOCATION)).isEqualTo("https://status.example/");
     assertThat(head.headers().get(HttpHeaderNames.CONTENT_LENGTH)).isEqualTo("0");
     assertThat(originChunk.refCnt()).isZero(); // origin body dropped despite the redirect swap
-
-    ch.finishAndReleaseAll();
   }
 
   @Test
@@ -269,6 +268,7 @@ public class FallbackStreamingTest {
     EmbeddedChannel ch =
         new EmbeddedChannel(
             capture(out), new Fallback(FallbackConfig.DEFAULTS.merge(redirectCfg)).newHandler());
+    locallyBuiltChannels.add(ch);
 
     DefaultHttpResponse head = new DefaultHttpResponse(HTTP_1_1, SERVICE_UNAVAILABLE);
     head.headers().set(HttpHeaderNames.CONNECTION, "close");
@@ -285,7 +285,5 @@ public class FallbackStreamingTest {
     assertThat(response).isNotNull();
     assertThat(response.status()).isEqualTo(TEMPORARY_REDIRECT);
     assertThat(response.headers().get(HttpHeaderNames.CONNECTION)).isEqualTo("close");
-
-    ch.finishAndReleaseAll();
   }
 }
