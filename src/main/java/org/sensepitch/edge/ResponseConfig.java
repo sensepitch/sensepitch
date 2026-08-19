@@ -15,8 +15,8 @@ import lombok.Builder;
  * </ul>
  *
  * @param status response status code, {@code 0} if unset. A redirect defaults to {@link
- *     #DEFAULT_REDIRECT_STATUS} and must otherwise be one of {@link #REDIRECT_STATUS_CODES}. A page may
- *     use any code in 100..599.
+ *     #DEFAULT_REDIRECT_STATUS} and must otherwise be one of {@link #REDIRECT_STATUS_CODES}. A page
+ *     may use any code in 100..599.
  * @author Jens Wilke
  */
 @Builder(toBuilder = true)

@@ -15,7 +15,7 @@
   `java -jar target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar`
 
 ## Coding Style & Naming Conventions
-- Java 21 is the target (`maven.compiler.source/target` set to 21).
+- Java 25 is the target (`maven.compiler.release` set to 25).
 - Formatting uses Spotless with Google Java Format; prefer 2-space indentation and standard Google style.
 - Lombok is enabled; `lombok.config` enforces `toBuilder` support and a `Builder` class name.
 - Keep class and method names descriptive and consistent with existing `*Config`, `*Handler`, and `*Lookup` patterns.
