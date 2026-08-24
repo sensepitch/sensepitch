@@ -5,9 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.stream.Stream;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class CsvReader {
 
   public static Stream<String[]> readAll(String path) throws IOException {

@@ -6,9 +6,7 @@ import static org.sensepitch.edge.DefaultAdmissionTokenGenerator.*;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class AdmissionTokenTest {
 
   static byte[] ZERO_IPV4 = new byte[] {0, 0, 0, 0};

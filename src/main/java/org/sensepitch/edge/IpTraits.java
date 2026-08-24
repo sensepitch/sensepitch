@@ -4,12 +4,10 @@ import java.util.HashMap;
 import java.util.Map;
 import lombok.Builder;
 
-/**
- * Typical properties we want to look up for an IP address.
- *
- * @author Jens Wilke
- * @see com.maxmind.geoip2.record.Traits
- */
+/// Typical properties we want to look up for an IP address.
+///
+/// @author Jens Wilke
+/// @see com.maxmind.geoip2.record.Traits
 @Builder(builderClassName = "Builder")
 public record IpTraits(long asn, String isoCountry, boolean crawler, Map<String, String> keyValue) {
 

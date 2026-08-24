@@ -1,8 +1,6 @@
 package org.sensepitch.edge;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class DistributingRequestLogger implements RequestLogger {
 
   private final RequestLogger[] requestLogger;

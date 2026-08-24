@@ -12,9 +12,7 @@ import io.netty.handler.codec.http.HttpVersion;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class DefaultBypassCheckTest {
 
   @Test

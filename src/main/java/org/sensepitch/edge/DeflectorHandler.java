@@ -10,9 +10,7 @@ import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class DeflectorHandler implements ProtectionPlugin {
 
   private static final ProxyLogger LOG = ProxyLogger.get(DeflectorHandler.class);

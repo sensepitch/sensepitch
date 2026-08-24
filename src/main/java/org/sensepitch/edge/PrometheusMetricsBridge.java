@@ -10,9 +10,7 @@ import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.function.Consumer;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class PrometheusMetricsBridge implements MetricsBridge {
 
   static ProxyLogger DEBUG = ProxyLogger.get(PrometheusMetricsBridge.class);

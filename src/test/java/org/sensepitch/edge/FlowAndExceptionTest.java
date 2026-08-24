@@ -19,9 +19,7 @@ import io.netty.util.concurrent.Promise;
 import java.net.SocketException;
 import org.junit.jupiter.api.Test;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class FlowAndExceptionTest {
 
   ProxyMetrics proxyMetrics = new ProxyMetrics();
@@ -87,7 +85,7 @@ public class FlowAndExceptionTest {
     upstreamChannel.pipeline().fireExceptionCaught(new SocketException("Connection reset"));
   }
 
-  /** If upstream is connected it might put tasks in the into ingress again */
+  /// If upstream is connected it might put tasks in the into ingress again
   private void rattle() {
     if (upstreamChannel != null) {
       while (ingressChannel.hasPendingTasks() || upstreamChannel.hasPendingTasks()) {

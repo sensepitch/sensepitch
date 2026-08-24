@@ -9,9 +9,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class StandardOutRequestLogger implements RequestLogger {
 
   private static final DateTimeFormatter CLF_TIME =

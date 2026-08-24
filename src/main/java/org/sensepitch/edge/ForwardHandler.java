@@ -10,11 +10,9 @@ import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.LastHttpContent;
 
-/**
- * Handler for upstream communication, receives response from upstream and pass it on downstream
- *
- * @author Jens Wilke
- */
+/// Handler for upstream communication, receives response from upstream and pass it on downstream
+///
+/// @author Jens Wilke
 public class ForwardHandler extends ChannelInboundHandlerAdapter {
 
   static ProxyLogger LOG = ProxyLogger.get(ForwardHandler.class);
@@ -65,7 +63,7 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
     }
   }
 
-  /** Flush if output buffer is full and apply back pressure to downstream */
+  /// Flush if output buffer is full and apply back pressure to downstream
   @Override
   public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
     if (ctx.channel().isWritable()) {
@@ -76,11 +74,9 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
     }
   }
 
-  /**
-   * Flush output to upstream. If we don't stop reading from ingress fast enough it may happen that
-   * the output buffer is already filled again when the flush is complete. Issue another flush until
-   * writable again.
-   */
+  /// Flush output to upstream. If we don't stop reading from ingress fast enough it may happen that
+  /// the output buffer is already filled again when the flush is complete. Issue another flush
+  /// until writable again.
   void flush(ChannelHandlerContext ctx) {
     ctx.channel()
         .writeAndFlush(Unpooled.EMPTY_BUFFER)

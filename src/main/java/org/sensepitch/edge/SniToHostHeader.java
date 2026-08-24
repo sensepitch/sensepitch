@@ -6,12 +6,10 @@ import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.ssl.SniCompletionEvent;
 
-/**
- * Capture the requested host via SNI and set the http host header accordingly. Warning: The SNI
- * host header is not limited to the configured domains, it can be anything sent by the client.
- *
- * @author Jens Wilke
- */
+/// Capture the requested host via SNI and set the http host header accordingly. Warning: The SNI
+/// host header is not limited to the configured domains, it can be anything sent by the client.
+///
+/// @author Jens Wilke
 // FIXME: not used!!, host header is set always by the client
 public class SniToHostHeader extends ChannelInboundHandlerAdapter {
 

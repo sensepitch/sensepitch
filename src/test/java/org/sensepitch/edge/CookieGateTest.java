@@ -28,9 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class CookieGateTest {
 
   private static final String COOKIE_NAME = "edge-access";

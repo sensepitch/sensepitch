@@ -10,9 +10,7 @@ import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class ProtectionBypass {
 
   private static final ProxyLogger LOG = ProxyLogger.get(ProtectionBypass.class);

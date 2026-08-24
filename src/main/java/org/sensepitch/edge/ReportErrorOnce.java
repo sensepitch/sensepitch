@@ -3,9 +3,7 @@ package org.sensepitch.edge;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class ReportErrorOnce {
 
   private final Map<String, Object> seen = new ConcurrentHashMap<>();

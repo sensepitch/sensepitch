@@ -1,8 +1,6 @@
 package org.sensepitch.edge;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 import static io.netty.handler.codec.http.HttpMethod.GET;
 import static io.netty.handler.codec.http.HttpResponseStatus.*;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
@@ -64,7 +62,7 @@ class UnservicedHostHandlerTest {
     assertThat(resp.headers().get(HttpHeaderNames.LOCATION) == null).isTrue();
   }
 
-  /** Set by {@link SanitizeHostHandler} */
+  /// Set by {@link SanitizeHostHandler}
   @Test
   void unknownHost_resultsInBadRequestStatus() {
     DefaultHttpRequest req = new DefaultHttpRequest(HTTP_1_1, GET, "/");

@@ -25,9 +25,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class Deflector {
 
   private static final ProxyLogger LOG = ProxyLogger.get(DeflectorHandler.class);
@@ -40,7 +38,7 @@ public class Deflector {
   public static final String CHALLENGE_COOKIE_NAME = "sensepitch-ch";
   private static final ResourceFiles challengeFiles = new ResourceFiles("challenge/files/");
 
-  /** Request header containing the validated admission token */
+  /// Request header containing the validated admission token
   public static String ADMISSION_TOKEN_HEADER = "sensepitch-token";
 
   public static String TRAFFIC_FLAVOR_HEADER = "sensepitch-flavor";

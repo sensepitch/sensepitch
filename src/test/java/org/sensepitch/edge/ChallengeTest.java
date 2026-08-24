@@ -6,9 +6,7 @@ import static org.sensepitch.edge.TimeBasedChallenge.verifyChallengeString;
 
 import org.junit.jupiter.api.Test;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class ChallengeTest {
 
   @Test

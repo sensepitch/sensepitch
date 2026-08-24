@@ -3,22 +3,19 @@ package org.sensepitch.edge;
 import java.util.List;
 import lombok.Builder;
 
-/**
- * A configured response, either a page or a redirect, never a mix of both:
- *
- * <ul>
- *   <li>page: {@code text} (plain body) or {@code file} (see {@link Fallback} for how a file
- *       location is resolved), with an optional {@code contentType} (default {@link
- *       FallbackConfig#DEFAULT_CONTENT_TYPE}). Setting both {@code text} and {@code file} is
- *       rejected.
- *   <li>redirect: {@code location}, optionally with {@code status}
- * </ul>
- *
- * @param status response status code, {@code 0} if unset. A redirect defaults to {@link
- *     #DEFAULT_REDIRECT_STATUS} and must otherwise be one of {@link #REDIRECT_STATUS_CODES}. A page
- *     may use any code in 100..599.
- * @author Jens Wilke
- */
+/// A configured response, either a page or a redirect, never a mix of both:
+///
+/// <ul>
+///   <li>page: {@code text} (plain body) or {@code file} (see {@link Fallback} for how a file
+///       location is resolved), with an optional {@code contentType} (default {@link
+///       FallbackConfig#DEFAULT_CONTENT_TYPE}). Setting both {@code text} and {@code file} is
+///       rejected.
+///   <li>redirect: {@code location}, optionally with {@code status} </ul>
+///
+/// @param status response status code, {@code 0} if unset. A redirect defaults to {@link
+///   #DEFAULT_REDIRECT_STATUS} and must otherwise be one of {@link #REDIRECT_STATUS_CODES}. A page
+///   may use any code in 100..599.
+/// @author Jens Wilke
 @Builder(toBuilder = true)
 public record ResponseConfig(
     String text, int status, String location, String contentType, String file) {

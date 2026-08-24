@@ -16,27 +16,23 @@ import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.concurrent.Ticker;
 
-/**
- * Listens to incoming and outgoing http messages and collects all relevant information during
- * request processing and calls the request logger implementation when the last content is written.
- *
- * <p>Note on concurrency: there is no concurrent activity on this object. The downstream request
- * comes from one thread, after submitting the upstream request, writes come from the upstream
- * reading thread
- *
- * @author Jens Wilke
- */
+/// Listens to incoming and outgoing http messages and collects all relevant information during
+/// request processing and calls the request logger implementation when the last content is written.
+///
+/// <p>Note on concurrency: there is no concurrent activity on this object. The downstream request
+/// comes from one thread, after submitting the upstream request, writes come from the upstream
+/// reading thread
+///
+/// @author Jens Wilke
 public class RequestLoggingHandler extends ChannelDuplexHandler implements RequestLogInfo {
 
   static ProxyLogger DEBUG = ProxyLogger.get(RequestLoggingHandler.class);
 
   private static final CountByteIoHandler DUMMY_COUNT_BYTE_IO_HANDLER = new CountByteIoHandler();
 
-  /**
-   * Construct a mock http request in case we don't have a request, which can happen if the request
-   * was malformed or receive timed out. We don't use a HttpRequest singleton, maybe we want to add
-   * headers, like set the host, if its known.
-   */
+  /// Construct a mock http request in case we don't have a request, which can happen if the request
+  /// was malformed or receive timed out. We don't use a HttpRequest singleton, maybe we want to add
+  /// headers, like set the host, if its known.
   private static final HttpRequest MOCK_REQUEST =
       new DefaultHttpRequest(NIL_VERSION, NIL_METHOD, "/");
 
@@ -61,10 +57,10 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   private long requestStartTimeNanos;
   private long requestCompleteTimeNanos;
 
-  /** When we start sending the first byte */
+  /// When we start sending the first byte
   private long responseStartedTimeNanos;
 
-  /** When everything was received */
+  /// When everything was received
   private long responseReceivedTimeNanos;
 
   private long bytesReceivedStart;
@@ -197,11 +193,9 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     }
   }
 
-  /**
-   * Write a log if the connection is closed before the full response is received. Rationale: In
-   * case of a PUT or POST the request may have an effect, so we should also log it. In this case we
-   * set contentBytes to 0, because the contentBytes do not reflect
-   */
+  /// Write a log if the connection is closed before the full response is received. Rationale: In
+  /// case of a PUT or POST the request may have an effect, so we should also log it. In this case
+  /// we set contentBytes to 0, because the contentBytes do not reflect
   @Override
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     if (request != null) {

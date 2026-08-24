@@ -18,9 +18,7 @@ import io.netty.handler.ssl.SslContextBuilder;
 import java.io.File;
 import java.nio.charset.Charset;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class SslServer {
 
   public static void main(String[] args) throws Exception {

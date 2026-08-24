@@ -8,11 +8,9 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * A fixed set of static files we serve for the challenge.
- *
- * @author Jens Wilke
- */
+/// A fixed set of static files we serve for the challenge.
+///
+/// @author Jens Wilke
 public class ResourceFiles {
 
   private final Map<String, FileInfo> map = new HashMap<>();

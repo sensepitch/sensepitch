@@ -7,11 +7,9 @@ import org.sensepitch.edge.IpLookupConfig;
 import org.sensepitch.edge.IpTraits;
 import org.sensepitch.edge.IpTraitsLookup;
 
-/**
- * Play with GeoLite2 and see what responses we get.
- *
- * @author Jens Wilke
- */
+/// Play with GeoLite2 and see what responses we get.
+///
+/// @author Jens Wilke
 public class GeoLite2 {
 
   IpTraitsLookup traitsLookup;

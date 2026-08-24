@@ -2,9 +2,7 @@ package org.sensepitch.edge;
 
 import java.util.List;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public interface IpLabelLookup {
 
   void insertIpv4(String cidr, String label);

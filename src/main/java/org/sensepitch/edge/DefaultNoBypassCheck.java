@@ -5,9 +5,7 @@ import io.netty.handler.codec.http.HttpRequest;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class DefaultNoBypassCheck implements NoBypassCheck {
 
   private final Map<String, Object> uriMatch = new HashMap<>();

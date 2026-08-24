@@ -11,11 +11,9 @@ import java.nio.channels.ClosedChannelException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 
-/**
- * Test some netty behavior
- *
- * @author Jens Wilke
- */
+/// Test some netty behavior
+///
+/// @author Jens Wilke
 public class IsolatedNettyTest {
 
   @Test

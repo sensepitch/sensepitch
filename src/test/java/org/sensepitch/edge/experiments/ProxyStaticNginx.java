@@ -16,9 +16,7 @@ import org.sensepitch.edge.SiteConfig;
 import org.sensepitch.edge.SslConfig;
 import org.sensepitch.edge.UpstreamConfig;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class ProxyStaticNginx {
 
   public static void main(String[] args) throws Exception {

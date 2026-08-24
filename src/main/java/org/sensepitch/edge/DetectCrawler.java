@@ -16,9 +16,7 @@ import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class DetectCrawler implements BypassCheck {
 
   private static final String FRAGMENT_SEQUENCE = "http";

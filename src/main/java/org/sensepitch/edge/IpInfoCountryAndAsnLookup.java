@@ -7,12 +7,10 @@ import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
 
-/**
- * Lookup in IPinfo database. This is using the raw {@link com.maxmind.db.Reader}
- *
- * @author Jens Wilke
- * @see <a href="https://ipinfo.io/lite">IP info lite</a>
- */
+/// Lookup in IPinfo database. This is using the raw {@link com.maxmind.db.Reader}
+///
+/// @author Jens Wilke
+/// @see <a href="https://ipinfo.io/lite">IP info lite</a>
 public class IpInfoCountryAndAsnLookup implements IpTraitsLookup {
 
   ProxyLogger LOG = ProxyLogger.get(IpInfoCountryAndAsnLookup.class);

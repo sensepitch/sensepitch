@@ -28,9 +28,7 @@ import io.netty.util.concurrent.MockTicker;
 import io.netty.util.concurrent.Promise;
 import org.junit.jupiter.api.Test;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 class TimeoutsTest {
 
   ConnectionConfig cfg =
@@ -78,10 +76,8 @@ class TimeoutsTest {
     assertThat(response.headers().toString()).contains("connection: close");
   }
 
-  /**
-   * Status 200 but connection will be closed since content size unknown. No keep-alive header is
-   * added.
-   */
+  /// Status 200 but connection will be closed since content size unknown. No keep-alive header is
+  /// added.
   @Test
   public void test200UnknownContent() {
     sendRequest("/unknown-length");
@@ -179,7 +175,7 @@ class TimeoutsTest {
     }
   }
 
-  /** If upstream is connected it might put tasks in the into ingress again */
+  /// If upstream is connected it might put tasks in the into ingress again
   private void rattle() {
     if (upstreamChannel != null) {
       while (ingressChannel.hasPendingTasks() || upstreamChannel.hasPendingTasks()) {

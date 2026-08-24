@@ -15,9 +15,7 @@ import org.yaml.snakeyaml.nodes.NodeTuple;
 import org.yaml.snakeyaml.nodes.ScalarNode;
 import org.yaml.snakeyaml.nodes.SequenceNode;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class ConfigTest {
 
   @Test

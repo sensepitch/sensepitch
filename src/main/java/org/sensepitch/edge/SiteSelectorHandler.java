@@ -6,9 +6,7 @@ import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponseStatus;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
 
   SiteSelector siteSelector;
