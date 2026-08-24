@@ -7,7 +7,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 
 /// @author Jens Wilke
-/// @see <a href="https://github.com/maxmind/GeoIP2-java"/>
+/// @see <a href="https://github.com/maxmind/GeoIP2-java">GeoIP2-java</a>
 public class GeoIp2AsnLookup implements AsnLookup {
 
   private final DatabaseReader reader;

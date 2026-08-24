@@ -5,9 +5,9 @@ import lombok.Builder;
 
 /// @param hashTargetPrefix the prefix that needs to be achieved by PoW, this is together with the
 ///   length of the challenge this ia the difficulty, default is {@value
-///   DEFAULT_CHALLENGE_TARGET_PREFIX}
+///   #DEFAULT_CHALLENGE_TARGET_PREFIX}
 /// @param powMaxIterations maximum number of iterations for solving the PoW in the browser, default
-///   is {@value DEFAULT_POW_MAX_ITERATIONS}
+///   is {@value #DEFAULT_POW_MAX_ITERATIONS}
 /// @author Jens Wilke
 @Builder(toBuilder = true)
 public record DeflectorConfig(

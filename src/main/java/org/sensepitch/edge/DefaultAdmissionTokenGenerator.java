@@ -165,7 +165,7 @@ public class DefaultAdmissionTokenGenerator implements AdmissionTokenGenerator {
   private static final char[] ALPHABET =
       "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".toCharArray();
 
-  /// Encode a byte[] to a Base62 string (no padding). Leading zero‐bytes will be preserved as
+  /// Encode a `byte[]` to a Base62 string (no padding). Leading zero‐bytes will be preserved as
   /// leading '0' chars if you pad externally.
   public static String encode(byte[] input, int offset, int length, int base, int padToLength) {
     return pad(encode(input, offset, length, base), padToLength).toString();

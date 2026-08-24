@@ -62,7 +62,7 @@ class UnservicedHostHandlerTest {
     assertThat(resp.headers().get(HttpHeaderNames.LOCATION) == null).isTrue();
   }
 
-  /// Set by {@link SanitizeHostHandler}
+  /// Set by [SanitizeHostHandler]
   @Test
   void unknownHost_resultsInBadRequestStatus() {
     DefaultHttpRequest req = new DefaultHttpRequest(HTTP_1_1, GET, "/");

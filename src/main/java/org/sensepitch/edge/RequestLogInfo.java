@@ -22,25 +22,25 @@ public interface RequestLogInfo {
 
   /// The http request received from the client with augmented headers as it was sent to upstream.
   /// If the request was not received but an error response was generated, this contains a mock
-  /// request with request method {@link #NIL_METHOD}.
+  /// request with request method [#NIL_METHOD].
   ///
   /// @return augmented client request or mock, never null
   HttpRequest request();
 
   /// Convenience method to retrieve the host from the host request header field. The host header
   /// will be sanitized early on. It is never null and only contains known values. If the request
-  /// host is empty, the return value will be {@link SanitizeHostHandler#MISSING_HOST}. If it is not
-  /// matching with any host that is serviced {@link SanitizeHostHandler#UNKNOWN_HOST} is returned.
-  /// If the client request was not received {@link SanitizeHostHandler#NIL_HOST} is returned.
+  /// host is empty, the return value will be [SanitizeHostHandler#MISSING_HOST]. If it is not
+  /// matching with any host that is serviced [SanitizeHostHandler#UNKNOWN_HOST] is returned. If the
+  /// client request was not received [SanitizeHostHandler#NIL_HOST] is returned.
   ///
   /// @see SanitizeHostHandler
-  /// @return the requested host or a replacement token, never {@code null}.
+  /// @return the requested host or a replacement token, never `null`.
   String requestHeaderHost();
 
   HttpResponse response();
 
   /// Size, in bytes, of the message body sent. Total bytes sent, including header bytes and framing
-  /// is {@link #bytesSent()}
+  /// is [#bytesSent()]
   long contentBytes();
 
   /// Total bytes sent for this request including headers. However, this only accounts for HTTP
