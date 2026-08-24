@@ -34,11 +34,8 @@ jobs:
 #        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
 #        restore-keys: ${{ runner.os }}-m2
         
-    - name: Run tests
-      run: ./mvnw clean test
-      
-    - name: Build JAR with dependencies
-      run: ./mvnw clean package -DskipTests
+    - name: Build, test and check
+      run: ./mvnw clean verify
       
     - name: Upload JAR artifact
       uses: actions/upload-artifact@v4
@@ -54,5 +51,5 @@ jobs:
         name: build-reports
         path: |
           target/surefire-reports/
-          target/site/
+          target/reports/apidocs/
         retention-days: 7
