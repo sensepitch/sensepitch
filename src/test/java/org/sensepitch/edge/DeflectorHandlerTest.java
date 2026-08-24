@@ -26,9 +26,7 @@ import java.util.HexFormat;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class DeflectorHandlerTest {
 
   private ProtectionHandler handler;
@@ -56,9 +54,7 @@ public class DeflectorHandlerTest {
     assertThat(passed).isTrue();
   }
 
-  /**
-   * @throws Exception
-   */
+  /// @throws Exception
   @Test
   public void testWhatsAppImagePreview() throws Exception {
     DeflectorConfig cfg = getDeflectorConfig();

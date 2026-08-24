@@ -10,9 +10,7 @@ import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class DefaultBypassCheck implements BypassCheck {
 
   static ProxyLogger LOG = ProxyLogger.get(DefaultBypassCheck.class);

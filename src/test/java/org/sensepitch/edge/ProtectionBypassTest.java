@@ -21,9 +21,7 @@ import java.util.List;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class ProtectionBypassTest {
 
   private static final String COOKIE_NAME = "edge-access";

@@ -7,9 +7,7 @@ import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class CombinedIpTraitsLookup implements IpTraitsLookup {
 
   ProxyLogger LOG = ProxyLogger.get(CombinedIpTraitsLookup.class);

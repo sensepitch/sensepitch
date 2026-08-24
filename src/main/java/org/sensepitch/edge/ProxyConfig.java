@@ -3,9 +3,7 @@ package org.sensepitch.edge;
 import java.util.Map;
 import lombok.Builder;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 @Builder(toBuilder = true)
 public record ProxyConfig(
     MetricsConfig metrics,

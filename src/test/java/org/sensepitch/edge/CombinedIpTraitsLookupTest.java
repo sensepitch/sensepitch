@@ -3,9 +3,7 @@ package org.sensepitch.edge;
 import java.io.IOException;
 import org.junit.jupiter.api.Test;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class CombinedIpTraitsLookupTest {
 
   @Test

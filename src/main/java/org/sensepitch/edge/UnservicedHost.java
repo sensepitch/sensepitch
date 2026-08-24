@@ -12,13 +12,11 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Redirect all incoming requests that are not in a domain list to a default target. For accepted
- * domains that start with www., a redirect will be made for request arriving without the www.
- * prefix.
- *
- * @author Jens Wilke
- */
+/// Redirect all incoming requests that are not in a domain list to a default target. For accepted
+/// domains that start with www., a redirect will be made for request arriving without the www.
+/// prefix.
+///
+/// @author Jens Wilke
 public class UnservicedHost {
 
   private final Set<String> servicedDomains;

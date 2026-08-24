@@ -5,11 +5,9 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponseStatus;
 
-/**
- * Always respond with 404
- *
- * @author Jens Wilke
- */
+/// Always respond with 404
+///
+/// @author Jens Wilke
 @ChannelHandler.Sharable
 public class Dummy404Handler extends SkippingChannelInboundHandlerAdapter {
 

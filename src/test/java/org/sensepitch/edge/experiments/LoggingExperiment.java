@@ -6,12 +6,10 @@ import java.util.logging.Level;
 import java.util.logging.LogManager;
 import java.util.logging.Logger;
 
-/**
- * Print some details about the configured system logger and JUL logger.
- *
- * @see LogManager#readConfiguration()
- * @author Jens Wilke
- */
+/// Print some details about the configured system logger and JUL logger.
+///
+/// @see LogManager#readConfiguration()
+/// @author Jens Wilke
 public class LoggingExperiment {
 
   static PrintWriter output = new PrintWriter(new OutputStreamWriter(System.out), true);

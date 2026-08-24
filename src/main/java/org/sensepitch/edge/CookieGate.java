@@ -19,13 +19,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * The cookie gate checks whether cookie is set. The value of the cookie is of no relevance. If the
- * cookie is present, the request is processed; otherwise it is rejected with 404. If a certain URL
- * is configured, the cookie is set for the second level domain.
- *
- * @author Jens Wilke
- */
+/// The cookie gate checks whether cookie is set. The value of the cookie is of no relevance. If the
+/// cookie is present, the request is processed; otherwise it is rejected with 404. If a certain URL
+/// is configured, the cookie is set for the second level domain.
+///
+/// @author Jens Wilke
 public class CookieGate {
 
   private final Map<String, CookieGateConfig> uri2config = new HashMap<>();

@@ -7,11 +7,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
 
-/**
- * Helper to build protection handlers from config.
- *
- * @author Jens Wilke
- */
+/// Helper to build protection handlers from config.
+///
+/// @author Jens Wilke
 public class Protection {
 
   static Supplier<ChannelHandler> handlerSupplier(ProtectionConfig protection) {

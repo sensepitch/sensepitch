@@ -29,12 +29,10 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import java.io.File;
 
-/**
- * For every request, send a big amount of data to understand how to throttle writes when the output
- * queue is not draining fast enough.
- *
- * @author Jens Wilke
- */
+/// For every request, send a big amount of data to understand how to throttle writes when the
+/// output queue is not draining fast enough.
+///
+/// @author Jens Wilke
 public class HttpsServerWithThrottlingResponding10Mb {
 
   private static final int TOTAL_BYTES = 10 * 1024 * 1024;

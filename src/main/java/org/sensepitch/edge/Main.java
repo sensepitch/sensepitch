@@ -5,9 +5,7 @@ import org.sensepitch.edge.config.RecordConstructor;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.nodes.Node;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class Main {
 
   public static void main(String[] args) throws Exception {

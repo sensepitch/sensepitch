@@ -29,7 +29,7 @@ import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.introspector.BeanAccess;
 import org.yaml.snakeyaml.representer.Representer;
 
-/** Minimal HTTP/1.1 proxy without aggregation, with keep-alive and basic logging */
+/// Minimal HTTP/1.1 proxy without aggregation, with keep-alive and basic logging
 public class Proxy implements ProxyContext {
 
   ProxyLogger LOG = ProxyLogger.get(Proxy.class);

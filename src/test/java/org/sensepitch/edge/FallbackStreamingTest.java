@@ -27,14 +27,12 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/**
- * Tests {@link FallbackHandler} against the streamed response shape a real upstream produces: an
- * {@link HttpResponse} head, then {@link HttpContent} chunks, then a {@link LastHttpContent}, as
- * opposed to the single {@link io.netty.handler.codec.http.FullHttpResponse} covered in {@link
- * FallbackTest}.
- *
- * @author Raid Thabet
- */
+/// Tests {@link FallbackHandler} against the streamed response shape a real upstream produces: an
+/// {@link HttpResponse} head, then {@link HttpContent} chunks, then a {@link LastHttpContent}, as
+/// opposed to the single {@link io.netty.handler.codec.http.FullHttpResponse} covered in {@link
+/// FallbackTest}.
+///
+/// @author Raid Thabet
 public class FallbackStreamingTest {
 
   private static final FallbackConfig CONFIG =
@@ -226,10 +224,8 @@ public class FallbackStreamingTest {
     assertThat(body()).isEqualTo("real-2");
   }
 
-  /**
-   * A streamed 5xx whose slot is a redirect: the head becomes a 3xx and the origin body is
-   * swallowed.
-   */
+  /// A streamed 5xx whose slot is a redirect: the head becomes a 3xx and the origin body is
+  /// swallowed.
   @Test
   public void testStreamedRedirectSwallowsBody() {
     FallbackConfig redirectCfg =

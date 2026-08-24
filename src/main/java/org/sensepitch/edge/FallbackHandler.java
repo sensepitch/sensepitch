@@ -9,19 +9,16 @@ import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.http.*;
 import io.netty.util.ReferenceCountUtil;
 
-/**
- * Replaces upstream 500/503 responses with an operator-configured fallback page (or text). Handles
- * both the aggregated {@link FullHttpResponse} (stub upstream) and the streamed form a real backend
- * produces ({@link HttpResponse} head + {@link HttpContent} chunks + {@link LastHttpContent}).
- *
- * @author Raid Thabet
- */
+/// Replaces upstream 500/503 responses with an operator-configured fallback page (or text). Handles
+/// both the aggregated {@link FullHttpResponse} (stub upstream) and the streamed form a real
+/// backend produces ({@link HttpResponse} head + {@link HttpContent} chunks + {@link
+/// LastHttpContent}).
+///
+/// @author Raid Thabet
 public class FallbackHandler extends ChannelOutboundHandlerAdapter {
 
-  /**
-   * {@code true} while the origin body chunks of a streamed 5xx response are being dropped after
-   * its head was replaced with the fallback.
-   */
+  /// {@code true} while the origin body chunks of a streamed 5xx response are being dropped after
+  /// its head was replaced with the fallback.
   private boolean suppressing;
 
   private final ResponseConfig unavailable; // fallbackConfig.unavailableResponse()
@@ -32,10 +29,8 @@ public class FallbackHandler extends ChannelOutboundHandlerAdapter {
 
   private final byte[] errorContent;
 
-  /**
-   * @param unavailableContent body of the 503 page fallback, {@code null} if it is a redirect
-   * @param errorContent body of the 500 page fallback, {@code null} if it is a redirect
-   */
+  /// @param unavailableContent body of the 503 page fallback, {@code null} if it is a redirect
+  /// @param errorContent body of the 500 page fallback, {@code null} if it is a redirect
   FallbackHandler(FallbackConfig fallbackConfig, byte[] unavailableContent, byte[] errorContent) {
     this.unavailable = fallbackConfig.unavailableResponse();
     this.error = fallbackConfig.errorResponse();

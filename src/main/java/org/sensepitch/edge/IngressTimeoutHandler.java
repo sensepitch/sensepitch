@@ -18,20 +18,18 @@ import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Watches the request and response pass through and implement timeouts for the request, response
- * and write. There is only one timeout active at a point in time. The response timeout is actually
- * a timeout for our upstream. Once the upstream starts responding the handler switches to write
- * timeout. The write timeout triggers when no write complete any more, which covers upstream and
- * receiver stalls.
- *
- * <p>This must be placed between the http codec handler and the keep alive handler.
- *
- * <p>TODO: only works with HttpKeepAliveHandler next, maybe unify TODO: corner case when ingress
- * still sends and upstream is responding, however, we can do connection: close
- *
- * @author Jens Wilke
- */
+/// Watches the request and response pass through and implement timeouts for the request, response
+/// and write. There is only one timeout active at a point in time. The response timeout is actually
+/// a timeout for our upstream. Once the upstream starts responding the handler switches to write
+/// timeout. The write timeout triggers when no write complete any more, which covers upstream and
+/// receiver stalls.
+///
+/// <p>This must be placed between the http codec handler and the keep alive handler.
+///
+/// <p>TODO: only works with HttpKeepAliveHandler next, maybe unify TODO: corner case when ingress
+/// still sends and upstream is responding, however, we can do connection: close
+///
+/// @author Jens Wilke
 public final class IngressTimeoutHandler extends ChannelDuplexHandler {
 
   public static ProxyLogger LOG = ProxyLogger.get(IngressTimeoutHandler.class);

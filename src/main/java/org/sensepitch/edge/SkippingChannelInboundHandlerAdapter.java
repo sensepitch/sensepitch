@@ -12,12 +12,10 @@ import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.ReferenceCountUtil;
 
-/**
- * Skips content messages and releases the buffer, if this handler is reacting to the request and is
- * not interested in the actual content.
- *
- * @author Jens Wilke
- */
+/// Skips content messages and releases the buffer, if this handler is reacting to the request and
+/// is not interested in the actual content.
+///
+/// @author Jens Wilke
 public class SkippingChannelInboundHandlerAdapter extends ChannelInboundHandlerAdapter {
 
   private boolean skipContent;
@@ -41,7 +39,7 @@ public class SkippingChannelInboundHandlerAdapter extends ChannelInboundHandlerA
     skipFollowingContent(ctx);
   }
 
-  /** Keep connection open. */
+  /// Keep connection open.
   protected void skipFollowingContent(ChannelHandlerContext ctx) {
     skipContent = true;
   }

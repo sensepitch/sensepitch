@@ -3,9 +3,7 @@ package org.sensepitch.edge;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.HttpRequest;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public interface NoBypassCheck {
 
   NoBypassCheck FALSE =

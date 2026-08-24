@@ -5,9 +5,7 @@ import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class CountByteIoHandler extends ChannelDuplexHandler {
 
   private long received;

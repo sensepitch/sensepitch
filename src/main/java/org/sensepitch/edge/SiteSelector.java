@@ -25,9 +25,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Supplier;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class SiteSelector {
 
   private static final SiteConfig SITE_CONFIG_DEFAULT = SiteConfig.builder().build();

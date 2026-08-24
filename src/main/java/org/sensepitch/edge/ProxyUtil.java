@@ -5,9 +5,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.channel.socket.SocketChannel;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public final class ProxyUtil {
 
   public static String extractRemoteIp(ChannelHandlerContext ctx) {

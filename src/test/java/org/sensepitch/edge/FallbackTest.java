@@ -37,9 +37,7 @@ import org.sensepitch.edge.config.RecordConstructor;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.nodes.Node;
 
-/**
- * @author Raid Thabet
- */
+/// @author Raid Thabet
 public class FallbackTest {
 
   private static final String HTML = "text/html; charset=UTF-8";
@@ -188,7 +186,7 @@ public class FallbackTest {
         .hasMessage("redirect status must be one of [301, 302, 303, 307, 308], was: 200");
   }
 
-  /** 3xx, but not a code a {@code Location} header means anything for. */
+  /// 3xx, but not a code a {@code Location} header means anything for.
   @Test
   public void redirectWithNonRedirect3xxStatusFails() {
     assertThatThrownBy(() -> ResponseConfig.builder().location("/elsewhere").status(304).build())
@@ -206,7 +204,7 @@ public class FallbackTest {
         .hasMessage("status must be 100..599, was: 42");
   }
 
-  /** A page with no explicit status keeps the sentinel 0, meaning "inherit the origin status". */
+  /// A page with no explicit status keeps the sentinel 0, meaning "inherit the origin status".
   @Test
   public void pageWithoutStatusKeepsZeroSentinel() {
     assertThat(page("down").status()).isZero();
@@ -472,10 +470,8 @@ public class FallbackTest {
     assertPage(SERVICE_UNAVAILABLE, "SITE3: down for maintenance");
   }
 
-  /**
-   * An empty slot has neither a redirect target nor a page body. This is now rejected when the
-   * record is constructed, so such a slot can never reach {@link Fallback} to be merged at all.
-   */
+  /// An empty slot has neither a redirect target nor a page body. This is now rejected when the
+  /// record is constructed, so such a slot can never reach {@link Fallback} to be merged at all.
   @Test
   public void testEmptySlotHardFails() {
     assertThatThrownBy(() -> ResponseConfig.builder().build())

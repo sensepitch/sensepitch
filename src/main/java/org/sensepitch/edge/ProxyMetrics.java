@@ -9,9 +9,7 @@ import io.prometheus.metrics.model.snapshots.Labels;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class ProxyMetrics implements HasMultipleMetrics {
 
   private final MetricSet metricSet = new MetricSet();

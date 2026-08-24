@@ -10,9 +10,7 @@ import io.prometheus.metrics.model.snapshots.Labels;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 @ChannelHandler.Sharable
 public class TrackIngressConnectionsHandler extends ChannelInboundHandlerAdapter
     implements HasMultipleMetrics {

@@ -23,11 +23,9 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
-/**
- * Test our understanding of the JVM memory metrics w.r.t. to the Netty byte buffers.
- *
- * @author Jens Wilke
- */
+/// Test our understanding of the JVM memory metrics w.r.t. to the Netty byte buffers.
+///
+/// @author Jens Wilke
 class MetricsAndMemoryTest {
 
   PrometheusRegistry reg = new PrometheusRegistry();
@@ -47,11 +45,9 @@ class MetricsAndMemoryTest {
     assertThat(counter.getValue()).isEqualTo(3);
   }
 
-  /**
-   * The general Java memory metrics jvm_memory_used_bytes do not reflect the usage of the byte
-   * buffers that netty is using. The buffers are reflected in the metric
-   * jvm_buffer_pool_used_bytes{pool="direct"} also in the total RSS memory consumption.
-   */
+  /// The general Java memory metrics jvm_memory_used_bytes do not reflect the usage of the byte
+  /// buffers that netty is using. The buffers are reflected in the metric
+  /// jvm_buffer_pool_used_bytes{pool="direct"} also in the total RSS memory consumption.
   @Test
   void jvmMemoryMetricForDirectByteBuffer() throws Exception {
     // jvm_buffer_pool_used_bytes

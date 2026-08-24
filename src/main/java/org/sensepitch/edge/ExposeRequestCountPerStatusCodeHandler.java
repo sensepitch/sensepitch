@@ -7,9 +7,7 @@ import io.prometheus.metrics.model.registry.Collector;
 import io.prometheus.metrics.model.snapshots.Unit;
 import java.util.function.Consumer;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetrics, RequestLogger {
 
   private final Histogram requestDuration =

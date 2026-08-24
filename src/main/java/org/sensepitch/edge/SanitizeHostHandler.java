@@ -10,37 +10,31 @@ import java.util.Collection;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-/**
- * Augments the host header and sets only well-known values.
- *
- * <p>All valid clients are expected to set a correct host header according to the host they want to
- * contact. However, clients might leave the header out or just put garbage in there. We don't want
- * to have that further polluting our systems, or do defensive coding every time the host header is
- * needed.
- *
- * @see RequestLogInfo#requestHeaderHost()
- * @author Jens Wilke
- */
+/// Augments the host header and sets only well-known values.
+///
+/// <p>All valid clients are expected to set a correct host header according to the host they want
+/// to contact. However, clients might leave the header out or just put garbage in there. We don't
+/// want to have that further polluting our systems, or do defensive coding every time the host
+/// header is needed.
+///
+/// @see RequestLogInfo#requestHeaderHost()
+/// @author Jens Wilke
 @ChannelHandler.Sharable
 public class SanitizeHostHandler extends ChannelInboundHandlerAdapter {
 
-  /**
-   * Alternative host that is set when the host from the client does not match any of the serviced
-   * hosts. The underscore is not a legal character within a hostname. This never collides with a
-   * real existing hostname.
-   */
+  /// Alternative host that is set when the host from the client does not match any of the serviced
+  /// hosts. The underscore is not a legal character within a hostname. This never collides with a
+  /// real existing hostname.
   public static final String UNKNOWN_HOST = "unknown_host";
 
-  /** Alternative host that is set in case the host header was absent. */
+  /// Alternative host that is set in case the host header was absent.
   public static final String MISSING_HOST = "missing_host";
 
-  /**
-   * Alternative host that is set if we never received a header. This value is used within the
-   * {@link RequestLoggingHandler} but defined here for completeness.
-   */
+  /// Alternative host that is set if we never received a header. This value is used within the
+  /// {@link RequestLoggingHandler} but defined here for completeness.
   public static final String NIL_HOST = "nil_host";
 
-  /** Replacement for any method that we don't know or support. */
+  /// Replacement for any method that we don't know or support.
   public static final HttpMethod UNKNOWN_METHOD = new HttpMethod("INVALID");
 
   // public static final HttpMethod UNSUPPORTED_METHOD = new HttpMethod("C/T");

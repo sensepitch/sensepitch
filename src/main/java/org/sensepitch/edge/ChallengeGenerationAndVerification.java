@@ -6,11 +6,9 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Objects;
 
-/**
- * Generate a challenge and verify the response with the generated nonce.
- *
- * @author Jens Wilke
- */
+/// Generate a challenge and verify the response with the generated nonce.
+///
+/// @author Jens Wilke
 public class ChallengeGenerationAndVerification {
 
   private final ChallengeGenerator challengeGenerator;
@@ -31,12 +29,10 @@ public class ChallengeGenerationAndVerification {
     return challengeGenerator.generateChallenge();
   }
 
-  /**
-   * Check whether the challenge was created recently and the nonce fits.
-   *
-   * @return 0 if invalid or time in milliseconds the challenge was created
-   * @see ChallengeGenerator#verifyChallenge(String)
-   */
+  /// Check whether the challenge was created recently and the nonce fits.
+  ///
+  /// @return 0 if invalid or time in milliseconds the challenge was created
+  /// @see ChallengeGenerator#verifyChallenge(String)
   public long verifyChallengeResponse(String challenge, String nonce) {
     long t = challengeGenerator.verifyChallenge(challenge);
     if (t > 0) {

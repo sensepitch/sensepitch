@@ -11,9 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class ResourceLoader {
 
   public static String loadTextFile(String resourcePath) {

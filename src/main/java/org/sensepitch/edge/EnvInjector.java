@@ -9,9 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class EnvInjector {
 
   public static Object injectFromEnv(String prefix, Map<String, String> env, Object targetBuilder)
@@ -120,7 +118,7 @@ public class EnvInjector {
     return false;
   }
 
-  /** must be instance, public, one-param, non-equals */
+  /// must be instance, public, one-param, non-equals
   private static boolean isEligible(Method m) {
     return Modifier.isPublic(m.getModifiers())
         && !Modifier.isStatic(m.getModifiers())

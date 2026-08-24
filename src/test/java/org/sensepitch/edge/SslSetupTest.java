@@ -7,9 +7,7 @@ import java.util.Collections;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 @SuppressWarnings("unchecked")
 class SslSetupTest {
 

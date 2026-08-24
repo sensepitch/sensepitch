@@ -19,9 +19,7 @@ import java.nio.channels.ClosedChannelException;
 import javax.net.ssl.SSLHandshakeException;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 @Slf4j
 public class ExceptionHandler extends ChannelInboundHandlerAdapter {
 
@@ -63,7 +61,7 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
   // io.netty.handler.ssl.ReferenceCountedOpenSslEngine$OpenSslHandshakeException is subtype of
   // SSLHandshakeException
 
-  /** True for all variants of common ssl decoder exceptions */
+  /// True for all variants of common ssl decoder exceptions
   boolean isSslDecoderException(Throwable cause) {
     Throwable decoderException = null;
     if (cause instanceof DecoderException) {
@@ -84,11 +82,9 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
   // io.netty.handler.ssl.SslClosedEngineException: SSLEngine closed already
   // java.io.IOException: Broken pipe java.io.IOException: Broken pipe
 
-  /**
-   * True for all known variants of ingress connection reset or closure while we are still receiving
-   * or sending. If ingress connections resets we don't stop writes but simple ignore the exceptions
-   * that this might result
-   */
+  /// True for all known variants of ingress connection reset or closure while we are still
+  /// receiving or sending. If ingress connections resets we don't stop writes but simple ignore the
+  /// exceptions that this might result
   boolean isConnectionReset(Throwable cause) {
     return cause instanceof SslClosedEngineException
         || cause instanceof ClosedChannelException
@@ -101,7 +97,7 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
             && cause.getMessage().startsWith("Connection reset"));
   }
 
-  /** Handle an exception, this might be a connection reset a timeout etc. */
+  /// Handle an exception, this might be a connection reset a timeout etc.
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
     // connection reset might include the IP address, not good

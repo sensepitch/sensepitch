@@ -5,9 +5,7 @@ import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class ReportIoErrorsHandler extends ChannelDuplexHandler {
 
   static ProxyLogger DEBUG = ProxyLogger.get(ReportIoErrorsHandler.class);

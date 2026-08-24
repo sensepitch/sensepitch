@@ -23,9 +23,7 @@ import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.FutureListener;
 import java.net.InetSocketAddress;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class DownstreamHandler extends ChannelDuplexHandler {
 
   static final ProxyLogger DEBUG = ProxyLogger.get(DownstreamHandler.class);
@@ -36,7 +34,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   private boolean returnUpstreamToPool;
   private Runnable flushTask;
 
-  /** This avoids that we sent stray content to upstream when not expected */
+  /// This avoids that we sent stray content to upstream when not expected
   private boolean ingressRequestComplete;
 
   public DownstreamHandler(Upstream upstream, ProxyMetrics metrics) {
@@ -155,7 +153,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
   }
 
-  /** Send the HTTP request, which may include content, upstream */
+  /// Send the HTTP request, which may include content, upstream
   void augmentHeadersAndForwardRequest(ChannelHandlerContext ctx, HttpRequest request) {
     boolean contentExpected =
         (HttpUtil.isContentLengthSet(request) || HttpUtil.isTransferEncodingChunked(request))
@@ -182,14 +180,12 @@ public class DownstreamHandler extends ChannelDuplexHandler {
             });
   }
 
-  /**
-   * Add standard minimal proxy request headers. We don't need to set X-Forwarded-Host, because this
-   * is already set in the Host header, also for https and SNI. We also don't include code here the
-   * support non-standard ports. If additional headers are needed, another handler can be added
-   * depending on configuration.
-   *
-   * @see SniToHostHeader
-   */
+  /// Add standard minimal proxy request headers. We don't need to set X-Forwarded-Host, because
+  /// this is already set in the Host header, also for https and SNI. We also don't include code
+  /// here the support non-standard ports. If additional headers are needed, another handler can be
+  /// added depending on configuration.
+  ///
+  /// @see SniToHostHeader
   private static void addProxyHeaders(ChannelHandlerContext ctx, HttpRequest request) {
     if (ctx.channel().remoteAddress() instanceof InetSocketAddress) {
       InetSocketAddress addr = (InetSocketAddress) ctx.channel().remoteAddress();
@@ -198,10 +194,8 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     request.headers().set("X-Forwarded-Proto", "https");
   }
 
-  /**
-   * Throttle reading, if the upstream is connected. If buffer is full send flush. If upstream is
-   * null, it means we received the last content, so no more flush is needed.
-   */
+  /// Throttle reading, if the upstream is connected. If buffer is full send flush. If upstream is
+  /// null, it means we received the last content, so no more flush is needed.
   @Override
   public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
     if (upstreamChannelFuture == null || !upstreamChannelFuture.isDone()) {
@@ -230,15 +224,13 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     ctx.executor().execute(flushTask);
   }
 
-  /**
-   * If the channel becomes inactive, make sure upstream reads are enabled, so upstream read is
-   * completed and the connection is put back into the pool.
-   *
-   * <p>That should work okay for small responses. For longer responses it might be better to close
-   * the upstream channel to avoid transferring data needlessly.
-   *
-   * <p>TODO: track and log if the close was unexpected
-   */
+  /// If the channel becomes inactive, make sure upstream reads are enabled, so upstream read is
+  /// completed and the connection is put back into the pool.
+  ///
+  /// <p>That should work okay for small responses. For longer responses it might be better to close
+  /// the upstream channel to avoid transferring data needlessly.
+  ///
+  /// <p>TODO: track and log if the close was unexpected
   @Override
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     if (upstreamChannelFuture != null && upstreamChannelFuture.isDone()) {
@@ -246,14 +238,12 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     }
   }
 
-  /**
-   * Remove upstream reference when processing for this request is complete. The upstream channel
-   * will go back to the pool, so we need to ensure that we don't have it anymore for throttling.
-   * Throttling can only occur in response to a write, so we are sure that there is no pending
-   * throttling.
-   *
-   * @see #channelWritabilityChanged(ChannelHandlerContext)
-   */
+  /// Remove upstream reference when processing for this request is complete. The upstream channel
+  /// will go back to the pool, so we need to ensure that we don't have it anymore for throttling.
+  /// Throttling can only occur in response to a write, so we are sure that there is no pending
+  /// throttling.
+  ///
+  /// @see #channelWritabilityChanged(ChannelHandlerContext)
   @Override
   public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
       throws Exception {

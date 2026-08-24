@@ -9,9 +9,7 @@ import net.serenitybdd.junit5.SerenityJUnit5Extension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 @ExtendWith(SerenityJUnit5Extension.class)
 class ProxyConstructBDDTest {
 

@@ -20,9 +20,7 @@ import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.FutureListener;
 import io.netty.util.concurrent.Promise;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class DefaultUpstream implements Upstream {
 
   private static ProxyLogger LOG = ProxyLogger.get(DefaultUpstream.class);
