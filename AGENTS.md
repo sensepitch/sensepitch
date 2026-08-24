@@ -11,6 +11,8 @@
 - `./mvnw clean package` builds the project and produces a shaded JAR at `target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar`.
 - `./mvnw test` runs the JUnit/Serenity test suite via Surefire.
 - `./mvnw spotless:check` verifies formatting; `./mvnw spotless:apply` auto-formats Java sources.
+- `./mvnw verify` runs the whole gate: tests, `spotless:check`, and the Javadoc build.
+- `./mvnw javadoc:javadoc` renders the API docs into `target/reports/apidocs` and fails on doc errors.
 - Run locally after packaging:
   `java -jar target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar`
 
@@ -19,6 +21,14 @@
 - Formatting uses Spotless with Google Java Format; prefer 2-space indentation and standard Google style.
 - Lombok is enabled; `lombok.config` enforces `toBuilder` support and a `Builder` class name.
 - Keep class and method names descriptive and consistent with existing `*Config`, `*Handler`, and `*Lookup` patterns.
+- Doc comments use Markdown (`///`, JEP 467): backticks for code, `[Foo#bar]` for references,
+  `-` for lists, fenced blocks for samples. Do not use HTML tags or `{@code}`/`{@link}`.
+  Exceptions: `{@value}` (no Markdown form) and `@see <a href>` (Markdown link syntax is
+  rejected in `@see`).
+- The doc build runs doclint and fails on unresolvable `[Ref]` links; it is bound to `verify`.
+  It delomboks into `target/generated-sources/delombok` first, because javadoc reads sources and cannot see
+  Lombok-generated members. `-Xdoclint` on `maven-compiler-plugin` does **not** work here:
+  Lombok's annotation processor silently disables javac's doclint.
 
 ## Testing Guidelines
 - Frameworks: JUnit 5, AssertJ, and Serenity BDD.

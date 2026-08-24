@@ -19,6 +19,8 @@
     <serenity.version>4.2.34</serenity.version>
     <bytebuddy.version>1.17.8</bytebuddy.version>
     <log4j.version>2.25.1</log4j.version>
+    <!-- colon-free, so it can be part of a file name on any platform -->
+    <maven.build.timestamp.format>yyyyMMddHHmmssSSS</maven.build.timestamp.format>
   </properties>
 
   <dependencies>
@@ -248,6 +250,64 @@
             <!-- enable toBuilder by default -->
             <arg>-Alombok.builder.toBuilder=true</arg>
           </compilerArgs>
+        </configuration>
+      </plugin>
+      <plugin>
+        <!-- javadoc parses sources, so it cannot see Lombok-generated members
+             (e.g. DeflectorConfig.Builder). Generate plain sources for it. -->
+        <groupId>org.projectlombok</groupId>
+        <artifactId>lombok-maven-plugin</artifactId>
+        <version>1.18.20.0</version>
+        <dependencies>
+          <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>${lombok.version}</version>
+          </dependency>
+        </dependencies>
+        <executions>
+          <execution>
+            <!-- javadoc:javadoc forks generate-sources, so this runs on demand too -->
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>delombok</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <sourceDirectory>${project.basedir}/src/main/java</sourceDirectory>
+          <outputDirectory>${project.build.directory}/generated-sources/delombok</outputDirectory>
+          <!-- javadoc only; must not become a second compile source root -->
+          <addOutputDirectory>false</addOutputDirectory>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <version>3.11.2</version>
+        <executions>
+          <execution>
+            <!-- make the doc build part of the normal check phase; no-fork because
+                 delombok already ran in generate-sources of this same build -->
+            <id>check-javadoc</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>javadoc-no-fork</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <sourcepath>${project.build.directory}/generated-sources/delombok</sourcepath>
+          <!-- Doc comments are Markdown (JEP 467). doclint reports unresolvable [Ref] links,
+               which javadoc would otherwise render as an "invalid reference" box, and malformed
+               block tags. -missing: most of the code is intentionally undocumented. -->
+          <doclint>all,-missing</doclint>
+          <failOnError>true</failOnError>
+          <!-- The plugin skips the run when the previous javadoc command line was identical,
+               which ignores edits inside the doc comments themselves: an incremental
+               `mvn verify` would report "everything is up to date" and pass on a broken
+               reference. A per-build path means there is never previous run data. -->
+          <staleDataPath>${project.build.directory}/javadoc-check/${maven.build.timestamp}.txt</staleDataPath>
         </configuration>
       </plugin>
       <plugin>
