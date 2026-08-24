@@ -4,7 +4,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.util.ReferenceCountUtil;
 
-/// Common handler logic for {@link ProtectionPlugin} implementations.
+/// Common handler logic for [ProtectionPlugin] implementations.
 ///
 /// @author Jens Wilke
 public class ProtectionHandler extends SkippingChannelInboundHandlerAdapter {

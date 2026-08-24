@@ -12,10 +12,10 @@ import java.util.stream.Collectors;
 
 /// Augments the host header and sets only well-known values.
 ///
-/// <p>All valid clients are expected to set a correct host header according to the host they want
-/// to contact. However, clients might leave the header out or just put garbage in there. We don't
-/// want to have that further polluting our systems, or do defensive coding every time the host
-/// header is needed.
+/// All valid clients are expected to set a correct host header according to the host they want to
+/// contact. However, clients might leave the header out or just put garbage in there. We don't want
+/// to have that further polluting our systems, or do defensive coding every time the host header is
+/// needed.
 ///
 /// @see RequestLogInfo#requestHeaderHost()
 /// @author Jens Wilke
@@ -31,7 +31,7 @@ public class SanitizeHostHandler extends ChannelInboundHandlerAdapter {
   public static final String MISSING_HOST = "missing_host";
 
   /// Alternative host that is set if we never received a header. This value is used within the
-  /// {@link RequestLoggingHandler} but defined here for completeness.
+  /// [RequestLoggingHandler] but defined here for completeness.
   public static final String NIL_HOST = "nil_host";
 
   /// Replacement for any method that we don't know or support.

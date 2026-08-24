@@ -5,16 +5,14 @@ import lombok.Builder;
 
 /// A configured response, either a page or a redirect, never a mix of both:
 ///
-/// <ul>
-///   <li>page: {@code text} (plain body) or {@code file} (see {@link Fallback} for how a file
-///       location is resolved), with an optional {@code contentType} (default {@link
-///       FallbackConfig#DEFAULT_CONTENT_TYPE}). Setting both {@code text} and {@code file} is
-///       rejected.
-///   <li>redirect: {@code location}, optionally with {@code status} </ul>
+/// - page: `text` (plain body) or `file` (see [Fallback] for how a file location is resolved), with
+///   an optional `contentType` (default [FallbackConfig#DEFAULT_CONTENT_TYPE]). Setting both `text`
+///   and `file` is rejected.
+/// - redirect: `location`, optionally with `status`
 ///
-/// @param status response status code, {@code 0} if unset. A redirect defaults to {@link
-///   #DEFAULT_REDIRECT_STATUS} and must otherwise be one of {@link #REDIRECT_STATUS_CODES}. A page
-///   may use any code in 100..599.
+/// @param status response status code, `0` if unset. A redirect defaults to
+///   [#DEFAULT_REDIRECT_STATUS] and must otherwise be one of [#REDIRECT_STATUS_CODES]. A page may
+///   use any code in 100..599.
 /// @author Jens Wilke
 @Builder(toBuilder = true)
 public record ResponseConfig(

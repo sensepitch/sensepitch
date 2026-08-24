@@ -27,10 +27,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/// Tests {@link FallbackHandler} against the streamed response shape a real upstream produces: an
-/// {@link HttpResponse} head, then {@link HttpContent} chunks, then a {@link LastHttpContent}, as
-/// opposed to the single {@link io.netty.handler.codec.http.FullHttpResponse} covered in {@link
-/// FallbackTest}.
+/// Tests [FallbackHandler] against the streamed response shape a real upstream produces: an
+/// [HttpResponse] head, then [HttpContent] chunks, then a [LastHttpContent], as opposed to the
+/// single [io.netty.handler.codec.http.FullHttpResponse] covered in [FallbackTest].
 ///
 /// @author Raid Thabet
 public class FallbackStreamingTest {

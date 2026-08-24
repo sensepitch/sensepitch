@@ -19,7 +19,7 @@ import io.netty.util.concurrent.Ticker;
 /// Listens to incoming and outgoing http messages and collects all relevant information during
 /// request processing and calls the request logger implementation when the last content is written.
 ///
-/// <p>Note on concurrency: there is no concurrent activity on this object. The downstream request
+/// Note on concurrency: there is no concurrent activity on this object. The downstream request
 /// comes from one thread, after submitting the upstream request, writes come from the upstream
 /// reading thread
 ///

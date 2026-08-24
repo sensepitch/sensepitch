@@ -24,9 +24,9 @@ import java.util.concurrent.TimeUnit;
 /// timeout. The write timeout triggers when no write complete any more, which covers upstream and
 /// receiver stalls.
 ///
-/// <p>This must be placed between the http codec handler and the keep alive handler.
+/// This must be placed between the http codec handler and the keep alive handler.
 ///
-/// <p>TODO: only works with HttpKeepAliveHandler next, maybe unify TODO: corner case when ingress
+/// TODO: only works with HttpKeepAliveHandler next, maybe unify TODO: corner case when ingress
 /// still sends and upstream is responding, however, we can do connection: close
 ///
 /// @author Jens Wilke

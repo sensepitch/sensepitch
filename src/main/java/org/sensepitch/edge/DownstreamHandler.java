@@ -227,10 +227,10 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   /// If the channel becomes inactive, make sure upstream reads are enabled, so upstream read is
   /// completed and the connection is put back into the pool.
   ///
-  /// <p>That should work okay for small responses. For longer responses it might be better to close
+  /// That should work okay for small responses. For longer responses it might be better to close
   /// the upstream channel to avoid transferring data needlessly.
   ///
-  /// <p>TODO: track and log if the close was unexpected
+  /// TODO: track and log if the close was unexpected
   @Override
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     if (upstreamChannelFuture != null && upstreamChannelFuture.isDone()) {

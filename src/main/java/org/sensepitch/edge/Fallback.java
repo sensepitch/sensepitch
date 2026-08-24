@@ -18,7 +18,7 @@ public class Fallback {
   /// A resolved redirect.
   ///
   /// @param status 3xx status code
-  /// @param location target URL for the {@code Location} header
+  /// @param location target URL for the `Location` header
   public record Redirect(int status, String location) {}
 
   private static final String CLASSPATH_PREFIX = "classpath:";
@@ -31,7 +31,7 @@ public class Fallback {
 
   private final byte[] errorContent;
 
-  /// @throws IllegalArgumentException if a page response has neither {@code file} nor {@code text}
+  /// @throws IllegalArgumentException if a page response has neither `file` nor `text`
   /// @throws UncheckedIOException if a configured page resource cannot be read
   public Fallback(FallbackConfig config) {
     this.config = config;
@@ -43,14 +43,13 @@ public class Fallback {
     return new FallbackHandler(config, unavailableContent, errorContent);
   }
 
-  /// Build the body of the page {@code cfg} describes: the resource named by {@link
-  /// ResponseConfig#file()} (see {@link #openResource} for how the location is resolved), or else
-  /// the inline {@link ResponseConfig#text()} as UTF-8. Returns {@code null} for a redirect, which
-  /// has no body. {@link ResponseConfig} already rejects setting both {@code file} and {@code
-  /// text}.
+  /// Build the body of the page `cfg` describes: the resource named by [ResponseConfig#file()] (see
+  /// [#openResource] for how the location is resolved), or else the inline [ResponseConfig#text()]
+  /// as UTF-8. Returns `null` for a redirect, which has no body. [ResponseConfig] already rejects
+  /// setting both `file` and `text`.
   ///
-  /// @throws IllegalArgumentException if a page {@code cfg} has neither {@code file} nor {@code
-  ///   text} (an empty page config)
+  /// @throws IllegalArgumentException if a page `cfg` has neither `file` nor `text` (an empty page
+  ///   config)
   private static byte[] pageBody(ResponseConfig cfg) {
     if (resolvedRedirect(cfg.location(), cfg.status()) != null) {
       return null;
@@ -74,9 +73,9 @@ public class Fallback {
     }
   }
 
-  /// Open the resource named by {@code location}. An explicit {@code classpath:} or {@code file:}
-  /// scheme picks exactly that source; a bare (schemeless) location is tried on the filesystem
-  /// first and then on the classpath.
+  /// Open the resource named by `location`. An explicit `classpath:` or `file:` scheme picks
+  /// exactly that source; a bare (schemeless) location is tried on the filesystem first and then on
+  /// the classpath.
   private static InputStream openResource(String location) throws IOException {
     if (location.startsWith(CLASSPATH_PREFIX)) {
       return openClasspath(location.substring(CLASSPATH_PREFIX.length()));
