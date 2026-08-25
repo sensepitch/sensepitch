@@ -11,7 +11,7 @@
   <properties>
     <maven.compiler.release>25</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <netty.version>4.2.3.Final</netty.version>
+    <netty.version>4.2.17.Final</netty.version>
     <prometheus.version>1.3.8</prometheus.version>
     <junit.version>5.9.2</junit.version>
     <assertj.version>3.27.3</assertj.version>
@@ -225,7 +225,8 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
-          <argLine>-javaagent:${project.build.directory}/byte-buddy-agent.jar</argLine>
+          <argLine>-javaagent:${project.build.directory}/byte-buddy-agent.jar
+            -XX:NativeMemoryTracking=summary</argLine>
           <systemPropertyVariables>
             <!-- JUL log config for tests, this is not automatically picked up and actually does not need to live in the resources  -->
             <java.util.logging.config.file>${project.basedir}/test-logging.properties</java.util.logging.config.file>
