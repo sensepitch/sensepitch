@@ -45,4 +45,16 @@ public class ChallengeTest {
         new ChallengeGenerationAndVerification(DUMMY_CHALLENGE_GENERATOR, "888");
     assertThat(challengeHandler.verifyChallengeResponse(challenge, nonce)).isEqualTo(1);
   }
+
+  /// The challenge files are served over TLS and BoringSSL needs the plaintext in direct memory, so
+  /// caching them in a heap buffer would copy the content into a fresh direct buffer on every
+  /// response, see `SslHandler.wrap()` and the comment in [ResourceFiles].
+  @Test
+  public void challengeFilesAreCachedDirect() {
+    ResourceFiles files = new ResourceFiles("challenge/files/");
+    assertThat(files.getFileNames()).isNotEmpty();
+    for (String name : files.getFileNames()) {
+      assertThat(files.getFile(name).buf().isDirect()).as("%s is cached direct", name).isTrue();
+    }
+  }
 }

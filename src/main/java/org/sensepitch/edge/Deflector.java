@@ -164,6 +164,7 @@ public class Deflector {
   }
 
   void outputChallengeHtml(ChannelHandlerContext ctx) {
+    // TODO: the output only changes with the challange, make output static and use cookie
     String challenge = challengeVerification.generateChallenge();
     String msg = htmlTemplate;
     msg = msg.replaceAll("files/", CHALLENGE_RESOURCES_URL + "/");
@@ -173,7 +174,11 @@ public class Deflector {
     msg = msg.replace("{{VERIFY_URL}}", CHALLENGE_ANSWER_URL);
     msg = msg.replace("{{PREFIX}}", challengeVerification.getTargetPrefix());
     msg = msg.replace("{{MAX_ITERATIONS}}", Integer.toString(powMaxIterations));
-    ByteBuf buf = Unpooled.copiedBuffer(msg, CharsetUtil.UTF_8);
+    // from the channel allocator, so the plaintext is already in direct memory for BoringSSL,
+    // see the comment in ResourceFiles. buffer() rather than directBuffer() to keep honouring
+    // -Dio.netty.noPreferDirect.
+    ByteBuf buf = ctx.alloc().buffer(msg.length());
+    buf.writeCharSequence(msg, CharsetUtil.UTF_8);
     FullHttpResponse response =
         new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.FORBIDDEN, buf);
     response

@@ -29,7 +29,11 @@ public class ResourceFiles {
 
   private void add(String name) {
     byte[] ba = ResourceLoader.loadBinaryFile(name);
-    ByteBuf buf = Unpooled.copiedBuffer(ba);
+    // direct, because BoringSSL needs the plaintext in direct memory: serving this from a heap
+    // buffer would copy it into a fresh direct buffer on every response, see SslHandler.wrap().
+    // Unpooled, because we hold it for the lifetime of the process and must not pin a chunk of
+    // the pooling allocator.
+    ByteBuf buf = Unpooled.directBuffer(ba.length, ba.length).writeBytes(ba);
     map.put(new File(name).getName(), new FileInfo(buf, deriveMimeType(name)));
   }
 

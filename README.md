@@ -230,13 +230,19 @@ Direct byte buffers as accounted by `java.nio`. This does **not** cover most of 
 memory and is not relevant to monitor. Netty allocates the chunks of the pooled and the adaptive allocator through
 `java.lang.foreign.Arena`, which is outside the accounting of `java.nio`, so they appear neither here
 nor in any other MXBean pool. Only the buffers of `Unpooled` do. Measured with 100 MiB: unpooled
-moves this metric by the full amount, pooled and adaptive by zero.
+moves this metric by the full amount, pooled and adaptive by zero. In practice it is a constant, the
+roughly 16 KB of challenge content cached by `ResourceFiles`.
 
 ### `sensepitch_netty_allocator_used_memory_bytes`
 
 Memory usage of Netty allocators, labelled by `allocator` (`pooled`, `unpooled`, `default`) and `type`
 (`direct`, `heap`). Always available. Reports how much memory is in use by the application, not how much
 is reserved by the allocator.
+
+`default` is the allocator both the ingress and the upstream connections use, so it is the one to
+watch. `pooled` should stay at zero. `unpooled` is the static content cached at startup, a constant.
+Only `Unpooled.buffer()` and `Unpooled.directBuffer()` are counted; `copiedBuffer` and
+`wrappedBuffer` bypass the allocator and land in the heap metrics instead.
 
 ### `jvm_native_memory_committed_bytes{pool="Other"}`
 

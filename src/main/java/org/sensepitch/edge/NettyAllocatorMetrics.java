@@ -15,16 +15,21 @@ import java.util.function.Consumer;
 
 /// Exposes netty's own accounting of the memory used by its byte buffers.
 ///
-/// Expose consistent metrics for Netties buffers, aka, memory pools. Netty 4.2
-/// allocates the chunks of the pooling allocators from a shared `java.lang.foreign.Arena`, which is
-/// intentionally outside the accounting of `java.nio`, so
-/// `jvm_buffer_pool_used_bytes{pool="direct"}` does not see them.
+/// Expose consistent metrics for Netties buffers, aka, memory pools. Netty 4.2 allocates the chunks
+/// of the pooling allocators from a shared `java.lang.foreign.Arena`, which is intentionally
+/// outside the accounting of `java.nio`, so `jvm_buffer_pool_used_bytes{pool="direct"}` does not
+/// see them.
 ///
 /// Both the accepted connections and the upstream connections use `ByteBufAllocator.DEFAULT`,
-/// reported as `default`, which is netty's `AdaptiveByteBufAllocator`, see [Proxy] and [DefaultUpstream].
-/// 
-/// `pooled` and `unpooled` are reported too for completeness. `pooled` is unused and `unpooled`
-//  is only used for static allocations.
+/// reported as `default`, which is netty's `AdaptiveByteBufAllocator` and is documented as
+/// experimental, so it is the series to watch. `pooled` should stay at zero, which is the invariant
+/// that nobody has pinned it again, see [Proxy] and [DefaultUpstream]. `unpooled` is the static
+/// content cached by [ResourceFiles], a fixed baseline of about 16 KB.
+///
+/// Only `Unpooled.buffer()` and `Unpooled.directBuffer()` are accounted for here. The
+/// `Unpooled.copiedBuffer` and `wrappedBuffer` helpers construct their buffer directly and bypass
+/// the allocator, so those call sites are invisible in this metric and show up in the heap metrics
+/// instead.
 ///
 /// These numbers are netty's logical usage, decremented on `release()`, so they say how much of the
 /// pooled memory is handed out, not how much the process holds. For the latter, run with
