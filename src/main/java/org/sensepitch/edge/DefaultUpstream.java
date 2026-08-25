@@ -1,7 +1,6 @@
 package org.sensepitch.edge;
 
 import io.netty.bootstrap.Bootstrap;
-import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
@@ -44,7 +43,8 @@ public class DefaultUpstream implements Upstream {
         new Bootstrap()
             .group(ctx.eventLoopGroup())
             .channel(NioSocketChannel.class)
-            .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+            // deliberately no ChannelOption.ALLOCATOR, so this uses ByteBufAllocator.DEFAULT
+            // like the ingress side does, see Proxy.start()
             .option(ChannelOption.SO_KEEPALIVE, true)
             .remoteAddress(target, port);
     ChannelPoolHandler channelHandler =

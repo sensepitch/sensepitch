@@ -66,6 +66,7 @@ public class Proxy implements ProxyContext {
     metricsBridge = initializeMetrics();
     metricsBridge.expose(metrics);
     trackIngressConnectionsHandler = metricsBridge.expose(new TrackIngressConnectionsHandler());
+    metricsBridge.expose(new NettyAllocatorMetrics());
     // sslContext = initializeSslContext();
     siteSelector = new SiteSelector(this, config);
     var servicedHosts = siteSelector.getServicedHosts();
@@ -202,6 +203,11 @@ public class Proxy implements ProxyContext {
     EventLoopGroup bossGroup = new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory());
     try {
       ServerBootstrap sb = new ServerBootstrap();
+      // deliberately no allocator is set, here or in DefaultUpstream, so both sides use
+      // ByteBufAllocator.DEFAULT. That is netty's AdaptiveByteBufAllocator, whose javadoc still
+      // calls it experimental, so watch sensepitch_netty_allocator_used_memory_bytes. To pin a
+      // different one, -Dio.netty.allocator.type switches it globally, or use childOption() here
+      // for the accepted connections; option() would only cover the listening socket.
       sb.group(bossGroup, eventLoopGroup)
           .channel(NioServerSocketChannel.class)
           // .option(ChannelOption.SO_SNDBUF, 1 * 1024) // testing
