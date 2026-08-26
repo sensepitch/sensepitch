@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @author Raid Thabet
  */
 @Timeout(value = 40, unit = TimeUnit.SECONDS)
-class ExternalTcpTest {
+class ExternalTcpIT {
 
   private final short ALWAYS_CLOSED_PORT = 1;
 
@@ -163,8 +163,7 @@ class ExternalTcpTest {
                   .getBytes(StandardCharsets.US_ASCII));
       socket.getOutputStream().flush();
     }
-    String captured = logBuffer.toString(StandardCharsets.UTF_8);
-    assertThat(captured).isNotEmpty();
+    awaitLogged();
   }
 
   @Test
@@ -178,13 +177,28 @@ class ExternalTcpTest {
                               .getBytes(StandardCharsets.US_ASCII));
       socket.getOutputStream().flush();
     }
-    String captured = logBuffer.toString(StandardCharsets.UTF_8);
-    assertThat(captured).isNotEmpty();
+    awaitLogged();
+  }
+
+  /**
+   * The upstream connect fails asynchronously on the event loop, so the log lands after the request
+   * was written. Polling keeps the message inside the test that provoked it, instead of leaking it
+   * into the buffer of whatever test runs next.
+   */
+  private void awaitLogged() throws InterruptedException {
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+    while (System.nanoTime() < deadline
+        && logBuffer.toString(StandardCharsets.UTF_8).isEmpty()) {
+      Thread.sleep(25);
+    }
+    assertThat(logBuffer.toString(StandardCharsets.UTF_8))
+        .describedAs("proxy must log the failed upstream connection")
+        .isNotEmpty();
   }
 
   private void assertNothingLogged() throws InterruptedException {
     // the proxy logs from its event loop, give it a moment to land
-    Thread.sleep(500);
+    Thread.sleep(1000);
     assertThat(logBuffer.toString(StandardCharsets.UTF_8))
         .describedAs("proxy must stay silent for malformed input")
         .isEmpty();

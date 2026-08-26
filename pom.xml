@@ -238,6 +238,26 @@
         </configuration>
     </plugin>
       <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <version>3.5.6</version>
+        <configuration>
+          <!-- failsafe does not inherit the surefire configuration, so repeat the agent here -->
+          <argLine>-javaagent:${project.build.directory}/byte-buddy-agent.jar</argLine>
+          <systemPropertyVariables>
+            <java.util.logging.config.file>${project.basedir}/test-logging.properties</java.util.logging.config.file>
+          </systemPropertyVariables>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
         <groupId>org.jacoco</groupId>
         <artifactId>jacoco-maven-plugin</artifactId>
         <version>${jacoco.version}</version>
@@ -261,6 +281,7 @@
           </execution>
         </executions>
       </plugin>
+      
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
