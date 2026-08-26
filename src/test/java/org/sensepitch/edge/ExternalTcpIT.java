@@ -26,11 +26,9 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Boots the proxy on a real TCP port with TLS.
- *
- * @author Raid Thabet
- */
+/// Boots the proxy on a real TCP port with TLS.
+///
+/// @author Raid Thabet
 @Timeout(value = 40, unit = TimeUnit.SECONDS)
 class ExternalTcpIT {
 
@@ -183,12 +181,10 @@ class ExternalTcpIT {
     assertLogged();
   }
 
-  /**
-   * The upstream connect fails asynchronously, so the log is not written yet when the request has
-   * been flushed. Reading the fallback response to EOF is the observable proof that the proxy is
-   * done with the failed upstream, which puts the log write in the queue that {@link
-   * #drainEventLoops()} then drains.
-   */
+  /// The upstream connect fails asynchronously, so the log is not written yet when the request has
+  /// been flushed. Reading the fallback response to EOF is the observable proof that the proxy is
+  /// done with the failed upstream, which puts the log write in the queue that
+  /// [#drainEventLoops()] then drains.
   private void awaitUpstreamFailureHandled(SSLSocket socket) throws Exception {
     assertThat(socket.getInputStream().readAllBytes())
         .describedAs("proxy must answer even when the upstream is dead")
@@ -227,7 +223,7 @@ class ExternalTcpIT {
     return previous;
   }
 
-  /** Writes bytes that are not a valid TLS ClientHello, then expects the peer to hang up. */
+  /// Writes bytes that are not a valid TLS ClientHello, then expects the peer to hang up.
   private void sendGarbage() throws IOException {
     byte[] bytes = new byte[512];
     new Random(42).nextBytes(bytes);
