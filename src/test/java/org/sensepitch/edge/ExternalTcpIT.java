@@ -1,5 +1,6 @@
 package org.sensepitch.edge;
 
+import io.netty.util.concurrent.EventExecutor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -162,8 +163,9 @@ class ExternalTcpIT {
               "GET / HTTP/1.1\r\nHost: deadupstream.com\r\nConnection: close\r\n\r\n" // http 1.0 version (separate test)
                   .getBytes(StandardCharsets.US_ASCII));
       socket.getOutputStream().flush();
+      awaitUpstreamFailureHandled(socket);
     }
-    awaitLogged();
+    assertLogged();
   }
 
   @Test
@@ -176,32 +178,45 @@ class ExternalTcpIT {
                       "GET / HTTP/1.0\r\nHost: deadupstream.com\r\n\r\n"
                               .getBytes(StandardCharsets.US_ASCII));
       socket.getOutputStream().flush();
+      awaitUpstreamFailureHandled(socket);
     }
-    awaitLogged();
+    assertLogged();
   }
 
   /**
-   * The upstream connect fails asynchronously on the event loop, so the log lands after the request
-   * was written. Polling keeps the message inside the test that provoked it, instead of leaking it
-   * into the buffer of whatever test runs next.
+   * The upstream connect fails asynchronously, so the log is not written yet when the request has
+   * been flushed. Reading the fallback response to EOF is the observable proof that the proxy is
+   * done with the failed upstream, which puts the log write in the queue that {@link
+   * #drainEventLoops()} then drains.
    */
-  private void awaitLogged() throws InterruptedException {
-    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-    while (System.nanoTime() < deadline
-        && logBuffer.toString(StandardCharsets.UTF_8).isEmpty()) {
-      Thread.sleep(25);
-    }
+  private void awaitUpstreamFailureHandled(SSLSocket socket) throws Exception {
+    assertThat(socket.getInputStream().readAllBytes())
+        .describedAs("proxy must answer even when the upstream is dead")
+        .isNotEmpty();
+    drainEventLoops();
+  }
+
+  private void assertLogged() {
     assertThat(logBuffer.toString(StandardCharsets.UTF_8))
         .describedAs("proxy must log the failed upstream connection")
         .isNotEmpty();
   }
 
   private void assertNothingLogged() throws InterruptedException {
-    // the proxy logs from its event loop, give it a moment to land
-    Thread.sleep(1000);
+    drainEventLoops();
     assertThat(logBuffer.toString(StandardCharsets.UTF_8))
         .describedAs("proxy must stay silent for malformed input")
         .isEmpty();
+  }
+  
+  // the group is owned and closed by the proxy, the test only borrows it
+  @SuppressWarnings("resource")
+  private void drainEventLoops() throws InterruptedException {
+    for (EventExecutor executor : proxy.eventLoopGroup()) {
+      assertThat(executor.submit(() -> {}).await(5, TimeUnit.SECONDS))
+          .describedAs("event loop did not drain")
+          .isTrue();
+    }
   }
 
   private static PrintStream redirectProxyLog(PrintStream target) throws Exception {
