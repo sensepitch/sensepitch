@@ -3,9 +3,7 @@ package org.sensepitch.edge;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 import org.junit.jupiter.api.Test;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class LoggingTest {
 
   @Test

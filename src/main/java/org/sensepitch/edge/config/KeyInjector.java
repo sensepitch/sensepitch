@@ -6,21 +6,17 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import org.sensepitch.edge.HasKey;
 
-/**
- * If a configuration record has a key field, then the key is automatically assigned with the
- * mapping key.
- */
+/// If a configuration record has a key field, then the key is automatically assigned with the
+/// mapping key.
 public class KeyInjector {
 
-  /**
-   * Walks through all Map<K,V> components of any record R, and for each V that has
-   * toBuilder()/build() and a key(K) setter on its builder, injects the map-key into its 'key'
-   * component.
-   *
-   * @param obj any record with a toBuilder()/build() builder
-   * @param <R> record type
-   * @return a brand-new record of type R with all nested maps updated
-   */
+  /// Walks through all Map<K,V> components of any record R, and for each V that has
+  /// toBuilder()/build() and a key(K) setter on its builder, injects the map-key into its 'key'
+  /// component.
+  ///
+  /// @param obj any record with a toBuilder()/build() builder
+  /// @param <R> record type
+  /// @return a brand-new record of type R with all nested maps updated
   @SuppressWarnings("unchecked")
   public static <R> R injectAllMapKeys(R obj) {
     try {

@@ -9,9 +9,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class StandardOutRequestLogger implements RequestLogger {
 
   private static final DateTimeFormatter CLF_TIME =
@@ -26,7 +24,7 @@ public class StandardOutRequestLogger implements RequestLogger {
       InetSocketAddress addr = (InetSocketAddress) info.channel().remoteAddress();
       remoteHost = addr.getAddress().getHostAddress();
     }
-    String admissionToken = request.headers().get(DeflectorHandler.ADMISSION_TOKEN_HEADER);
+    String admissionToken = request.headers().get(Deflector.ADMISSION_TOKEN_HEADER);
     if (admissionToken == null) {
       admissionToken = "-";
     }
@@ -54,6 +52,21 @@ public class StandardOutRequestLogger implements RequestLogger {
     if (error == null) {
       error = "-";
     }
+    String signatureAgent = request.headers().get("Signature-Agent");
+    if (signatureAgent == null) {
+      signatureAgent = "-";
+    }
+    StringBuilder sb = new StringBuilder();
+    request
+        .headers()
+        .forEach(
+            kv -> {
+              if (sb.length() > 0) {
+                sb.append(", ");
+              }
+              sb.append(sanitize(kv.getKey()));
+            });
+    String headerNames = sb.toString();
     System.out.println(
         "RQ0 "
             + info.requestId()
@@ -87,6 +100,12 @@ public class StandardOutRequestLogger implements RequestLogger {
             + referer
             + " \""
             + error
+            + "\""
+            + " \""
+            + signatureAgent
+            + "\""
+            + " \""
+            + headerNames
             + "\"");
   }
 

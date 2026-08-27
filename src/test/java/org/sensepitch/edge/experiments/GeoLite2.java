@@ -1,19 +1,15 @@
 package org.sensepitch.edge.experiments;
 
-import java.io.IOException;
 import java.net.InetAddress;
-import java.net.UnknownHostException;
 import org.sensepitch.edge.CombinedIpTraitsLookup;
 import org.sensepitch.edge.GeoIp2Config;
 import org.sensepitch.edge.IpLookupConfig;
 import org.sensepitch.edge.IpTraits;
 import org.sensepitch.edge.IpTraitsLookup;
 
-/**
- * Play with GeoLite2 and see what responses we get.
- *
- * @author Jens Wilke
- */
+/// Play with GeoLite2 and see what responses we get.
+///
+/// @author Jens Wilke
 public class GeoLite2 {
 
   IpTraitsLookup traitsLookup;
@@ -34,8 +30,8 @@ public class GeoLite2 {
                         System.getenv("HOME")
                             + "/proj/maxmind-geolite2/GeoLite2-Country-latest/GeoLite2-Country.mmdb")
                     .build())
-//          .ipInfoPath( System.getenv("HOME")
-//          + "/proj/ipinfo-lite/ipinfo_lite.mmdb")
+            //          .ipInfoPath( System.getenv("HOME")
+            //          + "/proj/ipinfo-lite/ipinfo_lite.mmdb")
             .build();
     traitsLookup = new CombinedIpTraitsLookup(cfg);
     final String address = "80.187.82.121";

@@ -6,16 +6,14 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * Binary trie implementation that returns multiple labels for an ip address
- *
- * @author Jens Wilke
- */
+/// Binary trie implementation that returns multiple labels for an ip address
+///
+/// @author Jens Wilke
 public class IpTrie implements AnyVersionIpLookup {
 
   private final TrieNode root = new TrieNode();
 
-  /** Insert a CIDR like "66.249.64.0/19" or "2001:4860::/32" */
+  /// Insert a CIDR like "66.249.64.0/19" or "2001:4860::/32"
   @Override
   public void insert(String cidrStr, String label) {
     String[] parts = cidrStr.split("/");
@@ -50,7 +48,7 @@ public class IpTrie implements AnyVersionIpLookup {
     }
   }
 
-  /** Walk the trie along the bits of `addr` and add the found labels */
+  /// Walk the trie along the bits of `addr` and add the found labels
   @Override
   public List<String> findLabelMatching(byte[] addr) {
     TrieNode node = root;

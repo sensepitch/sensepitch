@@ -5,9 +5,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class GeoIp2CountryLookup {
 
   private final DatabaseReader reader;

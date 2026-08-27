@@ -6,9 +6,7 @@ import io.netty.handler.codec.http.HttpRequest;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class IpTraitsHandler extends ChannelInboundHandlerAdapter {
 
   public static final String TRAITS_HEADER = "X-Sensepitch-Ip-Traits";
@@ -79,5 +77,4 @@ public class IpTraitsHandler extends ChannelInboundHandlerAdapter {
     }
     super.channelRead(ctx, msg);
   }
-
 }

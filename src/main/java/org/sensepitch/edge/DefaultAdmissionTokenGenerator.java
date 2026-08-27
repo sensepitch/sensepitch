@@ -5,9 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class DefaultAdmissionTokenGenerator implements AdmissionTokenGenerator {
 
   private static final AtomicLong NEXT_THREAD_ID = new AtomicLong(0);
@@ -32,12 +30,10 @@ public class DefaultAdmissionTokenGenerator implements AdmissionTokenGenerator {
   private final String secret;
   private final char prefixChar;
 
-  /**
-   * The encoding number base used, which is 62 using alphanumeric chars only. Encoding base 64
-   * would be more efficient since simple bit shifting can be used. However, efficiency of validity
-   * check is most important, here the base does not matter much. Also, we want to avoid any special
-   * characters these might always give trouble when we want to cut and past and search.
-   */
+  /// The encoding number base used, which is 62 using alphanumeric chars only. Encoding base 64
+  /// would be more efficient since simple bit shifting can be used. However, efficiency of validity
+  /// check is most important, here the base does not matter much. Also, we want to avoid any
+  /// special characters these might always give trouble when we want to cut and past and search.
   public static int ENCODING_RADIX = 62;
 
   public static final int SEQUENCE_BYTES = 2;
@@ -169,10 +165,8 @@ public class DefaultAdmissionTokenGenerator implements AdmissionTokenGenerator {
   private static final char[] ALPHABET =
       "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".toCharArray();
 
-  /**
-   * Encode a byte[] to a Base62 string (no padding). Leading zero‐bytes will be preserved as
-   * leading '0' chars if you pad externally.
-   */
+  /// Encode a `byte[]` to a Base62 string (no padding). Leading zero‐bytes will be preserved as
+  /// leading '0' chars if you pad externally.
   public static String encode(byte[] input, int offset, int length, int base, int padToLength) {
     return pad(encode(input, offset, length, base), padToLength).toString();
   }

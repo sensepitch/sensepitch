@@ -7,9 +7,7 @@ import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class CombinedIpTraitsLookup implements IpTraitsLookup {
 
   ProxyLogger LOG = ProxyLogger.get(CombinedIpTraitsLookup.class);
@@ -28,7 +26,8 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
       }
     }
     if (ipLookupConfig.ipInfoPath() != null) {
-      IpInfoCountryAndAsnLookup  ipLookup = new IpInfoCountryAndAsnLookup(ipLookupConfig.ipInfoPath());
+      IpInfoCountryAndAsnLookup ipLookup =
+          new IpInfoCountryAndAsnLookup(ipLookupConfig.ipInfoPath());
       ipAttributesLookups.add(ipLookup);
     }
     ipLabelLookup = readGoogleBotList();
@@ -38,13 +37,15 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
   public static TrieIpLabelLookup readGoogleBotList() throws IOException {
     TrieIpLabelLookup lookup = new TrieIpLabelLookup();
     ObjectMapper mapper = new ObjectMapper();
-    JsonNode root = mapper.readTree(Proxy.class.getResource("/googlebot.json"));
-    for (JsonNode prefix : root.path("prefixes")) {
-      if (prefix.has("ipv4Prefix")) {
-        final String ipv4Prefix = prefix.get("ipv4Prefix").asText();
-        lookup.insertIpv4(ipv4Prefix, "crawler:googlebot");
-      } else if (prefix.has("ipv6Prefix")) {
-        lookup.insertIpv6(prefix.get("ipv6Prefix").asText(), "crawler:googlebot");
+    for (var file : ResourceLoader.getFileList("crawler-ips/")) {
+      JsonNode root = mapper.readTree(Proxy.class.getResource("/" + file));
+      for (JsonNode prefix : root.path("prefixes")) {
+        if (prefix.has("ipv4Prefix")) {
+          final String ipv4Prefix = prefix.get("ipv4Prefix").asText();
+          lookup.insertIpv4(ipv4Prefix, "crawler:googlebot");
+        } else if (prefix.has("ipv6Prefix")) {
+          lookup.insertIpv6(prefix.get("ipv6Prefix").asText(), "crawler:googlebot");
+        }
       }
     }
     return lookup;
@@ -52,22 +53,22 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
 
   private void addAsnLookup(AsnLookup asnLookup) {
     ipAttributesLookups.add(
-      (builder, address) -> {
-        long asn = asnLookup.lookupAsn(address);
-        if (asn >= 0) {
-          builder.asn(asn);
-        }
-      });
+        (builder, address) -> {
+          long asn = asnLookup.lookupAsn(address);
+          if (asn >= 0) {
+            builder.asn(asn);
+          }
+        });
   }
 
   private void addCountryLookup(GeoIp2CountryLookup countryLookup) {
     ipAttributesLookups.add(
-      (builder, address) -> {
-        var country = countryLookup.lookupCountry(address);
-        if (country != null) {
-          builder.isoCountry(country);
-        }
-      });
+        (builder, address) -> {
+          var country = countryLookup.lookupCountry(address);
+          if (country != null) {
+            builder.isoCountry(country);
+          }
+        });
   }
 
   private void lookupException(Exception e) {

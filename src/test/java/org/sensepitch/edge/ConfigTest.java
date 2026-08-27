@@ -15,17 +15,26 @@ import org.yaml.snakeyaml.nodes.NodeTuple;
 import org.yaml.snakeyaml.nodes.ScalarNode;
 import org.yaml.snakeyaml.nodes.SequenceNode;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class ConfigTest {
 
   @Test
-  public void readConfigFromEnvironmentLists() throws Exception {
+  public void readConfigFromEnvironmentTextList() throws Exception {
     Map<String, String> env = Map.of("XX_TEXTS", "/xy,special,123");
     AllFieldTypesConfig cfg =
         (AllFieldTypesConfig) EnvInjector.injectFromEnv("XX_", env, AllFieldTypesConfig.builder());
     assertEquals("[/xy, special, 123]", cfg.texts().toString());
+  }
+
+  @Test
+  public void readConfigFromEnvironmentTextListSeparate() throws Exception {
+    Map<String, String> env =
+        Map.of(
+            "XX_TEXTS_0", "/xy",
+            "XX_TEXTS_1", "special");
+    AllFieldTypesConfig cfg =
+        (AllFieldTypesConfig) EnvInjector.injectFromEnv("XX_", env, AllFieldTypesConfig.builder());
+    assertEquals("[/xy, special]", cfg.texts().toString());
   }
 
   @Test
@@ -51,6 +60,15 @@ public class ConfigTest {
     assertNull(cfg.list());
     assertEquals(false, cfg.enable());
     assertEquals(123, cfg.all().number());
+  }
+
+  @Test
+  public void configDeflector() throws Exception {
+    Map<String, String> env =
+        Map.of("SENSEPITCH_EDGE_PROTECTION_DEFLECTOR_TOKEN_GENERATORS_0_PREFIX", "z");
+    ProxyConfig cfg =
+        (ProxyConfig) EnvInjector.injectFromEnv("SENSEPITCH_EDGE_", env, ProxyConfig.builder());
+    assertNotNull(cfg.protection());
   }
 
   @Test

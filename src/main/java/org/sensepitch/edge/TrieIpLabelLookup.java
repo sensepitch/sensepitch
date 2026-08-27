@@ -2,11 +2,9 @@ package org.sensepitch.edge;
 
 import java.util.List;
 
-/**
- * TODO: Needs to be consolidated into {@link IpTraitsLookup}
- *
- * @author Jens Wilke
- */
+/// TODO: Needs to be consolidated into [IpTraitsLookup]
+///
+/// @author Jens Wilke
 public class TrieIpLabelLookup implements IpLabelLookup {
 
   AnyVersionIpLookup trieIpv4 = new IpTrie();

@@ -12,9 +12,7 @@ import io.netty.handler.codec.http.HttpVersion;
 import java.util.Date;
 import java.util.concurrent.ThreadLocalRandom;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class Responding {
 
   static final ByteBuf RANDOM6909 = createUnreleasableRandomBuf(6906);

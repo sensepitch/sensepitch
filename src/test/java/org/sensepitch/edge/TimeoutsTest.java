@@ -28,9 +28,7 @@ import io.netty.util.concurrent.MockTicker;
 import io.netty.util.concurrent.Promise;
 import org.junit.jupiter.api.Test;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 class TimeoutsTest {
 
   ConnectionConfig cfg =
@@ -57,7 +55,7 @@ class TimeoutsTest {
           .handlers(
               new FakeSslHandler(),
               new RequestLoggingHandler(new ProxyMetrics(), new StandardOutRequestLogger()),
-              new ClientTimeoutHandler(cfg, proxyMetrics),
+              new IngressTimeoutHandler(cfg, proxyMetrics),
               new HttpServerKeepAliveHandler(),
               new DownstreamHandler(new MockUpstream(), proxyMetrics),
               new ExceptionHandler(proxyMetrics))
@@ -78,10 +76,8 @@ class TimeoutsTest {
     assertThat(response.headers().toString()).contains("connection: close");
   }
 
-  /**
-   * Status 200 but connection will be closed since content size unknown. No keep-alive header is
-   * added.
-   */
+  /// Status 200 but connection will be closed since content size unknown. No keep-alive header is
+  /// added.
   @Test
   public void test200UnknownContent() {
     sendRequest("/unknown-length");
@@ -130,6 +126,28 @@ class TimeoutsTest {
   }
 
   @Test
+  public void upstreamResponseTimeoutSecond() {
+    sendRequest("/empty-length");
+    rattle();
+    HttpResponse response = ingressChannel.readOutbound();
+    assertThat(response).isNotNull();
+    sendRequest("/no-response");
+    rattle();
+    response = ingressChannel.readOutbound();
+    assertThat(response).isNull();
+    ticker.advance(29, SECONDS);
+    rattle();
+    response = ingressChannel.readOutbound();
+    assertThat(response).isNull();
+    ticker.advance(1, SECONDS);
+    rattle();
+    response = ingressChannel.readOutbound();
+    assertThat(response).isNotNull();
+    assertThat(response.status().code()).isEqualTo(504);
+    assertThat(ingressChannel.isActive()).isFalse();
+  }
+
+  @Test
   public void writeTimeout() {
     sendRequest("/no-response-initially-send-response-later-but-no-content");
     rattle();
@@ -157,7 +175,7 @@ class TimeoutsTest {
     }
   }
 
-  /** If upstream is connected it might put tasks in the into ingress again */
+  /// If upstream is connected it might put tasks in the into ingress again
   private void rattle() {
     if (upstreamChannel != null) {
       while (ingressChannel.hasPendingTasks() || upstreamChannel.hasPendingTasks()) {

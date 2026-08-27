@@ -23,9 +23,7 @@ import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.FutureListener;
 import java.net.InetSocketAddress;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class DownstreamHandler extends ChannelDuplexHandler {
 
   static final ProxyLogger DEBUG = ProxyLogger.get(DownstreamHandler.class);
@@ -35,8 +33,9 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   private Future<Channel> upstreamChannelFuture;
   private boolean returnUpstreamToPool;
   private Runnable flushTask;
-  // TODO: remove requestForDebugging
-  private HttpRequest requestForDebugging;
+
+  /// This avoids that we sent stray content to upstream when not expected
+  private boolean ingressRequestComplete;
 
   public DownstreamHandler(Upstream upstream, ProxyMetrics metrics) {
     this.upstream = upstream;
@@ -44,35 +43,50 @@ public class DownstreamHandler extends ChannelDuplexHandler {
 
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) {
-    DEBUG.traceChannelRead(ctx, msg);
     if (msg instanceof HttpRequest request) {
-      if (upstreamChannelFuture != null) {
+      if (upstreamChannelFuture != null || ingressRequestComplete) {
+        DEBUG.error(ctx.channel(), "another request is unexpected");
         completeWithError(
             ctx,
             new HttpResponseStatus(
-                HttpResponseStatus.BAD_GATEWAY.code(), "pipelining not supported"));
+                HttpResponseStatus.BAD_REQUEST.code(), "another request is unexpected"));
         return;
       }
-      this.requestForDebugging = request;
-      DownstreamProgress.progress(ctx.channel(), "request received, selecting upstream");
       upstreamChannelFuture = upstream.connect(ctx);
       augmentHeadersAndForwardRequest(ctx, request);
     } else if (msg instanceof LastHttpContent) {
-      // upstream might complete the response before the client sent the complete request
-      // e.g. in an error situation
+      // upstream might complete the response before the client sent the LastHttpContent request
+      // e.g. for a get request that has no body
       if (upstreamChannelFuture == null) {
         ReferenceCountUtil.release(msg);
         return;
       }
-      DownstreamProgress.progress(ctx.channel(), "last content, waiting for upstream");
+      if (ingressRequestComplete) {
+        DEBUG.error(ctx.channel(), "another request is unexpected");
+        completeWithError(
+            ctx,
+            new HttpResponseStatus(
+                HttpResponseStatus.BAD_REQUEST.code(), "another request is unexpected"));
+        return;
+      }
       // Upstream channel might be still connecting or retrieved and checked by the pool.
       // Queue in all content we receive via the listener.
       upstreamChannelFuture.addListener(
           (FutureListener<Channel>)
-              future -> forwardLastContentAndFlush(ctx, future, (LastHttpContent) msg));
+              future -> {
+                forwardLastContentAndFlush(ctx, future, (LastHttpContent) msg);
+              });
     } else if (msg instanceof HttpContent) {
       if (upstreamChannelFuture == null) {
         ReferenceCountUtil.release(msg);
+        return;
+      }
+      if (ingressRequestComplete) {
+        DEBUG.error(ctx.channel(), "another request is unexpected");
+        completeWithError(
+            ctx,
+            new HttpResponseStatus(
+                HttpResponseStatus.BAD_REQUEST.code(), "another request is unexpected"));
         return;
       }
       upstreamChannelFuture.addListener(
@@ -90,7 +104,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
           .addListener(
               (ChannelFutureListener)
                   f -> {
-                    // TODO: counter!
+                    // TODO: error counter!
                     if (!f.isSuccess()) {
                       ctx.executor()
                           .execute(
@@ -104,7 +118,8 @@ public class DownstreamHandler extends ChannelDuplexHandler {
                     }
                   });
     } else {
-      DownstreamProgress.complete(ctx.channel());
+      // upstream future listener is called within ingress event loop
+      assert ctx.executor().inEventLoop();
       ReferenceCountUtil.release(msg);
       Throwable cause = future.cause();
       // TODO: counter!
@@ -115,13 +130,8 @@ public class DownstreamHandler extends ChannelDuplexHandler {
         return;
       }
       DEBUG.error(ctx.channel(), "unknown upstream connection problem", future.cause());
-      ctx.executor()
-          .execute(
-              () -> {
-                ctx.pipeline().get(RequestLoggingHandler.class).setException(cause);
-                completeWithError(
-                    ctx, HttpResponseStatus.valueOf(502, "Upstream connection problem"));
-              });
+      ctx.pipeline().get(RequestLoggingHandler.class).setException(cause);
+      completeWithError(ctx, HttpResponseStatus.valueOf(502, "Upstream connection problem"));
     }
   }
 
@@ -136,13 +146,14 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   }
 
   void completeWithError(ChannelHandlerContext ctx, HttpResponseStatus status) {
+    // TODO: maybe response was already sent
+    // TODO: drop upstream
     FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status);
     response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
     ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-    DownstreamProgress.complete(ctx.channel());
   }
 
-  /** Send the HTTP request, which may include content, upstream */
+  /// Send the HTTP request, which may include content, upstream
   void augmentHeadersAndForwardRequest(ChannelHandlerContext ctx, HttpRequest request) {
     boolean contentExpected =
         (HttpUtil.isContentLengthSet(request) || HttpUtil.isTransferEncodingChunked(request))
@@ -152,10 +163,10 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       ctx.channel().config().setAutoRead(false);
     }
     addProxyHeaders(ctx, request);
-    DEBUG.trace(ctx.channel(), "connecting to upstream contentExpected=" + contentExpected);
     upstreamChannelFuture.addListener(
         (FutureListener<Channel>)
             future -> {
+              assert ctx.executor().inEventLoop();
               if (future.isSuccess()) {
                 upstreamChannelFuture.resultNow().write(request);
                 if (contentExpected) {
@@ -169,14 +180,12 @@ public class DownstreamHandler extends ChannelDuplexHandler {
             });
   }
 
-  /**
-   * Add standard minimal proxy request headers. We don't need to set X-Forwarded-Host, because this
-   * is already set in the Host header, also for https and SNI. We also don't include code here the
-   * support non-standard ports. If additional headers are needed, another handler can be added
-   * depending on configuration.
-   *
-   * @see SniToHostHeader
-   */
+  /// Add standard minimal proxy request headers. We don't need to set X-Forwarded-Host, because
+  /// this is already set in the Host header, also for https and SNI. We also don't include code
+  /// here the support non-standard ports. If additional headers are needed, another handler can be
+  /// added depending on configuration.
+  ///
+  /// @see SniToHostHeader
   private static void addProxyHeaders(ChannelHandlerContext ctx, HttpRequest request) {
     if (ctx.channel().remoteAddress() instanceof InetSocketAddress) {
       InetSocketAddress addr = (InetSocketAddress) ctx.channel().remoteAddress();
@@ -185,10 +194,8 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     request.headers().set("X-Forwarded-Proto", "https");
   }
 
-  /**
-   * Throttle reading, if the upstream is connected. If buffer is full send flush. If upstream is
-   * null, it means we received the last content, so no more flush is needed.
-   */
+  /// Throttle reading, if the upstream is connected. If buffer is full send flush. If upstream is
+  /// null, it means we received the last content, so no more flush is needed.
   @Override
   public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
     if (upstreamChannelFuture == null || !upstreamChannelFuture.isDone()) {
@@ -217,37 +224,37 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     ctx.executor().execute(flushTask);
   }
 
-  /**
-   * If the channel becomes inactive, make sure upstream reads are enabled, so upstream read is
-   * completed and the connection is put back into the pool.
-   *
-   * <p>That should work okay for small responses. For longer responses it might be better to close
-   * the upstream channel to avoid transferring data needlessly.
-   *
-   * <p>TODO: track and log if the close was unexpected
-   */
+  /// If the channel becomes inactive, make sure upstream reads are enabled, so upstream read is
+  /// completed and the connection is put back into the pool.
+  ///
+  /// That should work okay for small responses. For longer responses it might be better to close
+  /// the upstream channel to avoid transferring data needlessly.
+  ///
+  /// TODO: track and log if the close was unexpected
   @Override
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     if (upstreamChannelFuture != null && upstreamChannelFuture.isDone()) {
       upstreamChannelFuture.resultNow().config().setAutoRead(true);
     }
-    DownstreamProgress.inactive(ctx.channel());
   }
 
-  /**
-   * Remove upstream reference when processing for this request is complete. The upstream channel
-   * will go back to the pool, so we need to ensure that we don't have it anymore for throttling.
-   * Throttling can only occur in response to a write, so we are sure that there is no pending
-   * throttling.
-   *
-   * @see #channelWritabilityChanged(ChannelHandlerContext)
-   */
+  /// Remove upstream reference when processing for this request is complete. The upstream channel
+  /// will go back to the pool, so we need to ensure that we don't have it anymore for throttling.
+  /// Throttling can only occur in response to a write, so we are sure that there is no pending
+  /// throttling.
+  ///
+  /// @see #channelWritabilityChanged(ChannelHandlerContext)
   @Override
   public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
       throws Exception {
     // FIXME: sanitize headers
     if (msg instanceof HttpResponse response) {
+      // NGINX will send Connection: close after 100 requests
       returnUpstreamToPool = HttpUtil.isKeepAlive(response);
+      // DEBUG.trace(ctx.channel(), upstreamChannelFuture.resultNow(),
+      //  "connection=" + response.headers().get(HttpHeaderNames.CONNECTION) +
+      //  ", keepAlive=" + response.headers().get(HttpHeaderNames.KEEP_ALIVE) +
+      //  ", returnUpstreamToPool=" + returnUpstreamToPool);
       response.headers().remove(HttpHeaderNames.KEEP_ALIVE);
       response.headers().remove(HttpHeaderNames.CONNECTION);
     }
@@ -260,14 +267,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
         upstreamChannelFuture.resultNow().close();
       }
       upstreamChannelFuture = null;
-      promise =
-          promise
-              .unvoid()
-              .addListener(
-                  (ChannelFutureListener)
-                      future -> {
-                        DownstreamProgress.complete(ctx.channel());
-                      });
     }
     super.write(ctx, msg, promise);
   }

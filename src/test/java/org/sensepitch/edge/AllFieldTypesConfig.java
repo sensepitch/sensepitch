@@ -4,9 +4,7 @@ import java.util.List;
 import java.util.Map;
 import lombok.Builder;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 @Builder(toBuilder = true)
 public record AllFieldTypesConfig(
     int number,

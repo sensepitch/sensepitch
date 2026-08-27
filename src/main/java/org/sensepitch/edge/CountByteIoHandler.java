@@ -5,9 +5,7 @@ import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class CountByteIoHandler extends ChannelDuplexHandler {
 
   private long received;
@@ -21,7 +19,8 @@ public class CountByteIoHandler extends ChannelDuplexHandler {
   }
 
   @Override
-  public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
+  public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
+      throws Exception {
     assert msg instanceof ByteBuf;
     sent += ((ByteBuf) msg).readableBytes();
     super.write(ctx, msg, promise);
@@ -34,5 +33,4 @@ public class CountByteIoHandler extends ChannelDuplexHandler {
   public long getBytesSent() {
     return sent;
   }
-
 }

@@ -1,8 +1,6 @@
 package org.sensepitch.edge;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 import static io.netty.handler.codec.http.HttpMethod.GET;
 import static io.netty.handler.codec.http.HttpResponseStatus.*;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
@@ -33,7 +31,7 @@ class UnservicedHostHandlerTest {
             .servicedDomains(Set.of("www.foo.com", "bar.com", "www.baz.com"))
             .defaultLocation("https://default.example")
             .build();
-    channel = new EmbeddedChannel(new UnservicedHostHandler(cfg));
+    channel = new EmbeddedChannel(new UnservicedHost(cfg).newHandler());
   }
 
   @Test
@@ -64,7 +62,7 @@ class UnservicedHostHandlerTest {
     assertThat(resp.headers().get(HttpHeaderNames.LOCATION) == null).isTrue();
   }
 
-  /** Set by {@link SanitizeHostHandler} */
+  /// Set by [SanitizeHostHandler]
   @Test
   void unknownHost_resultsInBadRequestStatus() {
     DefaultHttpRequest req = new DefaultHttpRequest(HTTP_1_1, GET, "/");
@@ -78,7 +76,7 @@ class UnservicedHostHandlerTest {
     DefaultHttpRequest req = new DefaultHttpRequest(HTTP_1_1, GET, "/");
     req.headers().set(HttpHeaderNames.HOST, "foo.com");
     HttpResponse resp = writeAndExpectResponse(req);
-    assertThat(resp.status()).isEqualTo(PERMANENT_REDIRECT);
+    assertThat(resp.status()).isEqualTo(MOVED_PERMANENTLY);
     assertThat(resp.headers().get(HttpHeaderNames.LOCATION)).isEqualTo("https://www.foo.com");
   }
 
@@ -98,7 +96,7 @@ class UnservicedHostHandlerTest {
     HttpResponse resp = writeAndExpectResponse(req);
     assertThat(resp.status()).isEqualTo(TEMPORARY_REDIRECT);
     assertThat(resp.headers().get(HttpHeaderNames.LOCATION))
-        .isEqualTo("https://default.example" + UnservicedHostHandler.NOT_FOUND_URI);
+        .isEqualTo("https://default.example" + UnservicedHost.NOT_FOUND_URI);
   }
 
   @Test

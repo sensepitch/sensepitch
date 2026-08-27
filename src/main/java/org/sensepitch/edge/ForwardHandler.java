@@ -10,11 +10,9 @@ import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.LastHttpContent;
 
-/**
- * Handler for upstream communication, receives response from upstream and pass it on downstream
- *
- * @author Jens Wilke
- */
+/// Handler for upstream communication, receives response from upstream and pass it on downstream
+///
+/// @author Jens Wilke
 public class ForwardHandler extends ChannelInboundHandlerAdapter {
 
   static ProxyLogger LOG = ProxyLogger.get(ForwardHandler.class);
@@ -22,6 +20,18 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
 
   public ForwardHandler(Channel ingress) {
     this.downstream = ingress;
+  }
+
+  @Override
+  public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+    if (downstream != null) {
+      LOG.error(
+          "upstream closed but request still in flight, downstream="
+              + downstream.id()
+              + ", upstream="
+              + ctx.channel().id());
+    }
+    super.channelInactive(ctx);
   }
 
   @Override
@@ -34,10 +44,9 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
       return;
     }
     if (msg instanceof HttpResponse) {
-      HttpResponse response = (HttpResponse) msg;
       // if message contains response and content, write below
       if (!(msg instanceof HttpContent)) {
-        downstream.write(response);
+        downstream.write(msg);
       }
     }
     if (msg instanceof LastHttpContent) {
@@ -54,10 +63,9 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
     }
   }
 
-  /** Flush if output buffer is full and apply back pressure to downstream */
+  /// Flush if output buffer is full and apply back pressure to downstream
   @Override
   public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
-    LOG.trace(ctx.channel(), "channelWritabilityChanged, isWritable=" + ctx.channel().isWritable());
     if (ctx.channel().isWritable()) {
       downstream.setOption(ChannelOption.AUTO_READ, true);
     } else {
@@ -66,11 +74,9 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
     }
   }
 
-  /**
-   * Flush output to upstream. If we don't stop reading from ingress fast enough it may happen that
-   * the output buffer is already filled again when the flush is complete. Issue another flush until
-   * writable again.
-   */
+  /// Flush output to upstream. If we don't stop reading from ingress fast enough it may happen that
+  /// the output buffer is already filled again when the flush is complete. Issue another flush
+  /// until writable again.
   void flush(ChannelHandlerContext ctx) {
     ctx.channel()
         .writeAndFlush(Unpooled.EMPTY_BUFFER)

@@ -11,11 +11,9 @@ import org.apache.commons.csv.CSVRecord;
 import org.sensepitch.edge.AnyVersionIpLookup;
 import org.sensepitch.edge.TrieIpLabelLookup;
 
-/**
- * Check how long it takes to read the MaxMind CSV into the lookup structure.
- *
- * @author Jens Wilke
- */
+/// Check how long it takes to read the MaxMind CSV into the lookup structure.
+///
+/// @author Jens Wilke
 public class ReadMaxMindCsv {
 
   static final CSVFormat FORMAT =

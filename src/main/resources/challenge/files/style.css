@@ -1,0 +1,66 @@
+/* Hide probes off-screen but keep them rendered so the browser fetches */
+.probe-img { width:1px; height:1px; position:absolute; left:-9999px; top:-9999px; }
+
+/* Container that hosts CSS media-query probes via pseudo-elements */
+.css-probe { position:relative; }
+.css-probe::before,
+.css-probe::after {
+    content:"";
+    position:absolute;
+    width:1px; height:1px;
+    left:-9999px; top:-9999px;
+    background-repeat:no-repeat;
+    background-size:contain;
+}
+
+/* WIDTH-CLASS via ::before (exactly one of these will match and fetch) */
+@media (max-width: 767.98px) {
+    .css-probe::before { background-image: url('css-class-mobile-768.png'); }
+}
+@media (min-width: 768px) and (max-width: 1024.98px) {
+    .css-probe::before { background-image: url('css-class-tablet-1025.png'); }
+}
+@media (min-width: 1025px) {
+    .css-probe::before { background-image: url('css-class-desktop-1025.png'); }
+}
+
+
+/* ORIENTATION via ::after (exactly one of these will match and fetch) */
+@media (orientation: portrait) {
+    .css-probe::after { background-image: url('css-orientation-portrait.png'); }
+}
+@media (orientation: landscape) {
+    .css-probe::after { background-image: url('css-orientation-landscape.png'); }
+}
+
+body {
+    font-family: system-ui, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+}
+
+.center {
+max-width: 32rem;
+text-align: center;
+}
+
+.gate {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.gate input {
+    width: 1.2rem;
+    height: 1.2rem;
+}
+
+.muted {
+    color: #666;
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+}

@@ -11,14 +11,15 @@ import io.netty.handler.codec.http.HttpHeaderValues;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.ssl.NotSslRecordException;
+import io.netty.handler.ssl.SslClosedEngineException;
 import io.netty.handler.ssl.SslHandshakeCompletionEvent;
+import java.io.IOException;
 import java.net.SocketException;
+import java.nio.channels.ClosedChannelException;
 import javax.net.ssl.SSLHandshakeException;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 @Slf4j
 public class ExceptionHandler extends ChannelInboundHandlerAdapter {
 
@@ -60,7 +61,7 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
   // io.netty.handler.ssl.ReferenceCountedOpenSslEngine$OpenSslHandshakeException is subtype of
   // SSLHandshakeException
 
-  /** True for all variants of common ssl decoder exceptions */
+  /// True for all variants of common ssl decoder exceptions
   boolean isSslDecoderException(Throwable cause) {
     Throwable decoderException = null;
     if (cause instanceof DecoderException) {
@@ -75,15 +76,28 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
   // reset
   // java.net.SocketException: Connection reset 2053:c0:3700:6157:a256:3692:31aa:1235
   // java.net.SocketException: Connection reset
+  // java.io.IOException: Connection reset by peer java.io.IOException: Connection reset by peer
+  // java.nio.channels.ClosedChannelException java.nio.channels.ClosedChannelException
+  // io.netty.handler.ssl.SslClosedEngineException: SSLEngine closed already
+  // io.netty.handler.ssl.SslClosedEngineException: SSLEngine closed already
+  // java.io.IOException: Broken pipe java.io.IOException: Broken pipe
 
-  /** True for all known variants of connection reset. */
+  /// True for all known variants of ingress connection reset or closure while we are still
+  /// receiving or sending. If ingress connections resets we don't stop writes but simple ignore the
+  /// exceptions that this might result
   boolean isConnectionReset(Throwable cause) {
-    return cause instanceof SocketException
-        && cause.getMessage() != null
-        && cause.getMessage().startsWith("Connection reset");
+    return cause instanceof SslClosedEngineException
+        || cause instanceof ClosedChannelException
+        || (cause instanceof IOException
+            && cause.getMessage() != null
+            && (cause.getMessage().startsWith("Connection reset")
+                || cause.getMessage().startsWith("Broken pipe")))
+        || (cause instanceof SocketException
+            && cause.getMessage() != null
+            && cause.getMessage().startsWith("Connection reset"));
   }
 
-  /** Handle an exception, this might be a connection reset a timeout etc. */
+  /// Handle an exception, this might be a connection reset a timeout etc.
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
     // connection reset might include the IP address, not good
@@ -131,12 +145,11 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
       return;
     }
     // log if impossible to send normal response
-    LOG.downstreamError(ctx.channel(), "error, phase=" + phase, cause);
+    LOG.downstreamError(ctx.channel(), "phase=" + phase, cause);
     completeAndClose(ctx);
   }
 
   private static void completeAndClose(ChannelHandlerContext ctx) {
-    DownstreamProgress.complete(ctx.channel());
     ctx.channel().close();
   }
 
@@ -144,6 +157,5 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
     FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status);
     response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
     ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-    DownstreamProgress.complete(ctx.channel());
   }
 }

@@ -5,9 +5,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class MetricSet implements Iterable<Metric> {
 
   private final Set<Metric> metrics = new HashSet<>();

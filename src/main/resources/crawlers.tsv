@@ -1,36 +1,37 @@
-agent-match	fragment-agent-match
-adbeat-check-access-script adbeat.com/policy	
-facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)	
-Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Amazonbot/0.1; +https://developer.amazon.com/support/amazonbot) Chrome/119.0.6045.214 Safari/537.36	
-Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm) Chrome/116.0.1938.76 Safari/537.36	
-Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; ClaudeBot/1.0; +claudebot@anthropic.com)	
-Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2; +https://openai.com/gptbot)	
-Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)	
-Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)	
-Mozilla/5.0 (compatible; Barkrowler/0.9; +https://babbar.tech/crawler)	
-Mozilla/5.0 (compatible; BLEXBot/1.0; +https://help.seranking.com/en/blex-crawler)	
-Mozilla/5.0 (compatible; CensysInspect/1.1; +https://about.censys.io/)	
-Mozilla/5.0 (compatible; DotBot/1.2; +https://opensiteexplorer.org/dotbot; help@moz.com)	
-Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)	+http://www.google.com/bot.html
-Mozilla/5.0 (compatible; idealo-bot pricevalidator; https://partner.idealo.com/de/bot/)	
-Mozilla/5.0 (compatible; MetaJobBot; https://www.metajob.de/crawler)	
-Mozilla/5.0 (compatible; MJ12bot/v1.4.8; http://mj12bot.com/)	
-Mozilla/5.0 (compatible; MJ12bot/v2.0.2; http://mj12bot.com/)	
-Mozilla/5.0 (compatible; ORT/v1.0.0; visit ORTc.me )	
-Mozilla/5.0 (compatible;PetalBot;+https://webmaster.petalsearch.com/site/petalbot)	
-Mozilla/5.0 (compatible; Pinterestbot/1.0; +http://www.pinterest.com/bot.html)	
-Mozilla/5.0 (compatible; Sansec Security Monitor/1.0; +https://sansec.io/monitor)	
-Mozilla/5.0 (compatible; SemrushBot/7~bl; +http://www.semrush.com/bot.html)	
-Mozilla/5.0 (compatible; SeznamBot/4.0; +https://o-seznam.cz/napoveda/vyhledavani/en/seznambot-crawler/)	
-Mozilla/5.0 (compatible; YaK/1.0; http://linkfluence.com/; bot@linkfluence.com)	
-Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)	
-Mozilla/5.0 (Linux; Android 5.0) AppleWebKit/537.36 (KHTML, like Gecko) Mobile Safari/537.36 (compatible; Bytespider; spider-feedback@bytedance.com)	
-Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36; compatible; OAI-SearchBot/1.0; +https://openai.com/searchbot	
-Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15 (Applebot/0.1; +http://www.apple.com/go/applebot)	
-Mozilla/5.0 (Windows NT 10.0; Win64; x64; trendictionbot0.5.0; trendiction search; http://www.trendiction.de/bot; please let us know of any problems; web at trendiction.com)	
-Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko; GeedoProductSearch; +https://geedo.com/product-search.html) Chrome/134.0.0.0 Safari/537.36	
-OI-Crawler/Nutch (https://openintel.nl/webcrawl/)	
-Owler (ows.eu/owler)	
-Twitterbot/1.0	
-Geizhals GrabberBot/8.0 (via Mojo; +https://geizhals.at/botinfo)	
-WhatsApp/3.0.0.0 A	
+organization	category	ASN	remark	fragment-agent-match	agent-match
+					adbeat-check-access-script adbeat.com/policy
+Meta	crawler	32934		+http://www.facebook.com/externalhit_uatext.php	facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)
+Meta	crawler	32934		+https://developers.facebook.com/docs/sharing/webmasters/crawler	meta-externalagent/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler)
+					Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Amazonbot/0.1; +https://developer.amazon.com/support/amazonbot) Chrome/119.0.6045.214 Safari/537.36
+Microsoft	crawler	8075		+http://www.bing.com/bingbot.htm	Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm) Chrome/116.0.1938.76 Safari/537.36
+					Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; ClaudeBot/1.0; +claudebot@anthropic.com)
+Open AI	crawler	8075	published IP ranges	 +https://openai.com/gptbot	Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2; +https://openai.com/gptbot)
+Open AI	agent	8075	published IP ranges	 +https://openai.com/bot	Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ChatGPT-User/1.0; +https://openai.com/bot
+					Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)
+					Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)
+					Mozilla/5.0 (compatible; Barkrowler/0.9; +https://babbar.tech/crawler)
+					Mozilla/5.0 (compatible; BLEXBot/1.0; +https://help.seranking.com/en/blex-crawler)
+					Mozilla/5.0 (compatible; CensysInspect/1.1; +https://about.censys.io/)
+					Mozilla/5.0 (compatible; DotBot/1.2; +https://opensiteexplorer.org/dotbot; help@moz.com)
+				+http://www.google.com/bot.html	Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)
+					Mozilla/5.0 (compatible; idealo-bot pricevalidator; https://partner.idealo.com/de/bot/)
+					Mozilla/5.0 (compatible; MetaJobBot; https://www.metajob.de/crawler)
+Majestic				http://mj12bot.com/	Mozilla/5.0 (compatible; MJ12bot/v2.0.4; http://mj12bot.com/)
+					Mozilla/5.0 (compatible; ORT/v1.0.0; visit ORTc.me )
+					Mozilla/5.0 (compatible;PetalBot;+https://webmaster.petalsearch.com/site/petalbot)
+					Mozilla/5.0 (compatible; Pinterestbot/1.0; +http://www.pinterest.com/bot.html)
+					Mozilla/5.0 (compatible; Sansec Security Monitor/1.0; +https://sansec.io/monitor)
+					Mozilla/5.0 (compatible; SemrushBot/7~bl; +http://www.semrush.com/bot.html)
+					Mozilla/5.0 (compatible; SeznamBot/4.0; +https://o-seznam.cz/napoveda/vyhledavani/en/seznambot-crawler/)
+					Mozilla/5.0 (compatible; YaK/1.0; http://linkfluence.com/; bot@linkfluence.com)
+					Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)
+					Mozilla/5.0 (Linux; Android 5.0) AppleWebKit/537.36 (KHTML, like Gecko) Mobile Safari/537.36 (compatible; Bytespider; spider-feedback@bytedance.com)
+					Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36; compatible; OAI-SearchBot/1.0; +https://openai.com/searchbot
+					Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15 (Applebot/0.1; +http://www.apple.com/go/applebot)
+					Mozilla/5.0 (Windows NT 10.0; Win64; x64; trendictionbot0.5.0; trendiction search; http://www.trendiction.de/bot; please let us know of any problems; web at trendiction.com)
+					Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko; GeedoProductSearch; +https://geedo.com/product-search.html) Chrome/134.0.0.0 Safari/537.36
+					OI-Crawler/Nutch (https://openintel.nl/webcrawl/)
+					Owler (ows.eu/owler)
+					Twitterbot/1.0
+					Geizhals GrabberBot/8.0 (via Mojo; +https://geizhals.at/botinfo)
+	preview				WhatsApp/3.0.0.0 A

@@ -18,6 +18,7 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.InetSocketAddress;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Set;
@@ -28,7 +29,7 @@ import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.introspector.BeanAccess;
 import org.yaml.snakeyaml.representer.Representer;
 
-/** Minimal HTTP/1.1 proxy without aggregation, with keep-alive and basic logging */
+/// Minimal HTTP/1.1 proxy without aggregation, with keep-alive and basic logging
 public class Proxy implements ProxyContext {
 
   ProxyLogger LOG = ProxyLogger.get(Proxy.class);
@@ -41,14 +42,14 @@ public class Proxy implements ProxyContext {
   private final MetricsBridge metricsBridge;
   // private final SslContext sslContext;
   private final Mapping<String, SslContext> sniMapping;
-  private final UnservicedHostHandler unservicedHostHandler;
+  private final UnservicedHost unservicedHost;
   // private final DownstreamHandler downstreamHandler;
   // private final UpstreamRouter upstreamRouter;
   private final IpTraitsLookup ipTraitsLookup;
   private final EventLoopGroup eventLoopGroup;
   private final RequestLogger requestLogger;
   private final SanitizeHostHandler sanitizeHostHandler;
-  private final SiteSelectorHandler siteSelectorHandler;
+  private final SiteSelector siteSelector;
 
   public Proxy(ProxyConfig config) {
     config = KeyInjector.injectAllMapKeys(config);
@@ -65,9 +66,10 @@ public class Proxy implements ProxyContext {
     metricsBridge = initializeMetrics();
     metricsBridge.expose(metrics);
     trackIngressConnectionsHandler = metricsBridge.expose(new TrackIngressConnectionsHandler());
+    metricsBridge.expose(new NettyAllocatorMetrics());
     // sslContext = initializeSslContext();
-    siteSelectorHandler = new SiteSelectorHandler(this, config);
-    var servicedHosts = siteSelectorHandler.getServicedHosts();
+    siteSelector = new SiteSelector(this, config);
+    var servicedHosts = siteSelector.getServicedHosts();
     sniMapping = initializeSniMapping(config.listen(), servicedHosts);
     UnservicedHostConfig unservicedHostConfig =
         config.unservicedHost() != null
@@ -77,7 +79,7 @@ public class Proxy implements ProxyContext {
       unservicedHostConfig =
           unservicedHostConfig.toBuilder().servicedDomains(servicedHosts).build();
     }
-    unservicedHostHandler = new UnservicedHostHandler(unservicedHostConfig);
+    unservicedHost = new UnservicedHost(unservicedHostConfig);
     Set<String> knownHosts = new HashSet<>();
     knownHosts.addAll(servicedHosts);
     if (config.listen().hosts() != null) {
@@ -201,6 +203,11 @@ public class Proxy implements ProxyContext {
     EventLoopGroup bossGroup = new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory());
     try {
       ServerBootstrap sb = new ServerBootstrap();
+      // deliberately no allocator is set, here or in DefaultUpstream, so both sides use
+      // ByteBufAllocator.DEFAULT. That is netty's AdaptiveByteBufAllocator, whose javadoc still
+      // calls it experimental, so watch sensepitch_netty_allocator_used_memory_bytes. To pin a
+      // different one, -Dio.netty.allocator.type switches it globally, or use childOption() here
+      // for the accepted connections; option() would only cover the listening socket.
       sb.group(bossGroup, eventLoopGroup)
           .channel(NioServerSocketChannel.class)
           // .option(ChannelOption.SO_SNDBUF, 1 * 1024) // testing
@@ -216,10 +223,11 @@ public class Proxy implements ProxyContext {
                   addHttpHandlers(pipeline);
                 }
               });
+      String addr = config.listen().address();
       int port = config.listen().httpsPort();
-      ChannelFuture f = sb.bind(port).sync();
+      ChannelFuture f = sb.bind(new InetSocketAddress(addr, port)).sync();
       System.out.println("Open SSL: " + OpenSsl.versionString());
-      System.out.println("Proxy listening on port " + port);
+      System.out.println("Proxy listening on " + addr + ":" + port);
       LOG.trace("tracing enabled");
       f.channel().closeFuture().sync();
     } finally {
@@ -236,16 +244,17 @@ public class Proxy implements ProxyContext {
     pipeline.addLast(sanitizeHostHandler);
     // logger sits between codec and rest so it sees header modifications
     // from timeout and keep alive below
+    // pipeline.addLast(new LoggingHandler(LogLevel.INFO, ByteBufFormat.SIMPLE));
     pipeline.addLast(new RequestLoggingHandler(metrics, requestLogger));
-    pipeline.addLast(new ClientTimeoutHandler(connectionConfig, metrics));
+    pipeline.addLast(new IngressTimeoutHandler(connectionConfig, metrics));
     pipeline.addLast(new HttpServerKeepAliveHandler());
-    // ch.pipeline().addLast(new LoggingHandler(LogLevel.INFO, ByteBufFormat.SIMPLE));
     pipeline.addLast(new IpTraitsHandler(ipTraitsLookup));
     //            ch.pipeline().addLast(new ReportIoErrorsHandler("downstream"));
-    if (unservicedHostHandler != null) {
-      pipeline.addLast(unservicedHostHandler);
+    if (unservicedHost != null) {
+      pipeline.addLast(unservicedHost.newHandler());
     }
-    pipeline.addLast("siteSelector", siteSelectorHandler);
+    pipeline.addLast("siteSelector", new SiteSelectorHandler(siteSelector));
+    pipeline.addLast("fallback", dummy404Handler);
     pipeline.addLast("protection", dummy404Handler);
     pipeline.addLast("proxy", dummy404Handler);
     pipeline.addLast("exception", new ExceptionHandler(metrics));

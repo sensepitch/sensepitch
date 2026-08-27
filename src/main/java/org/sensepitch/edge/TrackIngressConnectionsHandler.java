@@ -4,16 +4,13 @@ import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.prometheus.metrics.model.registry.Collector;
-import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import io.prometheus.metrics.model.snapshots.CounterSnapshot;
 import io.prometheus.metrics.model.snapshots.GaugeSnapshot;
 import io.prometheus.metrics.model.snapshots.Labels;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 @ChannelHandler.Sharable
 public class TrackIngressConnectionsHandler extends ChannelInboundHandlerAdapter
     implements HasMultipleMetrics {
@@ -69,5 +66,4 @@ public class TrackIngressConnectionsHandler extends ChannelInboundHandlerAdapter
     connectionClosed.increment();
     super.channelInactive(ctx);
   }
-
 }

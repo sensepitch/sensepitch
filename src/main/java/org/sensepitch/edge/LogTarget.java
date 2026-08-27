@@ -9,9 +9,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.temporal.ChronoField;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public interface LogTarget {
 
   LogTarget INSTANCE = new StreamOutput(System.out);

@@ -47,6 +47,10 @@ For testing we use OpenJDK 24 and switch to ZGC for minimal pause times:
 
     java -XX:+UseZGC --enable-native-access=ALL-UNNAMED -jar target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar
 
+`--enable-native-access=ALL-UNNAMED` is needed because Netty allocates its off heap memory through
+`java.lang.foreign.Arena`. Adding `-XX:NativeMemoryTracking=summary` makes that memory visible in the
+metrics, at the cost of 5 to 10 percent JVM performance, see [Exposed metrics](#exposed-metrics).
+
 For load testing we use vegeta:
 
     echo "GET $PROXY_URL/10kb.img" | vegeta attack -insecure -duration=10s -timeout=10s -rate=50000 -keepalive=true | vegeta report
@@ -141,9 +145,21 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [x] upstream backpressure
 - [x] YAML based configuration
 - [x] improve default configuration
-- [ ] metrics: byte IO count per ingress
+- [x] metrics: byte IO count per ingress
+- [ ] Performance test: different Netty allocators, leak detection, -XX:NativeMemoryTracking=summary
+- [ ] Remove MetricsBridge, we exclusively use Prometheus
+- [ ] bypass config should be in the protection and not in the protection providers => we need a proper API for the protection provider
+- [ ] http to https forward
+- [ ] send 404 for any non / URL for unserviced domain?
+- [ ] only allow known HTTP methods
+- [ ] Integrate https://github.com/cruftex/GoodBots
+- [ ] minimise + compress, challenge resources
+- [ ] unify timeout with keep alive handler
+- [ ] Implement server-timing, https://www.w3.org/TR/server-timing/
+- [ ] test sha256 pow, remove subtle variant
+- [ ] https://docs.perplexity.ai/guides/bots
 - [ ] add netty memory pool statistics to monitoring
-- [ ] make Netty socket options available, check connection timeout and SO_TIMEOUT
+- [ ] documentation, nice examples are: Envoy
 - [ ] config: stop / complain if option is unknown
 - [ ] upstream metrics, e.g. pool metrics
 - [ ] Logging: Netty LoggingHandler seems not to respect the origin class
@@ -192,7 +208,16 @@ Metrics are exposed via prometheus. This section picks out metrics that should b
 
 ### `process_resident_memory_bytes`
 
-Total memory consumption of the process as reported by the OS.
+Total memory consumption of the process as reported by the OS. This is the metric to watch for memory
+growth: it covers every allocation whichever way it was made, and it is what the container limit and
+the OOM killer act on.
+
+Do not use `process_virtual_memory_bytes` for that. With ZGC the JVM reserves about 252 GiB of
+address space at startup, measured against 306 MB resident, so a 100 MiB leak would be a 0.04 percent
+change. It is also not monotonic with usage: measured with G1, a 100 MiB allocation moved virtual
+memory by 445 MB, and freeing it again moved virtual memory *up* by a further 31 MB while resident
+memory fell by 105 MB. It is useful only as a secondary signal, for memory that is reserved and never
+touched.
 
 ### `jvm_memory_used_bytes{area="heap"}` and `jvm_memory_used_bytes{area="nonheap"}` 
 
@@ -201,7 +226,50 @@ The `nonheap` does not include direct buffers.
 
 ### `jvm_buffer_pool_used_bytes{pool="direct"}`
 
-Netty makes use of pooled direct byte buffers.
+Direct byte buffers as accounted by `java.nio`. This does **not** cover most of Netty's off heap
+memory and is not relevant to monitor. Netty allocates the chunks of the pooled and the adaptive allocator through
+`java.lang.foreign.Arena`, which is outside the accounting of `java.nio`, so they appear neither here
+nor in any other MXBean pool. Only the buffers of `Unpooled` do. Measured with 100 MiB: unpooled
+moves this metric by the full amount, pooled and adaptive by zero. In practice it is a constant, the
+roughly 16 KB of challenge content cached by `ResourceFiles`.
+
+### `sensepitch_netty_allocator_used_memory_bytes`
+
+Memory usage of Netty allocators, labelled by `allocator` (`pooled`, `unpooled`, `default`) and `type`
+(`direct`, `heap`). Always available. Reports how much memory is in use by the application, not how much
+is reserved by the allocator.
+
+`default` is the allocator both the ingress and the upstream connections use, so it is the one to
+watch. `pooled` should stay at zero. `unpooled` is the static content cached at startup, a constant.
+Only `Unpooled.buffer()` and `Unpooled.directBuffer()` are counted; `copiedBuffer` and
+`wrappedBuffer` bypass the allocator and land in the heap metrics instead.
+
+### `jvm_native_memory_committed_bytes{pool="Other"}`
+
+The process wide off heap figure, covering every allocator. Needs `-XX:NativeMemoryTracking=summary`
+at startup, which costs 5 to 10 percent JVM performance and is a HotSpot feature, so it is off by
+default and the series are absent without it.
+
+### Tracking down memory growth
+
+1. `process_resident_memory_bytes` rising steadily is the alert.
+2. `jvm_memory_used_bytes{area="heap"}` separates a heap problem from an off heap one.
+3. `sensepitch_netty_allocator_used_memory_bytes` says which allocator holds it.
+4. `jvm_native_memory_committed_bytes{pool="Other"}` gives the process wide off heap total, when a
+   restart with native memory tracking is affordable.
+5. Netty's JFR events give per allocation detail. `io.netty.AllocateChunk`, `io.netty.FreeChunk`,
+   `io.netty.AllocateBuffer` and `io.netty.FreeBuffer` carry the allocator type, the size, whether
+   the memory is direct, and the address, so allocations and frees can be paired up. Record with
+   `jcmd <pid> JFR.start settings=<profile>` using Netty's `Netty Allocator Events.jfc`; the events
+   are off by default because they are expensive. See
+   [Analyzing Memory Allocator Behavior](https://github.com/netty/netty/wiki/Analyzing-Memory-Allocator-Behavior),
+   which also describes `AllocationPatternSimulator` for comparing the pooled and the adaptive
+   allocator on a recorded profile.
+
+Leaked buffers are reported separately. Netty's leak detector runs at level `SIMPLE` by default and
+logs a buffer that is garbage collected without having been released; raise it with
+`-Dio.netty.leakDetection.level=advanced` or `paranoid`. Detection is sampled, so a report means a
+real leak while silence proves nothing.
 
 ## Put Sensepitch Edge in front of NGINX
 
@@ -223,6 +291,30 @@ Example Paypal
 - IP: 173.0.81.140
 
 
+## Fallback / maintenance pages
+
+If the upstream returns `503` or `500`, or the streamed response head arrives with one of those
+statuses, Sensepitch Edge can serve a page or redirect instead of forwarding the upstream error.
+This is configured under `fallback:`, either globally or per site:
+
+````yaml
+fallback:
+  unavailableResponse:
+    file: /etc/sensepitch/unavailable.html
+    contentType: text/html; charset=UTF-8
+  errorResponse:
+    text: "Something is broken, please try again later"
+sites:
+  www.example.com:
+  www.example.de:
+    fallback:
+      unavailableResponse:
+        text: "Kaputt, versuch es später nochmal."
+````
+
+See `FallbackConfig` and `ResponseConfig` for the slot semantics, the page/redirect shape, and how
+global and per-site config is layered.
+
 ## Local testing
 
 ````
@@ -230,3 +322,7 @@ iptables -t nat -A OUTPUT -o lo -p tcp --dport 80  -j REDIRECT --to-port 7080
 iptables -t nat -A OUTPUT -o lo -p tcp --dport 443 -j REDIRECT --to-port 7443
 ````
 
+## Blogs about high performance Edge Proxy
+
+- https://dropbox.tech/infrastructure/how-we-migrated-dropbox-from-nginx-to-envoy
+- https://blog.cloudflare.com/pingora-open-source/

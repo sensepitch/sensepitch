@@ -6,7 +6,7 @@ import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.sensepitch.edge.SanitizeHostHandler.MISSING_HOST;
 import static org.sensepitch.edge.SanitizeHostHandler.UNKNOWN_HOST;
-import static org.sensepitch.edge.UnservicedHostHandler.NOT_FOUND_URI;
+import static org.sensepitch.edge.UnservicedHost.NOT_FOUND_URI;
 
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
@@ -25,6 +25,7 @@ class UnservicedHostHandlerBDDTest {
   static final HttpResponseStatus STATUS_400_BAD_REQUEST = HttpResponseStatus.BAD_REQUEST;
   static final HttpResponseStatus STATUS_307_TEMPORARY_REDIRECT =
       HttpResponseStatus.TEMPORARY_REDIRECT;
+  static final HttpResponseStatus STATUS_301_MOVED_PERMANENTLY = MOVED_PERMANENTLY;
   static final HttpResponseStatus STATUS_308_PERMANENT_REDIRECT =
       HttpResponseStatus.PERMANENT_REDIRECT;
 
@@ -73,7 +74,7 @@ class UnservicedHostHandlerBDDTest {
     steps
         .given_a_common_example_configuration()
         .when_request_to("foo.com", "/")
-        .then_response_status_is(STATUS_308_PERMANENT_REDIRECT)
+        .then_response_status_is(STATUS_301_MOVED_PERMANENTLY)
         .then_location_header_is("https://www.foo.com");
   }
 
@@ -103,7 +104,7 @@ class UnservicedHostHandlerBDDTest {
         .then_response_status_is(BAD_REQUEST)
         .then_location_header_is_absent()
         .when_request_to("foo.com", "/")
-        .then_response_status_is(STATUS_308_PERMANENT_REDIRECT)
+        .then_response_status_is(STATUS_301_MOVED_PERMANENTLY)
         .then_location_header_is("https://www.foo.com");
   }
 
@@ -124,7 +125,7 @@ class UnservicedHostHandlerBDDTest {
               .servicedDomains(Set.of("www.foo.com", "bar.com", "www.baz.com"))
               .defaultLocation("https://default.example")
               .build();
-      channel = new EmbeddedChannel(new UnservicedHostHandler(cfg));
+      channel = new EmbeddedChannel(new UnservicedHost(cfg).newHandler());
       return this;
     }
 

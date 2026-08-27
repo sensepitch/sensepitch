@@ -1,15 +1,12 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.sensepitch.edge.TimeBasedChallengeString.generateChallengeString;
-import static org.sensepitch.edge.TimeBasedChallengeString.verifyChallengeString;
+import static org.sensepitch.edge.TimeBasedChallenge.generateChallengeString;
+import static org.sensepitch.edge.TimeBasedChallenge.verifyChallengeString;
 
 import org.junit.jupiter.api.Test;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public class ChallengeTest {
 
   @Test
@@ -27,8 +24,8 @@ public class ChallengeTest {
     assertThat(verifyChallengeString("SDkjsdk0aoiewjfoiewjfC")).isEqualTo(0L);
   }
 
-  ChallengeStringGenerator DUMMY_CHALLENGE_GENERATOR =
-      new ChallengeStringGenerator() {
+  ChallengeGenerator DUMMY_CHALLENGE_GENERATOR =
+      new ChallengeGenerator() {
         @Override
         public String generateChallenge() {
           return "";
@@ -46,6 +43,18 @@ public class ChallengeTest {
     String nonce = "1658";
     ChallengeGenerationAndVerification challengeHandler =
         new ChallengeGenerationAndVerification(DUMMY_CHALLENGE_GENERATOR, "888");
-    assertThat(challengeHandler.verifyChallengeParameters(challenge, nonce)).isEqualTo(1);
+    assertThat(challengeHandler.verifyChallengeResponse(challenge, nonce)).isEqualTo(1);
+  }
+
+  /// The challenge files are served over TLS and BoringSSL needs the plaintext in direct memory, so
+  /// caching them in a heap buffer would copy the content into a fresh direct buffer on every
+  /// response, see `SslHandler.wrap()` and the comment in [ResourceFiles].
+  @Test
+  public void challengeFilesAreCachedDirect() {
+    ResourceFiles files = new ResourceFiles("challenge/files/");
+    assertThat(files.getFileNames()).isNotEmpty();
+    for (String name : files.getFileNames()) {
+      assertThat(files.getFile(name).buf().isDirect()).as("%s is cached direct", name).isTrue();
+    }
   }
 }

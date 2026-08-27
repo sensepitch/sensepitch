@@ -5,9 +5,7 @@ import io.netty.channel.ChannelHandlerContext;
 import java.lang.System.Logger.Level;
 import java.net.InetSocketAddress;
 
-/**
- * @author Jens Wilke
- */
+/// @author Jens Wilke
 public interface ProxyLogger {
 
   static ProxyLogger get(String source) {
