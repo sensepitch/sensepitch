@@ -52,4 +52,5 @@ jobs:
         path: |
           target/surefire-reports/
           target/reports/apidocs/
+          target/serenity-reports/
         retention-days: 7

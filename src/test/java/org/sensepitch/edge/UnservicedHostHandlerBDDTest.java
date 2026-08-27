@@ -12,12 +12,18 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.*;
 import java.util.Set;
+import net.serenitybdd.annotations.Epic;
+import net.serenitybdd.annotations.Feature;
 import net.serenitybdd.annotations.Step;
 import net.serenitybdd.annotations.Steps;
+import net.serenitybdd.annotations.Story;
 import net.serenitybdd.junit5.SerenityJUnit5Extension;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
+@Epic("Edge proxy")
+@Feature("Unserviced host handling")
 @ExtendWith(SerenityJUnit5Extension.class)
 class UnservicedHostHandlerBDDTest {
 
@@ -31,81 +37,96 @@ class UnservicedHostHandlerBDDTest {
 
   @Steps UnservicedSteps steps;
 
-  @Test
-  void allowedHost_passesThrough() {
-    steps
-        .given_a_common_example_configuration()
-        .when_request_to("bar.com", "/")
-        .then_request_is_passed_to_next_handler();
+  @Nested
+  @Story("Serviced hosts pass through unchanged")
+  class ServicedHost {
+
+    @Test
+    void allowedHost_passesThrough() {
+      steps
+          .given_a_common_example_configuration()
+          .when_request_to("bar.com", "/")
+          .then_request_is_passed_to_next_handler();
+    }
   }
 
-  @Test
-  void missingHost_resultsInBadRequestStatus() {
-    steps
-        .given_a_common_example_configuration()
-        .when_request_without_host_to_uri("/")
-        .then_response_status_is(STATUS_400_BAD_REQUEST)
-        .then_location_header_is_absent()
-        .when_request_without_host_to_uri("/something")
-        .then_response_status_is(STATUS_400_BAD_REQUEST)
-        .then_location_header_is_absent();
+  @Nested
+  @Story("Requests without a valid host are rejected")
+  class InvalidHost {
+
+    @Test
+    void missingHost_resultsInBadRequestStatus() {
+      steps
+          .given_a_common_example_configuration()
+          .when_request_without_host_to_uri("/")
+          .then_response_status_is(STATUS_400_BAD_REQUEST)
+          .then_location_header_is_absent()
+          .when_request_without_host_to_uri("/something")
+          .then_response_status_is(STATUS_400_BAD_REQUEST)
+          .then_location_header_is_absent();
+    }
+
+    @Test
+    void missingHostAfterSanitize_resultsInBadRequestStatus() {
+      steps
+          .given_a_common_example_configuration()
+          .when_request_to(MISSING_HOST, "/")
+          .then_response_status_is(STATUS_400_BAD_REQUEST)
+          .then_location_header_is_absent();
+    }
+
+    @Test
+    void unknownHost_resultsInBadRequestStatus() {
+      steps
+          .given_a_common_example_configuration()
+          .when_request_to(UNKNOWN_HOST, "/")
+          .then_response_status_is(STATUS_400_BAD_REQUEST)
+          .then_location_header_is_absent();
+    }
   }
 
-  @Test
-  void missingHostAfterSanitize_resultsInBadRequestStatus() {
-    steps
-        .given_a_common_example_configuration()
-        .when_request_to(MISSING_HOST, "/")
-        .then_response_status_is(STATUS_400_BAD_REQUEST)
-        .then_location_header_is_absent();
-  }
+  @Nested
+  @Story("Unserviced hosts redirect to a target")
+  class UnservicedRedirect {
 
-  @Test
-  void unknownHost_resultsInBadRequestStatus() {
-    steps
-        .given_a_common_example_configuration()
-        .when_request_to(UNKNOWN_HOST, "/")
-        .then_response_status_is(STATUS_400_BAD_REQUEST)
-        .then_location_header_is_absent();
-  }
+    @Test
+    void mappedHost_redirectsToMappedTarget() {
+      steps
+          .given_a_common_example_configuration()
+          .when_request_to("foo.com", "/")
+          .then_response_status_is(STATUS_301_MOVED_PERMANENTLY)
+          .then_location_header_is("https://www.foo.com");
+    }
 
-  @Test
-  void mappedHost_redirectsToMappedTarget() {
-    steps
-        .given_a_common_example_configuration()
-        .when_request_to("foo.com", "/")
-        .then_response_status_is(STATUS_301_MOVED_PERMANENTLY)
-        .then_location_header_is("https://www.foo.com");
-  }
+    @Test
+    void otherHost_redirectsToDefaultTarget() {
+      steps
+          .given_a_common_example_configuration()
+          .when_request_to("other.com", "/")
+          .then_response_status_is(STATUS_307_TEMPORARY_REDIRECT)
+          .then_location_header_is("https://default.example");
+    }
 
-  @Test
-  void otherHost_redirectsToDefaultTarget() {
-    steps
-        .given_a_common_example_configuration()
-        .when_request_to("other.com", "/")
-        .then_response_status_is(STATUS_307_TEMPORARY_REDIRECT)
-        .then_location_header_is("https://default.example");
-  }
+    @Test
+    void otherHostWithUri_redirectsToDefaultTarget() {
+      steps
+          .given_a_common_example_configuration()
+          .when_request_to("other.com", "/anything")
+          .then_response_status_is(STATUS_307_TEMPORARY_REDIRECT)
+          .then_location_header_is("https://default.example" + NOT_FOUND_URI);
+    }
 
-  @Test
-  void otherHostWithUri_redirectsToDefaultTarget() {
-    steps
-        .given_a_common_example_configuration()
-        .when_request_to("other.com", "/anything")
-        .then_response_status_is(STATUS_307_TEMPORARY_REDIRECT)
-        .then_location_header_is("https://default.example" + NOT_FOUND_URI);
-  }
-
-  @Test
-  void secondRequestWorks() {
-    steps
-        .given_a_common_example_configuration()
-        .when_request_without_host_to_uri("/")
-        .then_response_status_is(BAD_REQUEST)
-        .then_location_header_is_absent()
-        .when_request_to("foo.com", "/")
-        .then_response_status_is(STATUS_301_MOVED_PERMANENTLY)
-        .then_location_header_is("https://www.foo.com");
+    @Test
+    void secondRequestWorks() {
+      steps
+          .given_a_common_example_configuration()
+          .when_request_without_host_to_uri("/")
+          .then_response_status_is(BAD_REQUEST)
+          .then_location_header_is_absent()
+          .when_request_to("foo.com", "/")
+          .then_response_status_is(STATUS_301_MOVED_PERMANENTLY)
+          .then_location_header_is("https://www.foo.com");
+    }
   }
 
   public static class UnservicedSteps {

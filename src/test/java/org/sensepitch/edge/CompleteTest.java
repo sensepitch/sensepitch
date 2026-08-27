@@ -21,13 +21,19 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import net.serenitybdd.annotations.Epic;
+import net.serenitybdd.annotations.Feature;
 import net.serenitybdd.annotations.Step;
+import net.serenitybdd.annotations.Steps;
 import net.serenitybdd.junit5.SerenityJUnit5Extension;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 /// @author Jens Wilke
+@Epic("Edge proxy")
+@Feature("End-to-end proxy request handling")
 @ExtendWith(SerenityJUnit5Extension.class)
 class CompleteTest {
 
@@ -70,7 +76,12 @@ class CompleteTest {
           .metrics(MetricsConfig.builder().enable(false).build())
           .build();
 
-  Steps steps = new Steps().given_initialized_proxy_with(COMMON_CONFIG);
+  @Steps CompleteSteps steps;
+
+  @BeforeEach
+  void initializeProxy() {
+    steps.given_initialized_proxy_with(COMMON_CONFIG);
+  }
 
   @Test
   void deflected() {
@@ -127,14 +138,14 @@ class CompleteTest {
     steps.finish_and_check_for_leaks();
   }
 
-  static class Steps extends ProxyConstructBDDTest.ExtendableSteps<Steps> {
+  static class CompleteSteps extends ProxyConstructBDDTest.ExtendableSteps<CompleteSteps> {
 
     EmbeddedChannel ingressChannel;
     HttpResponse response;
     List<ReferenceCounted> referenceCounted = new ArrayList<>();
 
     @Step
-    Steps finish_and_check_for_leaks() {
+    CompleteSteps finish_and_check_for_leaks() {
       if (ingressChannel == null) {
         return this;
       }
@@ -148,7 +159,7 @@ class CompleteTest {
     }
 
     @Step
-    Steps given_initialized_proxy_with(ProxyConfig proxyConfig) {
+    CompleteSteps given_initialized_proxy_with(ProxyConfig proxyConfig) {
       given_the_configuration(proxyConfig);
       then_expect_initialized_without_exception();
       return this;
@@ -168,7 +179,7 @@ class CompleteTest {
     }
 
     @Step
-    Steps when_requesting(String host, String uri) {
+    CompleteSteps when_requesting(String host, String uri) {
       newChannelIfNeeded();
       DefaultHttpRequest req = new DefaultHttpRequest(HTTP_1_1, GET, uri);
       if (host != null) {
@@ -191,19 +202,19 @@ class CompleteTest {
     }
 
     @Step
-    Steps then_the_response_status_is(HttpResponseStatus expectedStatus) {
+    CompleteSteps then_the_response_status_is(HttpResponseStatus expectedStatus) {
       assertThat(response.status().code()).isEqualTo(expectedStatus.code());
       return this;
     }
 
     @Step
-    Steps then_the_response_location_header_is(String location) {
+    CompleteSteps then_the_response_location_header_is(String location) {
       assertThat(response.headers().get(HttpHeaderNames.LOCATION)).isEqualTo(location);
       return this;
     }
 
     @Step
-    Steps then_expect_content(String expectedContent) {
+    CompleteSteps then_expect_content(String expectedContent) {
       ByteBuf bb = ((HttpContent) response).content();
       String txt = bb.readString(bb.readableBytes(), StandardCharsets.US_ASCII);
       assertThat(txt).isEqualTo(expectedContent);
@@ -211,19 +222,19 @@ class CompleteTest {
     }
 
     @Step
-    Steps then_the_response_header_is(CharSequence name, String value) {
+    CompleteSteps then_the_response_header_is(CharSequence name, String value) {
       assertThat(response.headers().get(name)).isEqualTo(value);
       return this;
     }
 
     @Step
-    Steps then_channel_closed() {
+    CompleteSteps then_channel_closed() {
       assertThat(ingressChannel.isActive()).isFalse();
       return this;
     }
 
     @Step
-    Steps then_channel_open() {
+    CompleteSteps then_channel_open() {
       assertThat(ingressChannel.isActive()).isTrue();
       return this;
     }

@@ -4,16 +4,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Map;
+import net.serenitybdd.annotations.Epic;
+import net.serenitybdd.annotations.Feature;
 import net.serenitybdd.annotations.Step;
+import net.serenitybdd.annotations.Steps;
 import net.serenitybdd.junit5.SerenityJUnit5Extension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 /// @author Jens Wilke
+@Epic("Edge proxy")
+@Feature("Proxy configuration validation")
 @ExtendWith(SerenityJUnit5Extension.class)
 class ProxyConstructBDDTest {
 
-  Steps steps = new Steps();
+  @Steps ConstructSteps steps;
 
   @Test
   void testEmpty() {
@@ -136,7 +141,7 @@ class ProxyConstructBDDTest {
         .hasMessageContaining("response should be one of");
   }
 
-  static class Steps extends ExtendableSteps<Steps> {}
+  static class ConstructSteps extends ExtendableSteps<ConstructSteps> {}
 
   @SuppressWarnings({"unchecked", "UnusedReturnValue"})
   static class ExtendableSteps<T extends ExtendableSteps<?>> {
