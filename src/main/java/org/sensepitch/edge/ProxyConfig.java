@@ -10,6 +10,7 @@ public record ProxyConfig(
     ListenConfig listen,
     UnservicedHostConfig unservicedHost,
     IpLookupConfig ipLookup,
+    Ja4Config ja4,
     FallbackConfig fallback,
     UpstreamConfig upstream,
     ProtectionConfig protection,
