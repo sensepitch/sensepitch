@@ -50,6 +50,8 @@ public class Proxy implements ProxyContext {
   private final RequestLogger requestLogger;
   private final SanitizeHostHandler sanitizeHostHandler;
   private final SiteSelector siteSelector;
+  private final Ja4Config ja4Config;
+  private final Ja4HeaderHandler ja4HeaderHandler;
 
   public Proxy(ProxyConfig config) {
     config = KeyInjector.injectAllMapKeys(config);
@@ -63,6 +65,9 @@ public class Proxy implements ProxyContext {
     }
     eventLoopGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
     this.config = config;
+    ja4Config = config.ja4() != null ? config.ja4() : Ja4Config.DEFAULT;
+    // added unconditionally, so a client can never spoof the fingerprint headers
+    ja4HeaderHandler = new Ja4HeaderHandler(ja4Config);
     metricsBridge = initializeMetrics();
     metricsBridge.expose(metrics);
     trackIngressConnectionsHandler = metricsBridge.expose(new TrackIngressConnectionsHandler());
@@ -217,6 +222,10 @@ public class Proxy implements ProxyContext {
                 protected void initChannel(SocketChannel ch) {
                   final ChannelPipeline pipeline = ch.pipeline();
                   pipeline.addLast(trackIngressConnectionsHandler);
+                  if (ja4Config.enable()) {
+                    // must see the raw ClientHello, so before TLS is terminated
+                    pipeline.addLast(new Ja4Handler());
+                  }
                   pipeline.addLast(new SniHandler(sniMapping));
                   pipeline.addLast(new CountByteIoHandler());
                   pipeline.addLast(new HttpServerCodec());
@@ -249,6 +258,7 @@ public class Proxy implements ProxyContext {
     pipeline.addLast(new IngressTimeoutHandler(connectionConfig, metrics));
     pipeline.addLast(new HttpServerKeepAliveHandler());
     pipeline.addLast(new IpTraitsHandler(ipTraitsLookup));
+    pipeline.addLast(ja4HeaderHandler);
     //            ch.pipeline().addLast(new ReportIoErrorsHandler("downstream"));
     if (unservicedHost != null) {
       pipeline.addLast(unservicedHost.newHandler());
