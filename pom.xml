@@ -20,6 +20,7 @@
     <serenity.version>4.2.34</serenity.version>
     <bytebuddy.version>1.15.11</bytebuddy.version>
     <log4j.version>2.25.1</log4j.version>
+    <jmh.version>1.37</jmh.version>
     <!-- colon-free, so it can be part of a file name on any platform -->
     <maven.build.timestamp.format>yyyyMMddHHmmssSSS</maven.build.timestamp.format>
     <!-- overwritten by jacoco prepare-agent; empty default keeps surefire working when jacoco is skipped -->
@@ -171,6 +172,19 @@
       <version>${bytebuddy.version}</version>
       <scope>test</scope>
     </dependency>
+    <!-- microbenchmarks, see Ja4Benchmark. Not run by surefire, launched via its main() -->
+    <dependency>
+      <groupId>org.openjdk.jmh</groupId>
+      <artifactId>jmh-core</artifactId>
+      <version>${jmh.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.openjdk.jmh</groupId>
+      <artifactId>jmh-generator-annprocess</artifactId>
+      <version>${jmh.version}</version>
+      <scope>test</scope>
+    </dependency>
 
   </dependencies>
 
@@ -301,6 +315,28 @@
             <arg>-Alombok.builder.toBuilder=true</arg>
           </compilerArgs>
         </configuration>
+        <executions>
+          <execution>
+            <!-- the JMH benchmark generator only needs to run over the test sources. Execution
+                 level configuration replaces the inherited processor list, so Lombok is repeated. -->
+            <id>default-testCompile</id>
+            <goals><goal>testCompile</goal></goals>
+            <configuration>
+              <annotationProcessorPaths>
+                <path>
+                  <groupId>org.projectlombok</groupId>
+                  <artifactId>lombok</artifactId>
+                  <version>${lombok.version}</version>
+                </path>
+                <path>
+                  <groupId>org.openjdk.jmh</groupId>
+                  <artifactId>jmh-generator-annprocess</artifactId>
+                  <version>${jmh.version}</version>
+                </path>
+              </annotationProcessorPaths>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
       <plugin>
         <!-- javadoc parses sources, so it cannot see Lombok-generated members
