@@ -16,12 +16,15 @@
 # The RSA handshake is still far more expensive than the fingerprint, so expect the difference to
 # be small. Ja4Benchmark measures the fingerprint on its own and gives the absolute number.
 #
+# The proxy is configured from ja4-benchmark.yaml rather than from the environment, see run().
+#
 # Requires: vegeta, openssl, a built ../target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar
 
 set -e
 cd "$(dirname "$0")"
 
 JAR=../target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar
+TEMPLATE=ja4-benchmark.yaml
 PORT=${PORT:-17444}
 DURATION=${DURATION:-10s}
 # above what the hardware can serve with a handshake per request, to reach saturation
@@ -42,15 +45,6 @@ if [ ! -f ssl/nginx.crt ]; then
     -subj "/CN=localhost"
 fi
 
-# everything except JA4 is held constant between the two runs
-export SENSEPITCH_EDGE_LISTEN_HTTPS_PORT=$PORT
-export SENSEPITCH_EDGE_LISTEN_SSL_KEY_PATH=ssl/nginx.key
-export SENSEPITCH_EDGE_LISTEN_SSL_CERT_PATH=ssl/nginx.crt
-export SENSEPITCH_EDGE_SITES_0_KEY=localhost
-export SENSEPITCH_EDGE_SITES_0_RESPONSE_TEXT=ok
-export SENSEPITCH_EDGE_PROTECTION_DISABLE=true
-export SENSEPITCH_EDGE_METRICS_ENABLE=false
-
 waitForPort() {
   for _ in $(seq 1 50); do
     if wget -q -O /dev/null --no-check-certificate "$URL"; then
@@ -62,11 +56,14 @@ waitForPort() {
   exit 1
 }
 
-# $1: value of SENSEPITCH_EDGE_JA4_ENABLE
+# $1: value of ja4.enable. Everything else comes from the template, so it is identical
+# between the two runs. Main only reads the environment when it gets no config file
+# argument, so the flag has to be substituted into the config instead of exported.
 run() {
-  export SENSEPITCH_EDGE_JA4_ENABLE=$1
   LOG=ja4-benchmark-$1.log
-  java -XX:+UseZGC --enable-native-access=ALL-UNNAMED -jar $JAR > "$LOG" 2>&1 &
+  CONF=ja4-benchmark-$1.yaml
+  sed -e "s/__JA4_ENABLE__/$1/" -e "s/__PORT__/$PORT/" "$TEMPLATE" > "$CONF"
+  java -XX:+UseZGC --enable-native-access=ALL-UNNAMED -jar $JAR "$CONF" > "$LOG" 2>&1 &
   PID=$!
   trap 'kill $PID 2>/dev/null' EXIT
   waitForPort
