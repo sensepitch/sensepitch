@@ -49,11 +49,12 @@ public class IpTraitsHandler extends ChannelInboundHandlerAdapter {
         collectTraits.append("country=");
         collectTraits.append(attributes.isoCountry());
       }
-      if (attributes.crawler()) {
+      if (attributes.isCrawler()) {
         if (!collectTraits.isEmpty()) {
           collectTraits.append(", ");
         }
-        collectTraits.append("crawler");
+        collectTraits.append("crawler=");
+        collectTraits.append(attributes.crawlerName());
       }
       // TODO: add key/value traits
       traits = collectTraits.toString();
