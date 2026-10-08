@@ -28,7 +28,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
 
   static final ProxyLogger DEBUG = ProxyLogger.get(DownstreamHandler.class);
 
-  // private final UpstreamRouter upstreamRouter;
   private final Upstream upstream;
   private Future<Channel> upstreamChannelFuture;
   private boolean returnUpstreamToPool;

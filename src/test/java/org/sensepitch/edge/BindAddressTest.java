@@ -9,6 +9,9 @@ import org.junit.jupiter.api.Timeout;
 
 class BindAddressTest {
 
+  /// Flaky: hit the 5 second timeout once in a full test run (2026-10-08), but passed three times
+  /// in a row when run alone. A slow DNS lookup of `not-a-valid-address` may be the cause; not
+  /// investigated.
   @Test
   @Timeout(value = 5, unit = TimeUnit.SECONDS)
   void invalidBindAddressThrows() {

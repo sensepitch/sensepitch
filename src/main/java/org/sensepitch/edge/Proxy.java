@@ -44,7 +44,6 @@ public class Proxy implements ProxyContext {
   private final Mapping<String, SslContext> sniMapping;
   private final UnservicedHost unservicedHost;
   // private final DownstreamHandler downstreamHandler;
-  // private final UpstreamRouter upstreamRouter;
   private final IpTraitsLookup ipTraitsLookup;
   private final EventLoopGroup eventLoopGroup;
   private final RequestLogger requestLogger;

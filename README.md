@@ -315,6 +315,65 @@ sites:
 See `FallbackConfig` and `ResponseConfig` for the slot semantics, the page/redirect shape, and how
 global and per-site config is layered.
 
+## Upstream routing
+
+A site routes to its `upstream` by default. Under `paths:`, other upstreams can be selected by
+request path prefix; the longest matching prefix wins, regardless of configuration order.
+`overrides:` replace the whole routing (`upstream` and `paths`) when a cookie with the given name
+is present, e.g. to switch on a complete beta setup. An override needs its own `upstream`;
+the site's `upstream` and `paths` are not inherited. If several override cookies are present, the
+first override in the list wins.
+
+Instead of an `upstream`, a path can have a fixed `response`, e.g. to block a path with 404. The
+site's protection still applies:
+
+````yaml
+sites:
+  www.example.com:
+    upstream: { target: shop:8080 }
+    paths:
+      /bo/*:
+        response:
+          status: 404
+          text: Not Found
+````
+
+Paths are prefixes: `/bo/*` does not match `/bo` itself, `/bo*` matches `/bo` but also `/books`.
+
+Upstreams can be defined globally under `upstreams:` and referenced by name with `ref:`.
+
+````yaml
+upstreams:
+  api:
+    target: api:8080
+  api-beta:
+    target: api-beta:8080
+sites:
+  www.example.com:
+    upstream:
+      target: shop:8080
+    paths:
+      /api/*:
+        upstream: { ref: api }
+      /api/v2/*:
+        upstream: { target: api-v2:8080 }
+    overrides:
+      - whenCookie: beta
+        upstream:
+          target: shop-beta:8080
+        paths:
+          /api/*:
+            upstream: { ref: api-beta }
+````
+
+| Request | Upstream |
+|---|---|
+| `/products` | `shop` |
+| `/api/x` | `api` |
+| `/api/v2/x` | `api-v2` |
+| `/products` with cookie `beta` | `shop-beta` |
+| `/api/v2/x` with cookie `beta` | `api-beta` |
+
 ## Local testing
 
 ````

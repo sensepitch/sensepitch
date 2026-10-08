@@ -122,6 +122,67 @@ class CompleteTest {
         .then_channel_open();
   }
 
+  /// Requests not matching a path go to the site default. Path upstreams are never connected here.
+  @Test
+  void nonMatchingPathGoesToSiteDefault() {
+    PathRouteConfig unreachable =
+        PathRouteConfig.builder()
+            .upstream(UpstreamConfig.builder().target("127.0.0.1:1").build())
+            .build();
+    ProxyConfig config =
+        COMMON_CONFIG.toBuilder()
+            .sites(
+                Map.of(
+                    "example.com",
+                    SiteConfig.builder()
+                        .response(ResponseConfig.builder().text("site default").build())
+                        .protection(ProtectionConfig.builder().disable(true).build())
+                        .paths(Map.of("/api/*", unreachable))
+                        .build()))
+            .build();
+    steps = new Steps().given_initialized_proxy_with(config);
+    steps
+        .when_requesting("example.com", "/products")
+        .then_expect_content("site default")
+        .when_requesting("example.com", "/apix")
+        .then_expect_content("site default")
+        .then_channel_open();
+  }
+
+  @Test
+  void pathWithFixedResponse() {
+    ProxyConfig config =
+        COMMON_CONFIG.toBuilder()
+            .sites(
+                Map.of(
+                    "example.com",
+                    SiteConfig.builder()
+                        .response(ResponseConfig.builder().text("site default").build())
+                        .protection(ProtectionConfig.builder().disable(true).build())
+                        .paths(
+                            Map.of(
+                                "/bo/*",
+                                PathRouteConfig.builder()
+                                    .response(
+                                        ResponseConfig.builder()
+                                            .status(404)
+                                            .text("Not Found")
+                                            .build())
+                                    .build()))
+                        .build()))
+            .build();
+    steps = new Steps().given_initialized_proxy_with(config);
+    steps
+        .when_requesting("example.com", "/bo/x")
+        .then_the_response_status_is(HttpResponseStatus.NOT_FOUND)
+        .then_expect_content("Not Found")
+        .then_channel_open()
+        .when_requesting("example.com", "/products")
+        .then_the_response_status_is(HttpResponseStatus.OK)
+        .then_expect_content("site default")
+        .then_channel_open();
+  }
+
   @AfterEach
   void finish() {
     steps.finish_and_check_for_leaks();
@@ -169,10 +230,18 @@ class CompleteTest {
 
     @Step
     Steps when_requesting(String host, String uri) {
+      return when_requesting_with_cookie(host, uri, null);
+    }
+
+    @Step
+    Steps when_requesting_with_cookie(String host, String uri, String cookie) {
       newChannelIfNeeded();
       DefaultHttpRequest req = new DefaultHttpRequest(HTTP_1_1, GET, uri);
       if (host != null) {
         req.headers().set(HttpHeaderNames.HOST, host);
+      }
+      if (cookie != null) {
+        req.headers().set(HttpHeaderNames.COOKIE, cookie);
       }
       // TODO: add lstacontent?
       // ingressChannel.writeInbound(req);

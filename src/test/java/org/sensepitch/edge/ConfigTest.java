@@ -131,6 +131,68 @@ public class ConfigTest {
   }
 
   @Test
+  public void readRoutingFromYaml() {
+    String yaml =
+        """
+      upstreams:
+        api:
+          target: api:8080
+      sites:
+        www.example.com:
+          upstream:
+            target: shop:8080
+          paths:
+            /api/*:
+              upstream: { ref: api }
+            /bo/*:
+              response: { status: 404, text: Not Found }
+          overrides:
+            - whenCookie: beta
+              upstream:
+                target: shop-beta:8080
+              paths:
+                /api/*:
+                  upstream: { target: api-beta:8080 }
+    """;
+    Node root = new Yaml().compose(new StringReader(yaml));
+    ProxyConfig cfg =
+        KeyInjector.injectAllMapKeys(RecordConstructor.construct(ProxyConfig.class, root));
+    assertThat(cfg.upstreams().get("api").key()).isEqualTo("api");
+    assertThat(cfg.upstreams().get("api").target()).isEqualTo("api:8080");
+    SiteConfig site = cfg.sites().get("www.example.com");
+    assertThat(site.upstream().target()).isEqualTo("shop:8080");
+    assertThat(site.paths().get("/api/*").upstream().ref()).isEqualTo("api");
+    assertThat(site.paths().get("/bo/*").response().status()).isEqualTo(404);
+    assertThat(site.paths().get("/bo/*").response().text()).isEqualTo("Not Found");
+    RoutingOverrideConfig override = site.overrides().getFirst();
+    assertThat(override.whenCookie()).isEqualTo("beta");
+    assertThat(override.upstream().target()).isEqualTo("shop-beta:8080");
+    assertThat(override.paths().get("/api/*").upstream().target()).isEqualTo("api-beta:8080");
+  }
+
+  @Test
+  public void readRoutingFromEnvironment() throws Exception {
+    Map<String, String> env =
+        Map.of(
+            "SENSEPITCH_EDGE_UPSTREAMS_0_KEY", "api",
+            "SENSEPITCH_EDGE_UPSTREAMS_0_TARGET", "api:8080",
+            "SENSEPITCH_EDGE_SITES_0_KEY", "www.example.com",
+            "SENSEPITCH_EDGE_SITES_0_PATHS_0_KEY", "/api/*",
+            "SENSEPITCH_EDGE_SITES_0_PATHS_0_UPSTREAM_REF", "api",
+            "SENSEPITCH_EDGE_SITES_0_OVERRIDES_0_WHEN_COOKIE", "beta",
+            "SENSEPITCH_EDGE_SITES_0_OVERRIDES_0_PATHS_0_KEY", "/api/*",
+            "SENSEPITCH_EDGE_SITES_0_OVERRIDES_0_PATHS_0_UPSTREAM_TARGET", "api-beta:8080");
+    ProxyConfig cfg =
+        (ProxyConfig) EnvInjector.injectFromEnv("SENSEPITCH_EDGE_", env, ProxyConfig.builder());
+    assertThat(cfg.upstreams().get("api").target()).isEqualTo("api:8080");
+    SiteConfig site = cfg.sites().get("www.example.com");
+    assertThat(site.paths().get("/api/*").upstream().ref()).isEqualTo("api");
+    RoutingOverrideConfig override = site.overrides().getFirst();
+    assertThat(override.whenCookie()).isEqualTo("beta");
+    assertThat(override.paths().get("/api/*").upstream().target()).isEqualTo("api-beta:8080");
+  }
+
+  @Test
   public void injectKey() {
     String yaml =
         """
