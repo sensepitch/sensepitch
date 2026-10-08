@@ -1,0 +1,32 @@
+# Config template for ja4-benchmark.sh. Not runnable as is: the script substitutes
+# __JA4_ENABLE__ with false and then true, and __PORT__ with $PORT, then writes the result
+# to ja4-benchmark-<value>.yaml. Everything else is held constant between the two runs, so
+# the only difference measured is the fingerprint.
+#
+# Relative cert paths resolve against the working directory, and the script cds into
+# performance-test, where it also generates the self-signed cert.
+
+listen:
+  # explicit, because listen.address has no effective default: an absent value reaches
+  # InetSocketAddress as null and startup fails
+  address: 0.0.0.0
+  httpsPort: __PORT__
+  ssl:
+    certPath: ssl/nginx.crt
+    keyPath: ssl/nginx.key
+
+ja4:
+  enable: __JA4_ENABLE__
+
+metrics:
+  enable: false
+
+protection:
+  disable: true
+
+sites:
+  # No upstream. The response is served from an in-process channel, so the measurement
+  # covers TLS termination, HTTP parsing and the handlers, not an upstream round trip.
+  localhost:
+    response:
+      text: ok

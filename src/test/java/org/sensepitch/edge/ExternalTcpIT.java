@@ -1,15 +1,8 @@
 package org.sensepitch.edge;
 
-import io.netty.util.concurrent.EventExecutor;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
+import static org.assertj.core.api.Assertions.assertThat;
 
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLSocket;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
+import io.netty.util.concurrent.EventExecutor;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -23,8 +16,14 @@ import java.security.cert.X509Certificate;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 /// Boots the proxy on a real TCP port with TLS.
 ///
@@ -65,7 +64,10 @@ class ExternalTcpIT {
                     // port 1 is closed, so forwarding here fails and the proxy logs
                     "deadupstream.com",
                     SiteConfig.builder()
-                        .upstream(UpstreamConfig.builder().target("127.0.0.1:" + ALWAYS_CLOSED_PORT).build())
+                        .upstream(
+                            UpstreamConfig.builder()
+                                .target("127.0.0.1:" + ALWAYS_CLOSED_PORT)
+                                .build())
                         .protection(ProtectionConfig.builder().disable(true).build())
                         .build()))
             .metrics(MetricsConfig.builder().enable(false).build())
@@ -137,14 +139,12 @@ class ExternalTcpIT {
     try (SSLSocket socket = tlsSocket()) {
       socket.startHandshake();
       socket
-              .getOutputStream()
-              .write(
-                      "GET / HTTP/1.0\r\nHost: example.com\r\n\r\n"
-                              .getBytes(StandardCharsets.US_ASCII));
+          .getOutputStream()
+          .write("GET / HTTP/1.0\r\nHost: example.com\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
       socket.getOutputStream().flush();
 
       String response =
-              new String(socket.getInputStream().readAllBytes(), StandardCharsets.US_ASCII);
+          new String(socket.getInputStream().readAllBytes(), StandardCharsets.US_ASCII);
       assertThat(response).startsWith("HTTP/1.1 200");
       assertThat(response).contains("a test response");
       assertNothingLogged();
@@ -158,7 +158,10 @@ class ExternalTcpIT {
       socket
           .getOutputStream()
           .write(
-              "GET / HTTP/1.1\r\nHost: deadupstream.com\r\nConnection: close\r\n\r\n" // http 1.0 version (separate test)
+              "GET / HTTP/1.1\r\nHost: deadupstream.com\r\nConnection: close\r\n\r\n" // http 1.0
+                  // version
+                  // (separate
+                  // test)
                   .getBytes(StandardCharsets.US_ASCII));
       socket.getOutputStream().flush();
       awaitUpstreamFailureHandled(socket);
@@ -171,10 +174,10 @@ class ExternalTcpIT {
     try (SSLSocket socket = tlsSocket()) {
       socket.startHandshake();
       socket
-              .getOutputStream()
-              .write(
-                      "GET / HTTP/1.0\r\nHost: deadupstream.com\r\n\r\n"
-                              .getBytes(StandardCharsets.US_ASCII));
+          .getOutputStream()
+          .write(
+              "GET / HTTP/1.0\r\nHost: deadupstream.com\r\n\r\n"
+                  .getBytes(StandardCharsets.US_ASCII));
       socket.getOutputStream().flush();
       awaitUpstreamFailureHandled(socket);
     }
@@ -204,7 +207,7 @@ class ExternalTcpIT {
         .describedAs("proxy must stay silent for malformed input")
         .isEmpty();
   }
-  
+
   // the group is owned and closed by the proxy, the test only borrows it
   @SuppressWarnings("resource")
   private void drainEventLoops() throws InterruptedException {

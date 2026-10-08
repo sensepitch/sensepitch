@@ -2,7 +2,6 @@ organization	category	ASN	remark	fragment-agent-match	agent-match
 					adbeat-check-access-script adbeat.com/policy
 Meta	crawler	32934		+http://www.facebook.com/externalhit_uatext.php	facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)
 Meta	crawler	32934		+https://developers.facebook.com/docs/sharing/webmasters/crawler	meta-externalagent/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler)
-					Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Amazonbot/0.1; +https://developer.amazon.com/support/amazonbot) Chrome/119.0.6045.214 Safari/537.36
 Microsoft	crawler	8075		+http://www.bing.com/bingbot.htm	Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm) Chrome/116.0.1938.76 Safari/537.36
 					Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; ClaudeBot/1.0; +claudebot@anthropic.com)
 Open AI	crawler	8075	published IP ranges	 +https://openai.com/gptbot	Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2; +https://openai.com/gptbot)

@@ -1,4 +1,5 @@
-googlebot.json
-special-crawlers.json
-user-triggered-fetchers-google.json
-user-triggered-fetchers.json
+google/googlebot.json
+google/special-crawlers.json
+google/user-triggered-fetchers-google.json
+google/user-triggered-fetchers.json
+amazon/amazonbot.json

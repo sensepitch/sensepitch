@@ -96,6 +96,7 @@ public class DetectCrawler implements BypassCheck {
     }
     String ipLabels = IpTraitsHandler.extract(request);
     if (ipLabels != null && ipLabels.contains("crawler")) {
+      BypassCheck.setBypassReason(request, "crawler-ip-match");
       request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_CRAWLER);
       return true;
     }

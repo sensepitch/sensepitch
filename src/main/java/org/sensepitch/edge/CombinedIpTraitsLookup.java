@@ -10,6 +10,10 @@ import java.util.List;
 /// @author Jens Wilke
 public class CombinedIpTraitsLookup implements IpTraitsLookup {
 
+  static final String CRAWLER_IPS_DIRECTORY = "crawler-ips/";
+  static final String CRAWLER_LABEL_PREFIX = "crawler:";
+  static final String UNKNOWN_CRAWLER_NAME = "unknown";
+
   ProxyLogger LOG = ProxyLogger.get(CombinedIpTraitsLookup.class);
 
   private final List<IpTraitsLookup> ipAttributesLookups;
@@ -30,25 +34,41 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
           new IpInfoCountryAndAsnLookup(ipLookupConfig.ipInfoPath());
       ipAttributesLookups.add(ipLookup);
     }
-    ipLabelLookup = readGoogleBotList();
+    ipLabelLookup = readCrawlerIpLists();
     LOG.info("IP lookup nodes: " + ((TrieIpLabelLookup) ipLabelLookup).getNodeCount());
   }
 
-  public static TrieIpLabelLookup readGoogleBotList() throws IOException {
+  /// Reads the published crawler IP lists named in `crawler-ips/index.txt`. Each address is labeled
+  /// `crawler:<list name>`. The list name is the path below `crawler-ips/` without `.json`, with
+  /// the directory as namespace separated by `:`, e.g. `google/googlebot.json` becomes
+  /// `google:googlebot`. Entries without a prefix length are single addresses.
+  public static TrieIpLabelLookup readCrawlerIpLists() throws IOException {
     TrieIpLabelLookup lookup = new TrieIpLabelLookup();
     ObjectMapper mapper = new ObjectMapper();
-    for (var file : ResourceLoader.getFileList("crawler-ips/")) {
+    for (var file : ResourceLoader.getFileList(CRAWLER_IPS_DIRECTORY)) {
+      String label = CRAWLER_LABEL_PREFIX + crawlerListName(file);
       JsonNode root = mapper.readTree(Proxy.class.getResource("/" + file));
       for (JsonNode prefix : root.path("prefixes")) {
         if (prefix.has("ipv4Prefix")) {
-          final String ipv4Prefix = prefix.get("ipv4Prefix").asText();
-          lookup.insertIpv4(ipv4Prefix, "crawler:googlebot");
+          lookup.insertIpv4(withPrefixLength(prefix.get("ipv4Prefix").asText(), 32), label);
         } else if (prefix.has("ipv6Prefix")) {
-          lookup.insertIpv6(prefix.get("ipv6Prefix").asText(), "crawler:googlebot");
+          lookup.insertIpv6(withPrefixLength(prefix.get("ipv6Prefix").asText(), 128), label);
         }
       }
     }
     return lookup;
+  }
+
+  static String crawlerListName(String file) {
+    String name = file.substring(CRAWLER_IPS_DIRECTORY.length());
+    if (name.endsWith(".json")) {
+      name = name.substring(0, name.length() - ".json".length());
+    }
+    return name.replace('/', ':');
+  }
+
+  private static String withPrefixLength(String prefix, int addressBits) {
+    return prefix.contains("/") ? prefix : prefix + "/" + addressBits;
   }
 
   private void addAsnLookup(AsnLookup asnLookup) {
@@ -93,8 +113,9 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
     }
     if (labelList != null) {
       for (String label : labelList) {
-        if (label.startsWith("crawler:")) {
-          builder.crawler(true);
+        if (label.startsWith(CRAWLER_LABEL_PREFIX)) {
+          String name = label.substring(CRAWLER_LABEL_PREFIX.length());
+          builder.crawlerName(name.isEmpty() ? UNKNOWN_CRAWLER_NAME : name);
         }
       }
     }

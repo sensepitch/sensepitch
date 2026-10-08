@@ -48,3 +48,8 @@ dependency-reduced-pom.xml
 /performance-test/html/100kb.img
 /performance-test/html/1mb.img
 /performance-test/sensepitch-edge.log
+# ja4-benchmark.sh output, not the ja4-benchmark.yaml template
+/performance-test/ja4-benchmark-false.log
+/performance-test/ja4-benchmark-true.log
+/performance-test/ja4-benchmark-false.yaml
+/performance-test/ja4-benchmark-true.yaml
