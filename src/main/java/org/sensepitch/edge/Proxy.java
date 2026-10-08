@@ -91,9 +91,11 @@ public class Proxy implements ProxyContext {
       knownHosts.addAll(config.listen().hosts());
     }
     sanitizeHostHandler = new SanitizeHostHandler(knownHosts);
+    RequestLogConfig requestLogConfig =
+        config.requestLog() != null ? config.requestLog() : RequestLogConfig.DEFAULT;
     requestLogger =
         new DistributingRequestLogger(
-            new StandardOutRequestLogger(),
+            requestLogConfig.plainText() ? new StandardOutRequestLogger() : new JsonRequestLogger(),
             metricsBridge.expose(new ExposeRequestCountPerStatusCodeHandler()));
     try {
       if (config.ipLookup() != null) {

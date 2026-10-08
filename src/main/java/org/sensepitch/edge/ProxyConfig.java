@@ -14,4 +14,5 @@ public record ProxyConfig(
     FallbackConfig fallback,
     UpstreamConfig upstream,
     ProtectionConfig protection,
+    RequestLogConfig requestLog,
     Map<String, SiteConfig> sites) {}

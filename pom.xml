@@ -126,6 +126,9 @@
     <dependency>
       <groupId>io.netty</groupId>
       <artifactId>netty-tcnative-boringssl-static</artifactId>
+      <!-- must stay in step with netty.version. netty 4.2.x calls SSL.getGroupName(long),
+           which netty-tcnative-classes only has from 2.0.81.Final on. An older version
+           makes every TLS handshake fail with NoSuchMethodError. -->
       <version>2.0.81.Final</version>
     </dependency>
 
@@ -314,6 +317,18 @@
             <!-- enable toBuilder by default -->
             <arg>-Alombok.builder.toBuilder=true</arg>
           </compilerArgs>
+          <!-- TEMPORARY: work in progress that does not compile yet. Drop both blocks once
+               Ja4Fingerprint exists and the JMH dependencies are declared.
+               HttpFingerprint calls the missing class Ja4Fingerprint, Ja4Benchmark needs
+               jmh-core and jmh-generator-annprocess. Nothing in src/main references the
+               HttpFingerprint classes, so leaving them out is safe. -->
+          <excludes>
+            <exclude>**/HttpFingerprint*.java</exclude>
+          </excludes>
+          <testExcludes>
+            <exclude>**/HttpFingerprint*.java</exclude>
+            <exclude>**/Ja4Benchmark.java</exclude>
+          </testExcludes>
         </configuration>
         <executions>
           <execution>
