@@ -340,6 +340,34 @@ sites:
 
 Paths are prefixes: `/bo/*` does not match `/bo` itself, `/bo*` matches `/bo` but also `/books`.
 
+A `response` can set `cookies`, e.g. to switch an override on and off without an upstream:
+
+````yaml
+sites:
+  www.example.com:
+    upstream: { target: shop:8080 }
+    paths:
+      /beta/on/*:
+        response:
+          location: /
+          cookies:
+            - name: beta
+              maxAge: 2592000
+      /beta/off/*:
+        response:
+          location: /
+          cookies:
+            - name: beta
+              delete: true
+    overrides:
+      - whenCookie: beta
+        upstream: { target: shop-beta:8080 }
+````
+
+Cookie attributes: `name` (mandatory), `value` (default `1`), `maxAge` in seconds (default: session
+cookie), `delete` (sends `Max-Age=0`), `path` (default `/`), `domain` (default: host-only) and
+`sameSite` (`Strict`, `Lax` or `None`, default `Lax`). Cookies are always `Secure` and `HttpOnly`.
+
 Upstreams can be defined globally under `upstreams:` and referenced by name with `ref:`.
 
 ````yaml

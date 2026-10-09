@@ -31,6 +31,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -281,6 +282,22 @@ public class FallbackTest {
                     .build())));
     upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
     assertPage(SERVICE_UNAVAILABLE, "{\"down\":true}", "application/json");
+  }
+
+  @Test
+  public void fallbackWithCookiesFails() {
+    ResponseConfig withCookie =
+        ResponseConfig.builder()
+            .text("down")
+            .cookies(List.of(SetCookieConfig.builder().name("a").build()))
+            .build();
+    assertThatThrownBy(() -> siteUnavailable(withCookie))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("cookies are not supported in fallback responses");
+    assertThatThrownBy(() -> parse("errorResponse:\n  text: hi\n  cookies:\n    - name: a\n"))
+        .hasRootCauseInstanceOf(IllegalArgumentException.class)
+        .rootCause()
+        .hasMessageContaining("cookies are not supported in fallback responses");
   }
 
   @Test

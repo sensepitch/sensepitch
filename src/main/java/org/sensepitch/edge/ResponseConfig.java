@@ -10,13 +10,22 @@ import lombok.Builder;
 ///   and `file` is rejected.
 /// - redirect: `location`, optionally with `status`
 ///
+/// Both may set `cookies`, e.g. to switch on a [RoutingOverrideConfig#whenCookie()]. Cookies are
+/// only supported for routing responses and rejected in a [FallbackConfig].
+///
 /// @param status response status code, `0` if unset. A redirect defaults to
 ///   [#DEFAULT_REDIRECT_STATUS] and must otherwise be one of [#REDIRECT_STATUS_CODES]. A page may
 ///   use any code in 100..599.
+/// @param cookies cookies set with the response, see [SetCookieConfig]
 /// @author Jens Wilke
 @Builder(toBuilder = true)
 public record ResponseConfig(
-    String text, int status, String location, String contentType, String file) {
+    String text,
+    int status,
+    String location,
+    String contentType,
+    String file,
+    List<SetCookieConfig> cookies) {
 
   public static final List<Integer> REDIRECT_STATUS_CODES = List.of(301, 302, 303, 307, 308);
 
@@ -46,5 +55,12 @@ public record ResponseConfig(
     if (status != 0 && (status < 100 || status > 599)) {
       throw new IllegalArgumentException("status must be 100..599, was: " + status);
     }
+    cookies = cookies == null ? List.of() : List.copyOf(cookies);
+  }
+
+  /// The `Set-Cookie` header values, one per cookie. Encode once and add each value as separate
+  /// header.
+  public List<String> encodedCookies() {
+    return cookies.stream().map(SetCookieConfig::encode).toList();
   }
 }

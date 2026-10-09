@@ -193,6 +193,7 @@ public class SiteSelector {
     }
     // status is reassigned above, so capture an effectively final copy for the anonymous upstream
     HttpResponseStatus finalStatus = status;
+    List<String> cookies = cfg.encodedCookies();
     return new Upstream() {
       @Override
       public Future<Channel> connect(ChannelHandlerContext ingressContext) {
@@ -218,6 +219,9 @@ public class SiteSelector {
                               .set(HttpHeaderNames.CONTENT_LENGTH, content.readableBytes());
                           if (location != null) {
                             response.headers().set(HttpHeaderNames.LOCATION, location);
+                          }
+                          for (String cookie : cookies) {
+                            response.headers().add(HttpHeaderNames.SET_COOKIE, cookie);
                           }
                           ingressChannel.writeAndFlush(response);
                         }

@@ -21,6 +21,16 @@ public record FallbackConfig(ResponseConfig unavailableResponse, ResponseConfig 
   public static final String DEFAULT_ERROR_FILE = "classpath:fallback/error.html";
   public static final String DEFAULT_CONTENT_TYPE = "text/html; charset=UTF-8";
 
+  public FallbackConfig {
+    if (hasCookies(unavailableResponse) || hasCookies(errorResponse)) {
+      throw new IllegalArgumentException("cookies are not supported in fallback responses");
+    }
+  }
+
+  private static boolean hasCookies(ResponseConfig r) {
+    return r != null && !r.cookies().isEmpty();
+  }
+
   public static final FallbackConfig DEFAULTS =
       FallbackConfig.builder()
           .unavailableResponse(

@@ -183,6 +183,43 @@ class CompleteTest {
         .then_channel_open();
   }
 
+  @Test
+  void pathResponseSetsCookie() {
+    ProxyConfig config =
+        COMMON_CONFIG.toBuilder()
+            .sites(
+                Map.of(
+                    "example.com",
+                    SiteConfig.builder()
+                        .response(ResponseConfig.builder().text("site default").build())
+                        .protection(ProtectionConfig.builder().disable(true).build())
+                        .paths(
+                            Map.of(
+                                "/beta/on/*",
+                                PathRouteConfig.builder()
+                                    .response(
+                                        ResponseConfig.builder()
+                                            .location("/")
+                                            .cookies(
+                                                List.of(
+                                                    SetCookieConfig.builder().name("beta").build()))
+                                            .build())
+                                    .build()))
+                        .build()))
+            .build();
+    steps = new Steps().given_initialized_proxy_with(config);
+    steps
+        .when_requesting("example.com", "/beta/on/")
+        .then_the_response_status_is(HttpResponseStatus.FOUND)
+        .then_the_response_location_header_is("/")
+        .then_the_response_header_is(
+            HttpHeaderNames.SET_COOKIE, "beta=1; Path=/; Secure; HTTPOnly; SameSite=Lax")
+        .then_channel_open()
+        .when_requesting("example.com", "/products")
+        .then_the_response_header_is(HttpHeaderNames.SET_COOKIE, null)
+        .then_channel_open();
+  }
+
   @AfterEach
   void finish() {
     steps.finish_and_check_for_leaks();

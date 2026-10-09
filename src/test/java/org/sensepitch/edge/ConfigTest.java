@@ -146,6 +146,12 @@ public class ConfigTest {
               upstream: { ref: api }
             /bo/*:
               response: { status: 404, text: Not Found }
+            /beta/on/*:
+              response:
+                location: /
+                cookies:
+                  - name: beta
+                    maxAge: 2592000
           overrides:
             - whenCookie: beta
               upstream:
@@ -164,6 +170,9 @@ public class ConfigTest {
     assertThat(site.paths().get("/api/*").upstream().ref()).isEqualTo("api");
     assertThat(site.paths().get("/bo/*").response().status()).isEqualTo(404);
     assertThat(site.paths().get("/bo/*").response().text()).isEqualTo("Not Found");
+    SetCookieConfig cookie = site.paths().get("/beta/on/*").response().cookies().getFirst();
+    assertThat(cookie.name()).isEqualTo("beta");
+    assertThat(cookie.maxAge()).isEqualTo(2592000);
     RoutingOverrideConfig override = site.overrides().getFirst();
     assertThat(override.whenCookie()).isEqualTo("beta");
     assertThat(override.upstream().target()).isEqualTo("shop-beta:8080");
