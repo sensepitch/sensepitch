@@ -163,7 +163,7 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [ ] config: stop / complain if option is unknown
 - [ ] upstream metrics, e.g. pool metrics
 - [ ] Logging: Netty LoggingHandler seems not to respect the origin class
-- [ ] try markdown JavaDoc, https://openjdk.org/jeps/467
+- [x] implemented, try markdown JavaDoc, https://openjdk.org/jeps/467
 - [ ] explain PoW admission
 - [ ] use delombok, so JavaDoc has proper documentation in the builder
 - [ ] block requests that are not GET and POST if not admitted or crawler bypassed
