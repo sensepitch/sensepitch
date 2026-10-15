@@ -11,6 +11,7 @@ import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.util.concurrent.Future;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /// @author Jens Wilke
@@ -22,23 +23,35 @@ class RoutingTest {
   static final Upstream SHOP_BETA = new NamedUpstream("shop-beta");
   static final Upstream API_BETA = new NamedUpstream("api-beta");
   static final Upstream SHOP_GAMMA = new NamedUpstream("shop-gamma");
+  static final Upstream API_INDEX = new NamedUpstream("api-index");
 
   /// Same setup as the README example, plus a second override.
   final Routing<Upstream> routing =
       new Routing<>(
           SHOP,
+          Map.of("/api", API_INDEX, "/api/v2/", API_INDEX),
           paths("/api/", API, "/api/v2/", API_V2),
           List.of(
               new Routing.CookieOverride<>(
-                  "beta", new Routing<>(SHOP_BETA, paths("/api/", API_BETA), List.of())),
+                  "beta", new Routing<>(SHOP_BETA, Map.of(), paths("/api/", API_BETA), List.of())),
               new Routing.CookieOverride<>(
-                  "gamma", new Routing<>(SHOP_GAMMA, paths(), List.of()))));
+                  "gamma", new Routing<>(SHOP_GAMMA, Map.of(), paths(), List.of()))));
 
   @Test
   void pathRouting() {
     assertThat(select("/products", null)).isSameAs(SHOP);
     assertThat(select("/api/x", null)).isSameAs(API);
     assertThat(select("/api/v2/x", null)).isSameAs(API_V2);
+  }
+
+  @Test
+  void exactPathPrecedesPrefix() {
+    assertThat(select("/api", null)).isSameAs(API_INDEX);
+    assertThat(select("/api?x=1", null)).isSameAs(API_INDEX);
+    assertThat(select("/api/v2/", null)).isSameAs(API_INDEX);
+    assertThat(select("/api/v2/?x=1", null)).isSameAs(API_INDEX);
+    assertThat(select("/api/v2/x", null)).isSameAs(API_V2);
+    assertThat(select("/apix", null)).isSameAs(SHOP);
   }
 
   @Test

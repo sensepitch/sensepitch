@@ -187,12 +187,13 @@ class ProxyConstructBDDTest {
   }
 
   @Test
-  void pathMustBePrefix() {
+  void exactPathAccepted() {
     SiteConfig site =
-        SiteConfig.builder().upstream(LOCAL).paths(Map.of("/api", path(LOCAL))).build();
-    steps
-        .given_the_configuration(routingConfig(site))
-        .then_expect_exception_with_message("Path needs to be a prefix ending with *: /api");
+        SiteConfig.builder()
+            .upstream(LOCAL)
+            .paths(Map.of("/api", path(LOCAL), "/api/*", path(LOCAL)))
+            .build();
+    steps.given_the_configuration(routingConfig(site)).then_expect_initialized_without_exception();
   }
 
   @Test

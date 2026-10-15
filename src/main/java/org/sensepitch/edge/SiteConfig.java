@@ -5,8 +5,9 @@ import java.util.Map;
 import lombok.Builder;
 
 /// @param upstream default upstream of the site, used when no path matches
-/// @param paths upstreams by request path prefix, the map key is the prefix ending with `*`. The
-///   longest matching prefix wins.
+/// @param paths upstreams by request path, the map key is either a prefix ending with `*` or an
+///   exact path. An exact path is matched against the request path without query string and wins
+///   over prefixes, otherwise the longest matching prefix wins.
 /// @param overrides alternative routings that replace `upstream` and `paths` when triggered, e.g.
 ///   to switch a whole beta setup by cookie. The first triggered override wins.
 /// @author Jens Wilke

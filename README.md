@@ -318,7 +318,8 @@ global and per-site config is layered.
 ## Upstream routing
 
 A site routes to its `upstream` by default. Under `paths:`, other upstreams can be selected by
-request path prefix; the longest matching prefix wins, regardless of configuration order.
+request path prefix or exact path; an exact path wins, otherwise the longest matching prefix wins,
+regardless of configuration order.
 `overrides:` replace the whole routing (`upstream` and `paths`) when a cookie with the given name
 is present, e.g. to switch on a complete beta setup. An override needs its own `upstream`;
 the site's `upstream` and `paths` are not inherited. If several override cookies are present, the
@@ -338,7 +339,10 @@ sites:
           text: Not Found
 ````
 
-Paths are prefixes: `/bo/*` does not match `/bo` itself, `/bo*` matches `/bo` but also `/books`.
+Paths ending with `*` are prefixes: `/bo/*` does not match `/bo` itself, `/bo*` matches `/bo` but
+also `/books`. Paths without `*` match exactly, ignoring the query string: `/bo` matches `/bo` and
+`/bo?x=1`, but not `/bo/` or `/books`. To cover `/bo` and everything below, configure both `/bo`
+and `/bo/*`.
 
 A `response` can set `cookies`, e.g. to switch an override on and off without an upstream:
 

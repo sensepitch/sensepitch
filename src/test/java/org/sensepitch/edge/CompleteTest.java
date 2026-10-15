@@ -168,6 +168,10 @@ class CompleteTest {
                                             .status(404)
                                             .text("Not Found")
                                             .build())
+                                    .build(),
+                                "/bo",
+                                PathRouteConfig.builder()
+                                    .response(ResponseConfig.builder().text("exact").build())
                                     .build()))
                         .build()))
             .build();
@@ -176,6 +180,14 @@ class CompleteTest {
         .when_requesting("example.com", "/bo/x")
         .then_the_response_status_is(HttpResponseStatus.NOT_FOUND)
         .then_expect_content("Not Found")
+        .then_channel_open()
+        .when_requesting("example.com", "/bo")
+        .then_the_response_status_is(HttpResponseStatus.OK)
+        .then_expect_content("exact")
+        .then_channel_open()
+        .when_requesting("example.com", "/books")
+        .then_the_response_status_is(HttpResponseStatus.OK)
+        .then_expect_content("site default")
         .then_channel_open()
         .when_requesting("example.com", "/products")
         .then_the_response_status_is(HttpResponseStatus.OK)

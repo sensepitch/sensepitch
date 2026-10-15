@@ -144,34 +144,38 @@ public class SiteSelector {
         overrides.add(
             new Routing.CookieOverride<>(
                 override.whenCookie(),
-                new Routing<>(
-                    overrideDefault, constructPaths(ctx, override.paths(), leaf), List.of())));
+                constructRouting(ctx, overrideDefault, override.paths(), leaf, List.of())));
       }
     }
-    return new Routing<>(leaf.apply(upstream), constructPaths(ctx, site.paths(), leaf), overrides);
+    return constructRouting(ctx, leaf.apply(upstream), site.paths(), leaf, overrides);
   }
 
-  private PrefixTree<Suppliers> constructPaths(
-      ProxyContext ctx, Map<String, PathRouteConfig> paths, Function<Upstream, Suppliers> leaf) {
+  private Routing<Suppliers> constructRouting(
+      ProxyContext ctx,
+      Suppliers defaultTarget,
+      Map<String, PathRouteConfig> paths,
+      Function<Upstream, Suppliers> leaf,
+      List<Routing.CookieOverride<Suppliers>> overrides) {
+    Map<String, Suppliers> exact = new HashMap<>();
     PrefixTree<Suppliers> tree = new PrefixTree<>();
-    if (paths == null) {
-      return tree;
+    if (paths != null) {
+      paths.forEach(
+          (path, route) -> {
+            if (route == null || (route.upstream() == null) == (route.response() == null)) {
+              throw new IllegalArgumentException("Path requires upstream or response: " + path);
+            }
+            Upstream upstream =
+                route.response() != null
+                    ? constructResponseUpstream(route.response())
+                    : resolveUpstream(ctx, route.upstream());
+            if (path.endsWith("*")) {
+              tree.put(path.substring(0, path.length() - 1), leaf.apply(upstream));
+            } else {
+              exact.put(path, leaf.apply(upstream));
+            }
+          });
     }
-    paths.forEach(
-        (path, route) -> {
-          if (!path.endsWith("*")) {
-            throw new IllegalArgumentException("Path needs to be a prefix ending with *: " + path);
-          }
-          if (route == null || (route.upstream() == null) == (route.response() == null)) {
-            throw new IllegalArgumentException("Path requires upstream or response: " + path);
-          }
-          Upstream upstream =
-              route.response() != null
-                  ? constructResponseUpstream(route.response())
-                  : resolveUpstream(ctx, route.upstream());
-          tree.put(path.substring(0, path.length() - 1), leaf.apply(upstream));
-        });
-    return tree;
+    return new Routing<>(defaultTarget, exact, tree, overrides);
   }
 
   private static Upstream constructResponseUpstream(ResponseConfig cfg) {

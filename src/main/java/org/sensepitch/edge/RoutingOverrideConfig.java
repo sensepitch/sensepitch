@@ -9,7 +9,7 @@ import lombok.Builder;
 /// @param whenCookie trigger: the override applies if a cookie with this name is present, the
 ///   value is ignored
 /// @param upstream default upstream of the override, mandatory
-/// @param paths upstreams by request path prefix, same as [SiteConfig#paths()]
+/// @param paths upstreams by request path, same as [SiteConfig#paths()]
 /// @author Jens Wilke
 @Builder(toBuilder = true)
 public record RoutingOverrideConfig(
