@@ -32,6 +32,11 @@ import java.util.function.Supplier;
 public class SiteSelector {
 
   private static final SiteConfig SITE_CONFIG_DEFAULT = SiteConfig.builder().build();
+
+  /// Replaces the fallback for configured responses, which are sent as configured, also with
+  /// status 500 or 503.
+  private static final ChannelHandler NO_FALLBACK = new NoFallback();
+
   private final Map<String, Upstream> namedUpstreams = new HashMap<>();
   private final Upstream defaultUpstream;
   private final Map<String, Routing<Suppliers>> directHostMatch = new HashMap<>();
@@ -120,13 +125,21 @@ public class SiteSelector {
                 fallbackSupplier,
                 protectionSupplier,
                 () -> new DownstreamHandler(upstream, ctx.metrics()));
-    Upstream upstream;
+    Function<ResponseConfig, Suppliers> responseLeaf =
+        response -> {
+          Upstream upstream = constructResponseUpstream(response);
+          return new Suppliers(
+              () -> NO_FALLBACK,
+              protectionSupplier,
+              () -> new DownstreamHandler(upstream, ctx.metrics()));
+        };
+    Suppliers defaultTarget;
     if (site.response() != null) {
-      upstream = constructResponseUpstream(site.response());
+      defaultTarget = responseLeaf.apply(site.response());
     } else if (site.upstream() != null) {
-      upstream = resolveUpstream(ctx, site.upstream());
+      defaultTarget = leaf.apply(resolveUpstream(ctx, site.upstream()));
     } else if (defaultUpstream != null) {
-      upstream = defaultUpstream;
+      defaultTarget = leaf.apply(defaultUpstream);
     } else {
       throw new IllegalArgumentException("upstream missing");
     }
@@ -144,10 +157,11 @@ public class SiteSelector {
         overrides.add(
             new Routing.CookieOverride<>(
                 override.whenCookie(),
-                constructRouting(ctx, overrideDefault, override.paths(), leaf, List.of())));
+                constructRouting(
+                    ctx, overrideDefault, override.paths(), leaf, responseLeaf, List.of())));
       }
     }
-    return constructRouting(ctx, leaf.apply(upstream), site.paths(), leaf, overrides);
+    return constructRouting(ctx, defaultTarget, site.paths(), leaf, responseLeaf, overrides);
   }
 
   private Routing<Suppliers> constructRouting(
@@ -155,6 +169,7 @@ public class SiteSelector {
       Suppliers defaultTarget,
       Map<String, PathRouteConfig> paths,
       Function<Upstream, Suppliers> leaf,
+      Function<ResponseConfig, Suppliers> responseLeaf,
       List<Routing.CookieOverride<Suppliers>> overrides) {
     Map<String, Suppliers> exact = new HashMap<>();
     PrefixTree<Suppliers> tree = new PrefixTree<>();
@@ -164,14 +179,14 @@ public class SiteSelector {
             if (route == null || (route.upstream() == null) == (route.response() == null)) {
               throw new IllegalArgumentException("Path requires upstream or response: " + path);
             }
-            Upstream upstream =
+            Suppliers target =
                 route.response() != null
-                    ? constructResponseUpstream(route.response())
-                    : resolveUpstream(ctx, route.upstream());
+                    ? responseLeaf.apply(route.response())
+                    : leaf.apply(resolveUpstream(ctx, route.upstream()));
             if (path.endsWith("*")) {
-              tree.put(path.substring(0, path.length() - 1), leaf.apply(upstream));
+              tree.put(path.substring(0, path.length() - 1), target);
             } else {
-              exact.put(path, leaf.apply(upstream));
+              exact.put(path, target);
             }
           });
     }
@@ -179,24 +194,21 @@ public class SiteSelector {
   }
 
   private static Upstream constructResponseUpstream(ResponseConfig cfg) {
-    HttpResponseStatus status = HttpResponseStatus.valueOf(cfg.status());
-    String location;
-    if (cfg.location() != null) {
-      location = cfg.location();
+    String location = cfg.location();
+    // ResponseConfig already defaults the status of a redirect
+    HttpResponseStatus status =
+        cfg.status() != 0 ? HttpResponseStatus.valueOf(cfg.status()) : HttpResponseStatus.OK;
+    // read once, a missing file fails the startup
+    byte[] body;
+    if (location != null) {
+      body = null;
+    } else if (cfg.file() != null) {
+      body = ResponseFiles.read(cfg.file());
     } else {
-      location = null;
-      if (cfg.status() != 0) {
-        status = HttpResponseStatus.valueOf(cfg.status());
-      } else {
-        status = HttpResponseStatus.OK;
-      }
+      body = cfg.text().getBytes(StandardCharsets.UTF_8);
     }
-    String text = cfg.text();
-    if (text == null && location == null) {
-      throw new IllegalArgumentException("Response requires redirect location or text");
-    }
-    // status is reassigned above, so capture an effectively final copy for the anonymous upstream
-    HttpResponseStatus finalStatus = status;
+    String contentType =
+        cfg.contentType() != null ? cfg.contentType() : FallbackConfig.DEFAULT_CONTENT_TYPE;
     List<String> cookies = cfg.encodedCookies();
     return new Upstream() {
       @Override
@@ -211,16 +223,16 @@ public class SiteSelector {
                       public void write(
                           ChannelHandlerContext ctx1, Object msg, ChannelPromise promise) {
                         if (msg instanceof HttpRequest) {
-                          ByteBuf content = Unpooled.EMPTY_BUFFER;
-                          if (text != null) {
-                            content = Unpooled.copiedBuffer(text, StandardCharsets.US_ASCII);
-                          }
+                          ByteBuf content =
+                              body != null ? Unpooled.wrappedBuffer(body) : Unpooled.EMPTY_BUFFER;
                           FullHttpResponse response =
-                              new DefaultFullHttpResponse(
-                                  HttpVersion.HTTP_1_1, finalStatus, content);
+                              new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status, content);
                           response
                               .headers()
                               .set(HttpHeaderNames.CONTENT_LENGTH, content.readableBytes());
+                          if (body != null) {
+                            response.headers().set(HttpHeaderNames.CONTENT_TYPE, contentType);
+                          }
                           if (location != null) {
                             response.headers().set(HttpHeaderNames.LOCATION, location);
                           }
@@ -289,6 +301,9 @@ public class SiteSelector {
     }
     return routing != null ? routing.select(request) : null;
   }
+
+  @ChannelHandler.Sharable
+  private static final class NoFallback extends ChannelOutboundHandlerAdapter {}
 
   record Suppliers(
       Supplier<ChannelHandler> fallbackSupplier,

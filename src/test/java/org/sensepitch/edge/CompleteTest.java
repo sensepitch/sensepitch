@@ -3,6 +3,7 @@ package org.sensepitch.edge;
 import static io.netty.handler.codec.http.HttpMethod.GET;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelInitializer;
@@ -17,7 +18,11 @@ import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.ReferenceCounted;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +31,7 @@ import net.serenitybdd.junit5.SerenityJUnit5Extension;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 
 /// @author Jens Wilke
 @ExtendWith(SerenityJUnit5Extension.class)
@@ -193,6 +199,101 @@ class CompleteTest {
         .then_the_response_status_is(HttpResponseStatus.OK)
         .then_expect_content("site default")
         .then_channel_open();
+  }
+
+  @Test
+  void pathResponseFromFile(@TempDir Path tempDir) throws IOException {
+    Path pageFile = tempDir.resolve("blocked.html");
+    Files.writeString(pageFile, "<html>from disk</html>");
+    ProxyConfig config =
+        COMMON_CONFIG.toBuilder()
+            .sites(
+                Map.of(
+                    "example.com",
+                    SiteConfig.builder()
+                        .response(
+                            ResponseConfig.builder()
+                                .file("classpath:fallback/unavailable_page.html")
+                                .build())
+                        .protection(ProtectionConfig.builder().disable(true).build())
+                        .paths(
+                            Map.of(
+                                "/blocked",
+                                PathRouteConfig.builder()
+                                    .response(
+                                        ResponseConfig.builder()
+                                            .status(403)
+                                            .file(pageFile.toAbsolutePath().toString())
+                                            .contentType("text/plain")
+                                            .build())
+                                    .build()))
+                        .build()))
+            .build();
+    steps = new Steps().given_initialized_proxy_with(config);
+    steps
+        .when_requesting("example.com", "/blocked")
+        .then_the_response_status_is(HttpResponseStatus.FORBIDDEN)
+        .then_expect_content("<html>from disk</html>")
+        .then_the_response_header_is(HttpHeaderNames.CONTENT_TYPE, "text/plain")
+        .then_channel_open()
+        .when_requesting("example.com", "/other")
+        .then_the_response_status_is(HttpResponseStatus.OK)
+        .then_expect_content("<html>down</html>")
+        .then_the_response_header_is(
+            HttpHeaderNames.CONTENT_TYPE, FallbackConfig.DEFAULT_CONTENT_TYPE)
+        .then_channel_open();
+  }
+
+  /// A configured 503 response is sent as configured and not replaced by the fallback page.
+  @Test
+  void response503FromFileIsNotReplacedByFallback(@TempDir Path tempDir) throws IOException {
+    Path pageFile = tempDir.resolve("maintenance.html");
+    Files.writeString(pageFile, "<html>maintenance</html>");
+    ResponseConfig maintenance =
+        ResponseConfig.builder().status(503).file(pageFile.toUri().toString()).build();
+    ProxyConfig config =
+        COMMON_CONFIG.toBuilder()
+            .sites(
+                Map.of(
+                    "example.com",
+                    SiteConfig.builder()
+                        .response(maintenance)
+                        .protection(ProtectionConfig.builder().disable(true).build())
+                        .paths(
+                            Map.of(
+                                "/path/*",
+                                PathRouteConfig.builder()
+                                    .response(maintenance.toBuilder().status(500).build())
+                                    .build()))
+                        .build()))
+            .build();
+    steps = new Steps().given_initialized_proxy_with(config);
+    steps
+        .when_requesting("example.com", "/")
+        .then_the_response_status_is(HttpResponseStatus.SERVICE_UNAVAILABLE)
+        .then_expect_content("<html>maintenance</html>")
+        .then_the_response_header_is(
+            HttpHeaderNames.CONTENT_TYPE, FallbackConfig.DEFAULT_CONTENT_TYPE)
+        .when_requesting("example.com", "/path/x")
+        .then_the_response_status_is(HttpResponseStatus.INTERNAL_SERVER_ERROR)
+        .then_expect_content("<html>maintenance</html>");
+  }
+
+  @Test
+  void pathResponseWithMissingFileFailsConstruction() {
+    ProxyConfig config =
+        COMMON_CONFIG.toBuilder()
+            .sites(
+                Map.of(
+                    "example.com",
+                    SiteConfig.builder()
+                        .response(
+                            ResponseConfig.builder().file("classpath:does/not/exist.html").build())
+                        .build()))
+            .build();
+    assertThatThrownBy(() -> new Proxy(config))
+        .isInstanceOf(UncheckedIOException.class)
+        .hasMessageContaining("Failed to read response file: classpath:does/not/exist.html");
   }
 
   @Test

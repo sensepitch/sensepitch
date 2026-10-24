@@ -5,9 +5,9 @@ import lombok.Builder;
 
 /// A configured response, either a page or a redirect, never a mix of both:
 ///
-/// - page: `text` (plain body) or `file` (see [Fallback] for how a file location is resolved), with
-///   an optional `contentType` (default [FallbackConfig#DEFAULT_CONTENT_TYPE]). Setting both `text`
-///   and `file` is rejected.
+/// - page: `text` (plain body) or `file` (see [ResponseFiles] for how a file location is
+///   resolved), with an optional `contentType` (default [FallbackConfig#DEFAULT_CONTENT_TYPE]).
+///   Setting both `text` and `file` is rejected.
 /// - redirect: `location`, optionally with `status`
 ///
 /// Both may set `cookies`, e.g. to switch on a [RoutingOverrideConfig#whenCookie()]. Cookies are

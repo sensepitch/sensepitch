@@ -339,6 +339,25 @@ sites:
           text: Not Found
 ````
 
+A page `response` can also serve a `file` instead of `text`. Its `contentType` defaults to
+`text/html; charset=UTF-8`. A file location with `classpath:` or `file:` uses exactly that source;
+a location without scheme is looked up on the filesystem first (relative paths against the working
+directory, so better use absolute paths when running as a service), then on the classpath. The
+file is read once at startup, a missing file is a configuration error. The same applies to `file`
+in fallback pages. A configured response is sent as is, also with status 500 or 503; it is not
+replaced by the fallback page.
+
+````yaml
+sites:
+  www.example.com:
+    upstream: { target: shop:8080 }
+    paths:
+      /maintenance:
+        response:
+          status: 503
+          file: /etc/sensepitch/maintenance.html
+````
+
 Paths ending with `*` are prefixes: `/bo/*` does not match `/bo` itself, `/bo*` matches `/bo` but
 also `/books`. Paths without `*` match exactly, ignoring the query string: `/bo` matches `/bo` and
 `/bo?x=1`, but not `/bo/` or `/books`. To cover `/bo` and everything below, configure both `/bo`
