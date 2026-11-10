@@ -86,8 +86,7 @@ public class JsonRequestLogger implements RequestLogger {
     writeHeaders(json, request);
     writeHeaderNames(json, request);
     writeOptional(json, "ip_traits", IpTraitsHandler.extract(request));
-    writeOptional(
-        json, "admission_token", request.headers().get(Deflector.ADMISSION_TOKEN_HEADER));
+    writeOptional(json, "admission_token", request.headers().get(Deflector.ADMISSION_TOKEN_HEADER));
     writeOptional(json, "bypass", request.headers().get(BypassCheck.HEADER));
     writeOptional(json, "user_agent", request.headers().get(HttpHeaderNames.USER_AGENT));
     writeOptional(json, "referer", request.headers().get(HttpHeaderNames.REFERER));

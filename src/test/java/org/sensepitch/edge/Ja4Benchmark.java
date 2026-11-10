@@ -37,7 +37,8 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 ///
 /// ```
 /// mvn -q dependency:build-classpath -Dmdep.includeScope=test -Dmdep.outputFile=target/cp.txt
-/// java -cp target/classes:target/test-classes:$(cat target/cp.txt) org.sensepitch.edge.Ja4Benchmark
+/// java -cp target/classes:target/test-classes:$(cat target/cp.txt)
+// org.sensepitch.edge.Ja4Benchmark
 /// ```
 ///
 /// @see Ja4Handler
