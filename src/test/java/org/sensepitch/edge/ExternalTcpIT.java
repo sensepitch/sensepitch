@@ -73,7 +73,7 @@ class ExternalTcpIT {
             .metrics(MetricsConfig.builder().enable(false).build())
             .build();
 
-    proxy = new Proxy(config, requestLog.stream());
+    proxy = new Proxy(config, requestLog);
     Thread thread =
         new Thread(
             () -> {

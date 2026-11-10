@@ -301,7 +301,7 @@ class ProxyConstructBDDTest {
     @Step("Given a common configuration:")
     T given_the_configuration(ProxyConfig proxyConfig) {
       try {
-        proxy = new Proxy(proxyConfig, requestLog.stream());
+        proxy = new Proxy(proxyConfig, requestLog);
       } catch (Throwable throwable) {
         constructionFailure = throwable;
       }

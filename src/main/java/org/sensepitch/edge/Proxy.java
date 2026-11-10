@@ -18,12 +18,10 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.PrintStream;
 import java.net.InetSocketAddress;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLException;
 import org.sensepitch.edge.config.KeyInjector;
 import org.yaml.snakeyaml.DumperOptions;
@@ -53,15 +51,16 @@ public class Proxy implements ProxyContext {
   private final SiteSelector siteSelector;
   private final Ja4Config ja4Config;
   private final Ja4HeaderHandler ja4HeaderHandler;
-  private final PrintStream requestLogOutput;
+  private final RequestLogOutput requestLogOutput;
 
-  /// Proxy writing the request log to standard out, see [RequestLogger#bufferedStandardOut()]
+  /// Proxy writing the request log to standard out, see [AsyncRequestLogWriter]
   public Proxy(ProxyConfig config) {
-    this(config, RequestLogger.bufferedStandardOut());
+    this(config, AsyncRequestLogWriter.standardOut());
   }
 
-  /// @param requestLogOutput destination of the request log, tests pass a capturing stream here
-  public Proxy(ProxyConfig config, PrintStream requestLogOutput) {
+  /// @param requestLogOutput destination of the request log, tests pass a capture here. The proxy
+  ///   closes it on [#shutdown()].
+  public Proxy(ProxyConfig config, RequestLogOutput requestLogOutput) {
     this.requestLogOutput = requestLogOutput;
     config = KeyInjector.injectAllMapKeys(config);
     if (config.listen() == null) {
@@ -81,6 +80,9 @@ public class Proxy implements ProxyContext {
     metricsBridge.expose(metrics);
     trackIngressConnectionsHandler = metricsBridge.expose(new TrackIngressConnectionsHandler());
     metricsBridge.expose(new NettyAllocatorMetrics());
+    if (requestLogOutput instanceof HasMultipleMetrics withMetrics) {
+      metricsBridge.expose(withMetrics);
+    }
     // sslContext = initializeSslContext();
     siteSelector = new SiteSelector(this, config);
     var servicedHosts = siteSelector.getServicedHosts();
@@ -251,10 +253,8 @@ public class Proxy implements ProxyContext {
       LOG.info("Open SSL: " + OpenSsl.versionString());
       LOG.info("Proxy listening on " + addr + ":" + port);
       LOG.trace("tracing enabled");
-      // the request log output is buffered, flush it regularly so collectors see it promptly.
-      // Flushing happens in the boss thread, so a blocked standard out does not stall requests.
-      bossGroup.scheduleAtFixedRate(requestLogOutput::flush, 1, 1, TimeUnit.SECONDS);
-      Runtime.getRuntime().addShutdownHook(new Thread(requestLogOutput::flush));
+      // write out queued request log records when the JVM is stopped, e.g. by SIGTERM
+      Runtime.getRuntime().addShutdownHook(new Thread(requestLogOutput::close));
       f.channel().closeFuture().sync();
     } finally {
       bossGroup.shutdownGracefully();
@@ -264,7 +264,7 @@ public class Proxy implements ProxyContext {
 
   void shutdown() {
     eventLoopGroup.shutdownGracefully();
-    requestLogOutput.flush();
+    requestLogOutput.close();
   }
 
   void addHttpHandlers(ChannelPipeline pipeline) {

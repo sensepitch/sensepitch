@@ -6,7 +6,6 @@ import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import java.io.IOException;
-import java.io.PrintStream;
 import java.io.StringWriter;
 import java.net.InetSocketAddress;
 import java.time.Instant;
@@ -21,7 +20,8 @@ import java.time.format.DateTimeFormatter;
 /// hint request headers are grouped below the property `headers`. The cookie header is reported as
 /// the boolean property `cookie`, because only its presence is of interest, not its content.
 ///
-/// The record is rendered into a buffer and written with a single [PrintStream#println(String)]
+/// The record is rendered into a buffer and written with a single
+// [RequestLogOutput#writeLine(String)]
 /// call, so records of concurrent event loops cannot interleave within one line.
 public class JsonRequestLogger implements RequestLogger {
 
@@ -39,9 +39,9 @@ public class JsonRequestLogger implements RequestLogger {
   private static final ProxyLogger DEBUG = ProxyLogger.get(JsonRequestLogger.class);
 
   private final JsonFactory jsonFactory = new JsonFactory();
-  private final PrintStream output;
+  private final RequestLogOutput output;
 
-  public JsonRequestLogger(PrintStream output) {
+  public JsonRequestLogger(RequestLogOutput output) {
     this.output = output;
   }
 
@@ -55,7 +55,7 @@ public class JsonRequestLogger implements RequestLogger {
       DEBUG.error(info.channel(), "Error rendering request log record", e);
       return;
     }
-    output.println(buffer.toString());
+    output.writeLine(buffer.toString());
   }
 
   private void writeRecord(JsonGenerator json, RequestLogInfo info) throws IOException {

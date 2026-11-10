@@ -1,32 +1,34 @@
 package org.sensepitch.edge;
 
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
-import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 
-/// In-memory destination of the request log, which otherwise goes to standard out. Pass
-/// [#stream()] to [Proxy#Proxy(ProxyConfig, PrintStream)] or use [#plainText()] directly in a
-/// handler pipeline.
+/// In-memory destination of the request log, which otherwise goes to standard out. Pass it to
+/// [Proxy#Proxy(ProxyConfig, RequestLogOutput)] or use [#plainText()] directly in a handler
+/// pipeline.
 ///
 /// @author Jens Wilke
-public class RequestLogCapture {
+public class RequestLogCapture implements RequestLogOutput {
 
-  // ByteArrayOutputStream is synchronized, so event loop threads can write concurrently
-  private final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-  private final PrintStream stream = new PrintStream(buffer, true, StandardCharsets.UTF_8);
+  private final List<String> lines = new ArrayList<>();
 
-  public PrintStream stream() {
-    return stream;
+  @Override
+  public void writeLine(String line) {
+    // event loop threads may write concurrently
+    synchronized (lines) {
+      lines.add(line);
+    }
   }
 
   /// Request logger writing the plain text format into this capture
   public RequestLogger plainText() {
-    return new PlainTextRequestLogger(stream);
+    return new PlainTextRequestLogger(this);
   }
 
   /// Request log lines written so far
   public List<String> lines() {
-    return buffer.toString(StandardCharsets.UTF_8).lines().toList();
+    synchronized (lines) {
+      return List.copyOf(lines);
+    }
   }
 }

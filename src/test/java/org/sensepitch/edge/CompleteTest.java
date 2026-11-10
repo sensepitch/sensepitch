@@ -291,7 +291,7 @@ class CompleteTest {
                             ResponseConfig.builder().file("classpath:does/not/exist.html").build())
                         .build()))
             .build();
-    assertThatThrownBy(() -> new Proxy(config))
+    assertThatThrownBy(() -> new Proxy(config, new RequestLogCapture()))
         .isInstanceOf(UncheckedIOException.class)
         .hasMessageContaining("Failed to read response file: classpath:does/not/exist.html");
   }

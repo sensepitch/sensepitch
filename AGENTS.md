@@ -76,4 +76,4 @@
   the request log is written directly to standard out. Never use `System.out`/`System.err` elsewhere.
 - Tests use `src/test/resources/log4j2-test.xml`, which has no appender, so test runs are silent.
   Assert on log output with the `LogCapture` JUnit extension; capture the request log by passing a
-  `PrintStream` to `Proxy` or the request logger.
+  `RequestLogCapture` (a `RequestLogOutput`) to `Proxy` or the request logger.
