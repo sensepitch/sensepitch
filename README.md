@@ -183,7 +183,7 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [ ] downstream http2 support
 - [ ] Expiry of granted admissions
 - [ ] abnormal admission usage detection of admission
-- [ ] reload configuration without closing the port
+- [x] reload configuration without closing the port
 - [ ] multiple servers per upstream
 - [ ] upstream health
 - [ ] warmup
@@ -344,7 +344,7 @@ A page `response` can also serve a `file` instead of `text`. Its `contentType` d
 `text/html; charset=UTF-8`. A file location with `classpath:` or `file:` uses exactly that source;
 a location without scheme is looked up on the filesystem first (relative paths against the working
 directory, so better use absolute paths when running as a service), then on the classpath. The
-file is read once at startup, a missing file is a configuration error. The same applies to `file`
+file is read at startup and on each configuration reload, a missing file is a configuration error. The same applies to `file`
 in fallback pages. A configured response is sent as is, also with status 500 or 503; it is not
 replaced by the fallback page.
 
@@ -425,6 +425,59 @@ sites:
 | `/api/v2/x` | `api-v2` |
 | `/products` with cookie `beta` | `shop-beta` |
 | `/api/v2/x` with cookie `beta` | `api-beta` |
+
+## Configuration reload
+
+A YAML configuration file is reloaded without a restart if its last non-empty line is the end
+marker `#END`:
+
+````yaml
+sites:
+  example.com:
+    upstream:
+      target: "127.0.0.1:8080"
+#END
+````
+
+The marker shows that the file was written completely. A file read in the middle of writing is
+often still valid YAML, but lacks sites or routes at the end. Without the marker the file is not
+reloaded, so adding the marker enables live reload. Starting the proxy does not need it.
+
+- **Triggers:** a change of the file content, detected right away by watching the file's
+  directory, and `POST /reload` on the admin endpoint (see below). The admin endpoint also
+  reloads an unchanged file, which picks up renewed certificate files, e.g. after a Let's
+  Encrypt renewal.
+- **What is reloaded:** sites, upstreams, protection, fallback, `unservicedHost`, `listen.hosts`,
+  certificates (`listen.ssl`, `snis`, Let's Encrypt) and `ipLookup`. The IP lookup databases are
+  only read again if `ipLookup` changed. Upstreams with unchanged configuration are kept.
+- **Restart needed:** changes of `listen.address`, `listen.httpsPort`, `listen.connection`,
+  `metrics`, `ja4` and `requestLog` are logged as a warning and ignored.
+- **Invalid configuration:** the error is logged and the active configuration stays.
+- **Log:** a reload logs the configuration changes as a diff, and added, changed or removed
+  certificates with subject, serial and expiry.
+
+Keep-alive connections use the new configuration from their next request on.
+
+### Admin endpoint
+
+An optional HTTP endpoint for operators and scripts, like the Caddy admin API. It is started if
+`admin` is configured; `admin: {}` uses the defaults, address `127.0.0.1` and port `9401`:
+
+````yaml
+admin:
+  address: 127.0.0.1
+  port: 9401
+````
+
+````
+curl -X POST http://127.0.0.1:9401/reload
+````
+
+`POST /reload` answers `200` if the configuration was applied, `422` with the reason if it was
+rejected (invalid configuration, missing `#END`), and `409` if the configuration comes from
+environment variables. The endpoint has no authentication, so it binds to the loopback interface
+by default. Binding another address exposes it to that network. A reload only reads the local
+file again, so the worst case is repeated reloads.
 
 ## Local testing
 

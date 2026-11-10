@@ -5,6 +5,7 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.http.HttpRequest;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.function.Supplier;
 
 /// @author Jens Wilke
 public class IpTraitsHandler extends ChannelInboundHandlerAdapter {
@@ -13,11 +14,17 @@ public class IpTraitsHandler extends ChannelInboundHandlerAdapter {
   public static final String COUNTRY_HEADER = "X-Sensepitch-Country";
   public static final String ASN_HEADER = "X-Sensepitch-Asn";
 
-  private final IpTraitsLookup ipTraitsLookup;
+  private final Supplier<IpTraitsLookup> ipTraitsLookup;
   private String traits = null;
   private IpTraits ipTraits = null;
 
   public IpTraitsHandler(IpTraitsLookup ipTraitsLookup) {
+    this(() -> ipTraitsLookup);
+  }
+
+  /// @param ipTraitsLookup supplies the current lookup, read once when the connection becomes
+  ///   active so a configuration reload takes effect for new connections
+  public IpTraitsHandler(Supplier<IpTraitsLookup> ipTraitsLookup) {
     this.ipTraitsLookup = ipTraitsLookup;
   }
 
@@ -32,7 +39,7 @@ public class IpTraitsHandler extends ChannelInboundHandlerAdapter {
       InetAddress address = ((InetSocketAddress) ctx.channel().remoteAddress()).getAddress();
       // Debug.INSTANCE.trace(ctx.channel(), "remoteAddress: " + address.getHostAddress());
       var builder = IpTraits.builder();
-      ipTraitsLookup.lookup(builder, address);
+      ipTraitsLookup.get().lookup(builder, address);
       var attributes = ipTraits = builder.build();
       StringBuilder collectTraits = new StringBuilder();
       if (attributes.isAsnKnown()) {

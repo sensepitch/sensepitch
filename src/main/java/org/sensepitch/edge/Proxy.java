@@ -21,7 +21,10 @@ import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.net.ssl.SSLException;
 import org.sensepitch.edge.config.KeyInjector;
 import org.yaml.snakeyaml.DumperOptions;
@@ -29,7 +32,10 @@ import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.introspector.BeanAccess;
 import org.yaml.snakeyaml.representer.Representer;
 
-/// Minimal HTTP/1.1 proxy without aggregation, with keep-alive and basic logging
+/// Minimal HTTP/1.1 proxy without aggregation, with keep-alive and basic logging.
+///
+/// Routing, known hosts, certificates and the IP lookup live in an [EdgeState], which
+/// [#reload(ProxyConfig)] replaces at runtime. Everything else is fixed at construction.
 public class Proxy implements ProxyContext {
 
   private static final ProxyLogger LOG = ProxyLogger.get(Proxy.class);
@@ -40,15 +46,13 @@ public class Proxy implements ProxyContext {
   private final ProxyConfig config;
   private final ConnectionConfig connectionConfig;
   private final MetricsBridge metricsBridge;
-  // private final SslContext sslContext;
-  private final Mapping<String, SslContext> sniMapping;
-  private final UnservicedHost unservicedHost;
-  // private final DownstreamHandler downstreamHandler;
-  private final IpTraitsLookup ipTraitsLookup;
+  private final AtomicReference<EdgeState> state = new AtomicReference<>();
+  /// Delegates to the current state, so the SNI handler picks up reloaded certificates
+  private final Mapping<String, SslContext> sniMapping = host -> state.get().sniMapping().map(host);
   private final EventLoopGroup eventLoopGroup;
   private final RequestLogger requestLogger;
-  private final SanitizeHostHandler sanitizeHostHandler;
-  private final SiteSelector siteSelector;
+  private final SanitizeHostHandler sanitizeHostHandler =
+      new SanitizeHostHandler(() -> state.get().knownHosts());
   private final Ja4Config ja4Config;
   private final Ja4HeaderHandler ja4HeaderHandler;
   private final RequestLogOutput requestLogOutput;
@@ -83,25 +87,8 @@ public class Proxy implements ProxyContext {
     if (requestLogOutput instanceof HasMultipleMetrics withMetrics) {
       metricsBridge.expose(withMetrics);
     }
-    // sslContext = initializeSslContext();
-    siteSelector = new SiteSelector(this, config);
-    var servicedHosts = siteSelector.getServicedHosts();
-    sniMapping = initializeSniMapping(config.listen(), servicedHosts);
-    UnservicedHostConfig unservicedHostConfig =
-        config.unservicedHost() != null
-            ? config.unservicedHost()
-            : UnservicedHostConfig.builder().build();
-    if (unservicedHostConfig.servicedDomains() == null) {
-      unservicedHostConfig =
-          unservicedHostConfig.toBuilder().servicedDomains(servicedHosts).build();
-    }
-    unservicedHost = new UnservicedHost(unservicedHostConfig);
-    Set<String> knownHosts = new HashSet<>();
-    knownHosts.addAll(servicedHosts);
-    if (config.listen().hosts() != null) {
-      knownHosts.addAll(config.listen().hosts());
-    }
-    sanitizeHostHandler = new SanitizeHostHandler(knownHosts);
+    state.set(EdgeState.build(this, config, null));
+    LOG.info("Certificates loaded:" + Certificates.list(state.get().certificates()));
     RequestLogConfig requestLogConfig =
         config.requestLog() != null ? config.requestLog() : RequestLogConfig.DEFAULT;
     requestLogger =
@@ -110,18 +97,74 @@ public class Proxy implements ProxyContext {
                 ? new PlainTextRequestLogger(requestLogOutput)
                 : new JsonRequestLogger(requestLogOutput),
             metricsBridge.expose(new ExposeRequestCountPerStatusCodeHandler()));
+  }
+
+  /// Activates a new configuration. Routing, known hosts, certificates and the IP lookup are
+  /// replaced; unchanged upstreams and an unchanged IP lookup are kept. Changes of settings that
+  /// need a restart are logged as a warning and ignored. Requests on keep-alive connections use
+  /// the new configuration from their next request on.
+  ///
+  /// @return applied, or rejected with the reason if the configuration is invalid. The error is
+  ///   logged and the current configuration stays active.
+  public synchronized ReloadResult reload(ProxyConfig newConfig) {
+    EdgeState current = state.get();
+    EdgeState next;
     try {
-      if (config.ipLookup() != null) {
-        ipTraitsLookup = new CombinedIpTraitsLookup(config.ipLookup());
-      } else {
-        ipTraitsLookup = (builder, address) -> {};
-      }
-    } catch (IOException e) {
-      throw new RuntimeException(e);
+      newConfig = KeyInjector.injectAllMapKeys(newConfig);
+      warnAboutRestartOnlyChanges(newConfig);
+      next = EdgeState.build(this, newConfig, current);
+    } catch (RuntimeException e) {
+      LOG.error("Configuration rejected, keeping the active configuration: " + e, e);
+      return ReloadResult.rejected("Configuration rejected: " + e.getMessage());
+    }
+    state.set(next);
+    current.closeReplacedBy(next);
+    String diff = ConfigDiff.diff(toYaml(current.config()), toYaml(next.config()));
+    if (diff.isEmpty()) {
+      LOG.info("Configuration reloaded, no changes");
+    } else {
+      LOG.info("Configuration reloaded, changes:\n" + diff);
+    }
+    String certificateChanges = Certificates.changes(current.certificates(), next.certificates());
+    if (certificateChanges.isEmpty()) {
+      LOG.info("Certificates reloaded, no changes");
+    } else {
+      LOG.info("Certificates reloaded, changes:" + certificateChanges);
+    }
+    return ReloadResult.APPLIED;
+  }
+
+  private void warnAboutRestartOnlyChanges(ProxyConfig cfg) {
+    if (cfg.listen() == null) {
+      throw new IllegalArgumentException("Missing listen configuration");
+    }
+    ListenConfig was = config.listen();
+    ListenConfig now = cfg.listen();
+    warnIfChanged("listen.address", was.address(), now.address());
+    warnIfChanged("listen.httpsPort", was.httpsPort(), now.httpsPort());
+    warnIfChanged("listen.connection", was.connection(), now.connection());
+    warnIfChanged("metrics", config.metrics(), cfg.metrics());
+    warnIfChanged("ja4", config.ja4(), cfg.ja4());
+    warnIfChanged("requestLog", config.requestLog(), cfg.requestLog());
+    warnIfChanged("admin", config.admin(), cfg.admin());
+  }
+
+  private static void warnIfChanged(String key, Object was, Object now) {
+    if (!Objects.equals(was, now)) {
+      LOG.warn("Configuration change of '" + key + "' needs a restart, ignored");
     }
   }
 
+  /// The currently active state, for tests
+  EdgeState state() {
+    return state.get();
+  }
+
   public static void dumpConfig(ProxyConfig proxyConfig) {
+    LOG.info("Configuration:\n" + toYaml(proxyConfig));
+  }
+
+  static String toYaml(ProxyConfig proxyConfig) {
     DumperOptions options = new DumperOptions();
     options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
     options.setIndent(2);
@@ -129,7 +172,7 @@ public class Proxy implements ProxyContext {
     Representer repr = new Representer(options);
     repr.getPropertyUtils().setBeanAccess(BeanAccess.FIELD);
     Yaml yaml = new Yaml(repr, options);
-    LOG.info("Configuration:\n" + yaml.dump(proxyConfig));
+    return yaml.dump(proxyConfig);
   }
 
   MetricsBridge initializeMetrics() {
@@ -149,6 +192,13 @@ public class Proxy implements ProxyContext {
 
   static Mapping<String, SslContext> initializeSniMapping(
       ListenConfig cfg, Set<String> servicedHosts) {
+    return initializeSniMapping(cfg, servicedHosts, new LinkedHashMap<>());
+  }
+
+  /// @param certificates receives a description of each loaded certificate by host, see
+  ///   [Certificates#describe(SslConfig)]
+  static Mapping<String, SslContext> initializeSniMapping(
+      ListenConfig cfg, Set<String> servicedHosts, Map<String, String> certificates) {
     var knownHosts = new HashSet<>(servicedHosts);
     if (cfg.hosts() != null) {
       knownHosts.addAll(cfg.hosts());
@@ -161,16 +211,19 @@ public class Proxy implements ProxyContext {
                 cfg.letsEncryptPrefix() + host + "/privkey.pem",
                 cfg.letsEncryptPrefix() + host + "/fullchain.pem");
         contexts.put(host, createSslContext(sslCfg));
+        certificates.put(host, Certificates.describe(sslCfg));
       }
     }
     if (cfg.snis() != null) {
       for (SniConfig sni : cfg.snis()) {
         contexts.put(sni.host(), createSslContext(sni.ssl()));
+        certificates.put(sni.host(), Certificates.describe(sni.ssl()));
       }
     }
     SslContext defaultContext = null;
     if (cfg.ssl() != null) {
       defaultContext = createSslContext(cfg.ssl());
+      certificates.put(Certificates.DEFAULT, Certificates.describe(cfg.ssl()));
     }
     if (defaultContext == null && !contexts.isEmpty()) {
       defaultContext = contexts.sequencedValues().getFirst();
@@ -275,13 +328,11 @@ public class Proxy implements ProxyContext {
     pipeline.addLast(new RequestLoggingHandler(metrics, requestLogger));
     pipeline.addLast(new IngressTimeoutHandler(connectionConfig, metrics));
     pipeline.addLast(new HttpServerKeepAliveHandler());
-    pipeline.addLast(new IpTraitsHandler(ipTraitsLookup));
+    pipeline.addLast(new IpTraitsHandler(() -> state.get().ipTraitsLookup()));
     pipeline.addLast(ja4HeaderHandler);
     //            ch.pipeline().addLast(new ReportIoErrorsHandler("downstream"));
-    if (unservicedHost != null) {
-      pipeline.addLast(unservicedHost.newHandler());
-    }
-    pipeline.addLast("siteSelector", new SiteSelectorHandler(siteSelector));
+    pipeline.addLast(new UnservicedHost.Handler(() -> state.get().unservicedHost()));
+    pipeline.addLast("siteSelector", new SiteSelectorHandler(() -> state.get().siteSelector()));
     pipeline.addLast("fallback", dummy404Handler);
     pipeline.addLast("protection", dummy404Handler);
     pipeline.addLast("proxy", dummy404Handler);

@@ -8,6 +8,7 @@ import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
 import java.util.Collection;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /// Augments the host header and sets only well-known values.
@@ -46,11 +47,24 @@ public class SanitizeHostHandler extends ChannelInboundHandlerAdapter {
 
   public static final Set<String> UNSUPPORTED_HTTP_METHODS = Set.of("CONNECT", "TRACE");
 
-  private final Set<String> knownHosts;
+  private final Supplier<Set<String>> knownHosts;
 
   public SanitizeHostHandler(Collection<String> knownHosts) {
-    this.knownHosts =
-        knownHosts.stream().filter(s -> !SPECIAL_HOSTS.contains(s)).collect(Collectors.toSet());
+    Set<String> hosts = filterKnownHosts(knownHosts);
+    this.knownHosts = () -> hosts;
+  }
+
+  /// @param knownHosts supplies the current known hosts, already passed through
+  ///   [#filterKnownHosts], read once per request so a configuration reload takes effect
+  public SanitizeHostHandler(Supplier<Set<String>> knownHosts) {
+    this.knownHosts = knownHosts;
+  }
+
+  /// Removes the special hosts, so a client can never send one of them as a valid host.
+  public static Set<String> filterKnownHosts(Collection<String> knownHosts) {
+    return knownHosts.stream()
+        .filter(s -> !SPECIAL_HOSTS.contains(s))
+        .collect(Collectors.toUnmodifiableSet());
   }
 
   @Override
@@ -66,7 +80,7 @@ public class SanitizeHostHandler extends ChannelInboundHandlerAdapter {
           host = sa[0];
           request.headers().set(HttpHeaderNames.HOST, host);
         }
-        if (!knownHosts.contains(host)) {
+        if (!knownHosts.get().contains(host)) {
           request.headers().set(HttpHeaderNames.HOST, UNKNOWN_HOST);
         }
       }

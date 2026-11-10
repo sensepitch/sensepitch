@@ -16,4 +16,8 @@ public interface Upstream {
 
   /// Release the channel back to the connection pool if enabled.
   void release(Channel ch);
+
+  /// Called when a configuration reload removed or changed this upstream. Requests that are in
+  /// flight may still use it. A pooled implementation closes its idle connections here.
+  default void close() {}
 }

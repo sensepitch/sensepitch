@@ -3,12 +3,14 @@ package org.sensepitch.edge;
 import java.util.Map;
 import lombok.Builder;
 
+/// @param admin admin HTTP endpoint, not started if absent, see [AdminServer]
 /// @param upstream default upstream for sites without an upstream of their own
 /// @param upstreams named upstreams, referenced via [UpstreamConfig#ref()]
 /// @author Jens Wilke
 @Builder(toBuilder = true)
 public record ProxyConfig(
     MetricsConfig metrics,
+    AdminConfig admin,
     ListenConfig listen,
     UnservicedHostConfig unservicedHost,
     IpLookupConfig ipLookup,

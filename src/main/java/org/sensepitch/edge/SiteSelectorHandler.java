@@ -5,13 +5,20 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponseStatus;
+import java.util.function.Supplier;
 
 /// @author Jens Wilke
 public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
 
-  SiteSelector siteSelector;
+  private final Supplier<SiteSelector> siteSelector;
 
   public SiteSelectorHandler(SiteSelector siteSelector) {
+    this(() -> siteSelector);
+  }
+
+  /// @param siteSelector supplies the current selector, read once per request so a
+  ///   configuration reload takes effect on keep-alive connections
+  public SiteSelectorHandler(Supplier<SiteSelector> siteSelector) {
     this.siteSelector = siteSelector;
   }
 
@@ -19,7 +26,7 @@ public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
   public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
     if (msg instanceof HttpRequest request) {
       var host = request.headers().get(HttpHeaderNames.HOST);
-      var suppliers = siteSelector.getSuppliers(request, host);
+      var suppliers = siteSelector.get().getSuppliers(request, host);
       if (suppliers == null) {
         rejectRequest(ctx, HttpResponseStatus.NOT_FOUND);
         return;

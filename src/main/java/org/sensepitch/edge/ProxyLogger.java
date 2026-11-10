@@ -51,6 +51,8 @@ public interface ProxyLogger {
 
   void info(String message);
 
+  void warn(String message);
+
   void error(Channel channel, Throwable cause);
 
   void error(Channel channel, String msg, Throwable cause);
@@ -195,6 +197,11 @@ public interface ProxyLogger {
 
     public void info(String message) {
       log(LogInfo.builder().level(Level.INFO).message(message).build());
+    }
+
+    @Override
+    public void warn(String message) {
+      log(LogInfo.builder().level(Level.WARNING).message(message).build());
     }
   }
 

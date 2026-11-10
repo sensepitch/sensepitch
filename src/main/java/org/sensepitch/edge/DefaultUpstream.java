@@ -24,10 +24,13 @@ public class DefaultUpstream implements Upstream {
 
   private static final ProxyLogger LOG = ProxyLogger.get(DefaultUpstream.class);
 
+  private final String name;
   private final Bootstrap bootstrap;
   private final SimpleChannelPool pool = null;
 
-  public DefaultUpstream(ProxyContext ctx, UpstreamConfig cfg) {
+  /// @param name identifies the upstream within the configuration, see [UpstreamRegistry]
+  public DefaultUpstream(ProxyContext ctx, String name, UpstreamConfig cfg) {
+    this.name = name;
     ConnectionPoolConfig poolCfg =
         cfg.connectionPool() != null ? cfg.connectionPool() : ConnectionPoolConfig.DEFAULT;
     String[] sa = cfg.target().split(":");
@@ -61,6 +64,8 @@ public class DefaultUpstream implements Upstream {
                         // TODO: temp for investigation, remove
                         LOG.info(
                             "Closing idle upstream connection: "
+                                + name
+                                + " "
                                 + ctx.channel().id()
                                 + ", event="
                                 + evt);
@@ -95,6 +100,10 @@ public class DefaultUpstream implements Upstream {
               true);
     }
     -*/
+  }
+
+  public String name() {
+    return name;
   }
 
   void addHttpHandler(ChannelPipeline pipeline) {

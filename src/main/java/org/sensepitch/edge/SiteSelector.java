@@ -37,13 +37,16 @@ public class SiteSelector {
   /// status 500 or 503.
   private static final ChannelHandler NO_FALLBACK = new NoFallback();
 
+  private final UpstreamRegistry upstreams;
   private final Map<String, Upstream> namedUpstreams = new HashMap<>();
   private final Upstream defaultUpstream;
   private final Map<String, Routing<Suppliers>> directHostMatch = new HashMap<>();
   private final Map<String, TreeMap<String, Routing<Suppliers>>> sitePrefixUriMatch =
       new HashMap<>();
 
-  public SiteSelector(ProxyContext ctx, ProxyConfig config) {
+  /// @param upstreams creates or takes over the upstreams, see [UpstreamRegistry] for the naming
+  public SiteSelector(ProxyContext ctx, ProxyConfig config, UpstreamRegistry upstreams) {
+    this.upstreams = upstreams;
     if (config.sites() == null || config.sites().isEmpty()) {
       throw new IllegalArgumentException("sites missing");
     }
@@ -56,11 +59,11 @@ public class SiteSelector {
                   throw new IllegalArgumentException(
                       "Named upstream must not reference another upstream: " + name);
                 }
-                namedUpstreams.put(name, resolveUpstream(ctx, cfg));
+                namedUpstreams.put(name, resolveUpstream("upstreams." + name, cfg));
               });
     }
     if (config.upstream() != null) {
-      defaultUpstream = resolveUpstream(ctx, config.upstream());
+      defaultUpstream = resolveUpstream("upstream", config.upstream());
     } else {
       defaultUpstream = null;
     }
@@ -119,6 +122,7 @@ public class SiteSelector {
       SiteConfig site,
       Supplier<ChannelHandler> fallbackSupplier,
       Supplier<ChannelHandler> protectionSupplier) {
+    String sitePrefix = "sites." + (site.key() != null ? site.key() : site.host());
     Function<Upstream, Suppliers> leaf =
         upstream ->
             new Suppliers(
@@ -137,7 +141,7 @@ public class SiteSelector {
     if (site.response() != null) {
       defaultTarget = responseLeaf.apply(site.response());
     } else if (site.upstream() != null) {
-      defaultTarget = leaf.apply(resolveUpstream(ctx, site.upstream()));
+      defaultTarget = leaf.apply(resolveUpstream(sitePrefix + ".upstream", site.upstream()));
     } else if (defaultUpstream != null) {
       defaultTarget = leaf.apply(defaultUpstream);
     } else {
@@ -145,7 +149,9 @@ public class SiteSelector {
     }
     List<Routing.CookieOverride<Suppliers>> overrides = new ArrayList<>();
     if (site.overrides() != null) {
-      for (RoutingOverrideConfig override : site.overrides()) {
+      for (int i = 0; i < site.overrides().size(); i++) {
+        RoutingOverrideConfig override = site.overrides().get(i);
+        String overridePrefix = sitePrefix + ".overrides[" + i + "]";
         if (override.whenCookie() == null) {
           throw new IllegalArgumentException("Routing override requires whenCookie");
         }
@@ -153,19 +159,26 @@ public class SiteSelector {
           throw new IllegalArgumentException(
               "Routing override requires upstream: " + override.whenCookie());
         }
-        Suppliers overrideDefault = leaf.apply(resolveUpstream(ctx, override.upstream()));
+        Suppliers overrideDefault =
+            leaf.apply(resolveUpstream(overridePrefix + ".upstream", override.upstream()));
         overrides.add(
             new Routing.CookieOverride<>(
                 override.whenCookie(),
                 constructRouting(
-                    ctx, overrideDefault, override.paths(), leaf, responseLeaf, List.of())));
+                    overridePrefix,
+                    overrideDefault,
+                    override.paths(),
+                    leaf,
+                    responseLeaf,
+                    List.of())));
       }
     }
-    return constructRouting(ctx, defaultTarget, site.paths(), leaf, responseLeaf, overrides);
+    return constructRouting(sitePrefix, defaultTarget, site.paths(), leaf, responseLeaf, overrides);
   }
 
+  /// @param prefix name prefix of the upstreams, see [UpstreamRegistry]
   private Routing<Suppliers> constructRouting(
-      ProxyContext ctx,
+      String prefix,
       Suppliers defaultTarget,
       Map<String, PathRouteConfig> paths,
       Function<Upstream, Suppliers> leaf,
@@ -182,7 +195,8 @@ public class SiteSelector {
             Suppliers target =
                 route.response() != null
                     ? responseLeaf.apply(route.response())
-                    : leaf.apply(resolveUpstream(ctx, route.upstream()));
+                    : leaf.apply(
+                        resolveUpstream(prefix + ".paths." + path + ".upstream", route.upstream()));
             if (path.endsWith("*")) {
               tree.put(path.substring(0, path.length() - 1), target);
             } else {
@@ -256,8 +270,10 @@ public class SiteSelector {
     };
   }
 
-  /// Returns the named upstream for a reference, otherwise constructs a new upstream.
-  private Upstream resolveUpstream(ProxyContext ctx, UpstreamConfig cfg) {
+  /// Returns the named upstream for a reference, otherwise the upstream from the registry.
+  ///
+  /// @param name name of the upstream, see [UpstreamRegistry], not used for a reference
+  private Upstream resolveUpstream(String name, UpstreamConfig cfg) {
     if (cfg == null) {
       throw new IllegalArgumentException("upstream missing");
     }
@@ -275,7 +291,7 @@ public class SiteSelector {
     if (cfg.target() == null) {
       throw new IllegalArgumentException("Upstream requires target or ref");
     }
-    return new DefaultUpstream(ctx, cfg);
+    return upstreams.get(name, cfg);
   }
 
   public Set<String> getServicedHosts() {
