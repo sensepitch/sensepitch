@@ -1,13 +1,13 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.netty.buffer.AdaptiveByteBufAllocator;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocatorMetric;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
+import io.netty.buffer.UnpooledByteBufAllocator;
 import io.prometheus.metrics.core.metrics.Counter;
 import io.prometheus.metrics.expositionformats.PrometheusTextFormatWriter;
 import io.prometheus.metrics.instrumentation.jvm.JvmMetrics;
@@ -22,8 +22,14 @@ import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.StringReader;
+import java.lang.foreign.Arena;
+import java.lang.ref.Reference;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
@@ -56,30 +62,20 @@ class MetricsAndMemoryTest {
   }
 
   /// The general Java memory metrics `jvm_memory_used_bytes` do not reflect the usage of the byte
-  /// buffers that netty is using. The buffers are reflected in
-  /// `jvm_buffer_pool_used_bytes{pool="direct"}` and in the total RSS memory consumption.
+  /// buffers that netty is using. With `--enable-native-access=ALL-UNNAMED`, which is the
+  /// production configuration, netty allocates *unpooled* direct buffers through
+  /// `java.lang.foreign`: the `CleanerJava24Linker` links `malloc` and `free` from libc directly.
+  /// That memory is intentionally outside the accounting of `java.nio`, so it does not appear in
+  /// `jvm_buffer_pool_used_bytes{pool="direct"}`. Netty's own metric, see
+  /// [UnpooledByteBufAllocator#metric], and `process_virtual_memory_bytes`, see
+  /// [#virtualMemoryMetricReflectsDirectByteBuffer], do see it. Resident memory does not move here,
+  /// because the buffer is never touched and `malloc` only reserves address space.
   ///
-  /// This did not hold with netty 4.2.3 on Java 24+, where `sun.misc.Unsafe` memory access is
-  /// disabled by default and 4.2.3 fell back to allocating from a shared `java.lang.foreign.Arena`.
-  /// That memory is intentionally outside the accounting of `java.nio`: measured over 200 MiB, no
-  /// `BufferPoolMXBean` or `MemoryPoolMXBean` moved at all, a sweep of all 152 numeric platform
-  /// MBean attributes found nothing that attributes it to a pool, and `-XX:MaxDirectMemorySize=64m`
-  /// did not bound it while `ByteBuffer.allocateDirect` failed with `OutOfMemoryError` under the
-  /// same limit. Only the OS level counters and the native memory tracking category `Other`
-  /// (`12_288` -> `209_727_488`) saw it.
-  ///
-  /// Newer netty allocates *unpooled* buffers via `ByteBuffer.allocateDirect` again, because
-  /// closing a shared arena turned out to be expensive. The arena path still ships,
-  /// `-Dio.netty.ignoreExpensiveClean=true` brings it back here and makes this test fail again, and
-  /// the pooling allocators still use it, see
-  /// [#pooledAllocatorMemoryIsInvisibleToTheJvmBufferPool]. This test allocates from `Unpooled`.
-  ///
-  /// Reclamation is GC driven now. Freeing an `allocateDirect` buffer eagerly needs
-  /// `Unsafe.invokeCleaner`, so without unsafe `release()` hands the buffer back to netty but not
-  /// the memory back to the JVM. Measured over a 100 MiB cycle: the allocation adds `104_857_601`,
-  /// the release frees `0`, and only after a `System.gc()` does the pool drop. Hence the wait
-  /// before the shrink assertions. With `--sun-misc-unsafe-memory-access=allow
-  /// -Dio.netty.tryUnsafe=true` the release frees immediately and the test passes just as well.
+  /// Without native access netty falls back to `ByteBuffer.allocateDirect`, which *is* visible in
+  /// the buffer pool. That was the behaviour this test originally asserted; it changed when native
+  /// access was enabled for the test JVM. The pooled and adaptive allocators are likewise
+  // invisible,
+  /// see [#pooledAllocatorMemoryIsInvisibleToTheJvmBufferPool].
   @Test
   void jvmMemoryMetricForDirectByteBuffer() throws Exception {
     // jvm_buffer_pool_used_bytes
@@ -90,39 +86,116 @@ class MetricsAndMemoryTest {
     // initialize Netty classes for buffers
     ByteBuf dummyBuf = Unpooled.directBuffer(123);
     dummyBuf.release();
-    Snapshots s;
-    Snapshots s0 = s = snapshots();
-    printMetrics(s);
+    Snapshots s0 = snapshots();
+    printMetrics(s0);
+    ByteBufAllocatorMetric metric = UnpooledByteBufAllocator.DEFAULT.metric();
+    long usedBefore = metric.usedDirectMemory();
+    new NettyAllocatorMetrics().registerCollectors(reg::register);
     ByteBuf buf = Unpooled.directBuffer(sampleAllocation);
-    Snapshots s1 = s = snapshots();
-    printMetrics(s);
-    assertThat(s1.gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue())
-        .as("direct buffer usage should grow by at least %s", sampleAllocation)
-        .isGreaterThanOrEqualTo(
-            s0.gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue() + sampleAllocation);
-    assertThat(s1.gauge("process_resident_memory_bytes").getValue())
-        .as("resident memory grows by at least %s", sampleAllocation / 2)
-        .isGreaterThanOrEqualTo(
-            s0.gauge("process_resident_memory_bytes").getValue() + sampleAllocation / 2);
-    // zeroing the buffer does not have an effect
-    // for (int i = 0; i < buf.capacity(); i += 4096) { // touch each 4 KB page
-    //   buf.setByte(i, (byte) 0);
-    // }
-    buf.release();
-    awaitDirectPoolBelow(
-        s1.gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue() - sampleAllocation);
-    Snapshots s2 = s = snapshots();
-    printMetrics(s);
-    assertThat(s2.gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue())
-        .as("direct buffer usage should shrink by at least %s", sampleAllocation)
-        .isLessThanOrEqualTo(
-            s1.gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue() - sampleAllocation);
-    // RSS shrinks also, however, we cannot expect that it shrinks exactly 100M, since other stuff
-    // might be allocated meanwhile
-    assertThat(s2.gauge("process_resident_memory_bytes").getValue())
-        .as("resident memory shrinks by at least %s", sampleAllocation / 2)
-        .isLessThanOrEqualTo(
-            s1.gauge("process_resident_memory_bytes").getValue() + sampleAllocation / 2);
+    try {
+      Snapshots s1 = snapshots();
+      printMetrics(s1);
+      assertThat(s1.gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue())
+          .as("the JVM direct pool does not see buffers allocated through java.lang.foreign")
+          .isLessThan(
+              s0.gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue()
+                  + sampleAllocation / 2);
+      assertThat(metric.usedDirectMemory())
+          .as("netty's own metric sees the unpooled allocation")
+          .isEqualTo(usedBefore + sampleAllocation);
+      assertThat(unpooledDirectMemory()).isEqualTo(usedBefore + sampleAllocation);
+    } finally {
+      buf.release();
+    }
+    assertThat(metric.usedDirectMemory())
+        .as("release restores allocator accounting")
+        .isEqualTo(usedBefore);
+    assertThat(unpooledDirectMemory())
+        .as("the exported gauge reflects release")
+        .isEqualTo(usedBefore);
+  }
+
+  private double unpooledDirectMemory() {
+    return snapshots()
+        .gauge(NettyAllocatorMetrics.METRIC_NAME, "allocator", "unpooled", "type", "direct")
+        .getValue();
+  }
+
+  /// Preserve the positive JVM-pool and reclamation checks independently of Netty's cleaner choice.
+  @Test
+  void jvmDirectBufferMetricTracksAllocationAndCollection() throws Exception {
+    JvmMetrics.builder().register(reg);
+    final int sampleAllocation = 100 * 1024 * 1024;
+    double before = snapshots().gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue();
+    allocateJvmDirectBuffer(sampleAllocation, before);
+    for (int i = 0; i < 100; i++) {
+      System.gc();
+      if (snapshots().gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue() <= before) {
+        return;
+      }
+      Thread.sleep(20);
+    }
+    assertThat(snapshots().gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue())
+        .as("collected direct buffer memory returns to the JVM pool")
+        .isLessThanOrEqualTo(before);
+  }
+
+  private void allocateJvmDirectBuffer(int size, double before) {
+    ByteBuffer buffer = ByteBuffer.allocateDirect(size);
+    try {
+      assertThat(snapshots().gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue())
+          .as("the JVM direct pool sees ByteBuffer.allocateDirect")
+          .isGreaterThanOrEqualTo(before + size);
+    } finally {
+      Reference.reachabilityFence(buffer);
+    }
+  }
+
+  /// Run in a fresh JVM so unrelated tests and heap reclamation cannot drown out the RSS signal.
+  @Test
+  void residentMemoryMetricReflectsTouchedDirectByteBuffer() throws Exception {
+    Process process =
+        new ProcessBuilder(
+                Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "--enable-native-access=ALL-UNNAMED",
+                "-Xms64m",
+                "-Xmx64m",
+                "-XX:+AlwaysPreTouch",
+                "-XX:MaxDirectMemorySize=256m",
+                "-cp",
+                System.getProperty("java.class.path"),
+                ResidentMemoryProbe.class.getName())
+            .redirectErrorStream(true)
+            .start();
+    try {
+      assertThat(process.waitFor(30, TimeUnit.SECONDS)).as("RSS probe completes").isTrue();
+      String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+      assertThat(process.exitValue()).as("RSS probe output: %s", output).isZero();
+    } finally {
+      process.destroyForcibly();
+    }
+  }
+
+  public static class ResidentMemoryProbe {
+    public static void main(String[] args) {
+      MetricsAndMemoryTest test = new MetricsAndMemoryTest();
+      JvmMetrics.builder().register(test.reg);
+      ByteBuf warmup = Unpooled.directBuffer(123);
+      warmup.release();
+      test.snapshots();
+      double before = test.snapshots().gauge("process_resident_memory_bytes").getValue();
+      final int sampleAllocation = 100 * 1024 * 1024;
+      ByteBuf buf = Unpooled.directBuffer(sampleAllocation);
+      try {
+        // malloc does not make the pages resident until they are written.
+        buf.setZero(0, buf.capacity());
+        assertThat(test.snapshots().gauge("process_resident_memory_bytes").getValue())
+            .as("RSS sees touched native memory")
+            .isGreaterThanOrEqualTo(before + sampleAllocation / 2);
+      } finally {
+        buf.release();
+      }
+    }
   }
 
   /// `process_virtual_memory_bytes` grows with the netty buffers whichever way netty allocates
@@ -161,15 +234,9 @@ class MetricsAndMemoryTest {
     }
   }
 
-  /// The pooling allocators do not use the same allocation path as `Unpooled`. Netty 4.2.17
-  /// allocates unpooled buffers with `ByteBuffer.allocateDirect`, so those appear in the JVM direct
-  /// pool, but the chunks of [PooledByteBufAllocator] and [AdaptiveByteBufAllocator] come from a
-  /// shared `java.lang.foreign.Arena`, where the expensive close is amortised over a long lived
-  /// chunk. Measured with 100 MiB: unpooled moves the pool by `104_857_600`, pooled and adaptive by
-  /// `0`. Native memory tracking does see them, category `Other` grows by `209_715_208` for a live
-  /// 200 MiB pooled buffer, and netty bounds them with its own counter:
-  /// `-XX:MaxDirectMemorySize=64m` yields netty's `OutOfDirectMemoryError` instead of the JVM's
-  /// `OutOfMemoryError`.
+  /// With native access enabled, the pooling allocators also allocate through libc. Without native
+  /// access they can use a shared `java.lang.foreign.Arena`. Neither path appears in the JVM direct
+  /// buffer pool. Netty's allocator accounting sees the allocation in either case.
   ///
   /// So for the ingress and the upstream path, which both use a pooling allocator, netty's own
   /// allocator metrics are the only thing exposed via JMX. That is what [NettyAllocatorMetrics] is
@@ -199,35 +266,25 @@ class MetricsAndMemoryTest {
     }
   }
 
-  /// Where the memory of the pooling allocators *is* visible: HotSpot's native memory tracking,
-  /// category `Other`, which is where the `java.lang.foreign.Arena` allocations land. Nothing had
-  /// to be written for this, the prometheus client exposes it out of the box: `JvmMetrics`
-  /// registers `JvmNativeMemoryMetrics`, which reads the diagnostic command in process, and exposes
-  /// no series at all when the tracking is off.
-  ///
-  /// This needs `-XX:NativeMemoryTracking=summary`, which surefire sets for us. It costs 5 to 10
-  /// percent of JVM performance, so it is not enabled in production, see the README. Measured with
-  /// 100 MiB from the pooled allocator, `Other` goes `910_432` -> `105_768_040`, a delta of
-  /// `104_857_608`, while `jvm_buffer_pool_used_bytes{pool="direct"}` moves by `1`. After the
-  /// release `Other` returns to `910_440`, because an allocation of this size bypasses the pooling
-  /// as a huge chunk and is given back immediately.
+  /// With native access enabled Netty calls libc directly, bypassing HotSpot's NMT accounting too.
+  /// Keep the positive Arena control below so an inactive NMT collector cannot satisfy this test.
   @Test
-  void nativeMemoryTrackingSeesPooledAllocatorMemory() {
+  void nativeMemoryTrackingDoesNotSeeLinkedPooledAllocatorMemory() {
     JvmMetrics.builder().register(reg);
     final int sampleAllocation = 100 * 1024 * 1024;
     Snapshots s0 = snapshots();
-    assumeTrue(
-        s0.getPrometheusExpositionText().contains("jvm_native_memory_committed_bytes"),
-        "needs -XX:NativeMemoryTracking=summary");
+    assertThat(s0.getPrometheusExpositionText().contains("jvm_native_memory_committed_bytes"))
+        .as("needs -XX:NativeMemoryTracking=summary")
+        .isTrue();
     ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer(sampleAllocation);
     try {
       Snapshots s1 = snapshots();
       printMetrics(s1);
       assertThat(s1.gauge("jvm_native_memory_committed_bytes", "pool", "Other").getValue())
-          .as("native memory tracking sees the allocation")
-          .isGreaterThanOrEqualTo(
+          .as("native memory tracking does not see direct libc allocations")
+          .isLessThan(
               s0.gauge("jvm_native_memory_committed_bytes", "pool", "Other").getValue()
-                  + sampleAllocation);
+                  + sampleAllocation / 2);
       assertThat(s1.gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue())
           .as("while the JVM direct buffer pool still does not")
           .isLessThan(
@@ -235,6 +292,22 @@ class MetricsAndMemoryTest {
                   + sampleAllocation / 2);
     } finally {
       buf.release();
+    }
+  }
+
+  /// Arena allocations go through HotSpot and remain visible in NMT's `Other` category.
+  @Test
+  void nativeMemoryTrackingSeesArenaMemory() {
+    JvmMetrics.builder().register(reg);
+    final int sampleAllocation = 100 * 1024 * 1024;
+    double before =
+        snapshots().gauge("jvm_native_memory_committed_bytes", "pool", "Other").getValue();
+    try (Arena arena = Arena.ofShared()) {
+      var memory = arena.allocate(sampleAllocation);
+      assertThat(snapshots().gauge("jvm_native_memory_committed_bytes", "pool", "Other").getValue())
+          .as("NMT sees allocations made through the JVM")
+          .isGreaterThanOrEqualTo(before + sampleAllocation);
+      Reference.reachabilityFence(memory);
     }
   }
 
@@ -268,19 +341,9 @@ class MetricsAndMemoryTest {
     } finally {
       buf.release();
     }
-  }
-
-  /// Netty cannot free an `allocateDirect` buffer eagerly without `Unsafe.invokeCleaner`, so the
-  /// memory returns to the direct pool only once the buffer is collected.
-  private void awaitDirectPoolBelow(double expected) throws Exception {
-    for (int i = 0; i < 50; i++) {
-      if (snapshots().gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue()
-          <= expected) {
-        return;
-      }
-      System.gc();
-      Thread.sleep(20);
-    }
+    assertThat(metric.usedDirectMemory())
+        .as("release restores allocator accounting")
+        .isEqualTo(usedBefore);
   }
 
   static boolean silent = false;

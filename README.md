@@ -47,9 +47,10 @@ For testing we use OpenJDK 24 and switch to ZGC for minimal pause times:
 
     java -XX:+UseZGC --enable-native-access=ALL-UNNAMED -jar target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar
 
-`--enable-native-access=ALL-UNNAMED` is needed because Netty allocates its off heap memory through
-`java.lang.foreign.Arena`. Adding `-XX:NativeMemoryTracking=summary` makes that memory visible in the
-metrics, at the cost of 5 to 10 percent JVM performance, see [Exposed metrics](#exposed-metrics).
+On Java 25, `--enable-native-access=ALL-UNNAMED` lets Netty 4.2.17 use the foreign linker to call
+libc's `malloc` and `free` directly. These allocations bypass both JVM direct buffer accounting and
+native memory tracking. Use Netty's allocator metrics and process RSS to monitor them, see
+[Exposed metrics](#exposed-metrics).
 
 For load testing we use vegeta:
 
@@ -226,12 +227,11 @@ The `nonheap` does not include direct buffers.
 
 ### `jvm_buffer_pool_used_bytes{pool="direct"}`
 
-Direct byte buffers as accounted by `java.nio`. This does **not** cover most of Netty's off heap
-memory and is not relevant to monitor. Netty allocates the chunks of the pooled and the adaptive allocator through
-`java.lang.foreign.Arena`, which is outside the accounting of `java.nio`, so they appear neither here
-nor in any other MXBean pool. Only the buffers of `Unpooled` do. Measured with 100 MiB: unpooled
-moves this metric by the full amount, pooled and adaptive by zero. In practice it is a constant, the
-roughly 16 KB of challenge content cached by `ResourceFiles`.
+Direct byte buffers as accounted by `java.nio`, including `ByteBuffer.allocateDirect`. With Java 25,
+Netty 4.2.17 and native access enabled, Netty's unpooled, pooled and adaptive allocators use libc
+directly and do not appear here. Without native access, unpooled buffers fall back to
+`ByteBuffer.allocateDirect` and appear here, while pooling allocators can use an Arena that remains
+outside this accounting. Use Netty's own metrics for consistent allocator coverage.
 
 ### `sensepitch_netty_allocator_used_memory_bytes`
 
@@ -246,17 +246,18 @@ Only `Unpooled.buffer()` and `Unpooled.directBuffer()` are counted; `copiedBuffe
 
 ### `jvm_native_memory_committed_bytes{pool="Other"}`
 
-The process wide off heap figure, covering every allocator. Needs `-XX:NativeMemoryTracking=summary`
-at startup, which costs 5 to 10 percent JVM performance and is a HotSpot feature, so it is off by
-default and the series are absent without it.
+HotSpot's accounting of miscellaneous native allocations, including `java.lang.foreign.Arena`
+memory. This does **not** cover Netty's direct libc allocations when native access is enabled.
+Needs `-XX:NativeMemoryTracking=summary` at startup, which costs 5 to 10 percent JVM performance
+and is a HotSpot feature, so it is off by default and the series are absent without it.
 
 ### Tracking down memory growth
 
 1. `process_resident_memory_bytes` rising steadily is the alert.
 2. `jvm_memory_used_bytes{area="heap"}` separates a heap problem from an off heap one.
 3. `sensepitch_netty_allocator_used_memory_bytes` says which allocator holds it.
-4. `jvm_native_memory_committed_bytes{pool="Other"}` gives the process wide off heap total, when a
-   restart with native memory tracking is affordable.
+4. `jvm_native_memory_committed_bytes{pool="Other"}` helps investigate native allocations tracked
+   by HotSpot, but excludes Netty's direct libc allocations with native access enabled.
 5. Netty's JFR events give per allocation detail. `io.netty.AllocateChunk`, `io.netty.FreeChunk`,
    `io.netty.AllocateBuffer` and `io.netty.FreeBuffer` carry the allocator type, the size, whether
    the memory is direct, and the address, so allocations and frees can be paired up. Record with

@@ -15,10 +15,10 @@ import java.util.function.Consumer;
 
 /// Exposes netty's own accounting of the memory used by its byte buffers.
 ///
-/// Expose consistent metrics for Netties buffers, aka, memory pools. Netty 4.2 allocates the chunks
-/// of the pooling allocators from a shared `java.lang.foreign.Arena`, which is intentionally
-/// outside the accounting of `java.nio`, so `jvm_buffer_pool_used_bytes{pool="direct"}` does not
-/// see them.
+/// Expose consistent metrics for Netty's buffers. With Java 25 and native access enabled, Netty
+/// 4.2.17 allocates through libc directly. Without native access the pooling allocators can use a
+/// shared `java.lang.foreign.Arena`. Both paths are outside the accounting of `java.nio`, so
+/// `jvm_buffer_pool_used_bytes{pool="direct"}` does not see them.
 ///
 /// Both the accepted connections and the upstream connections use `ByteBufAllocator.DEFAULT`,
 /// reported as `default`, which is netty's `AdaptiveByteBufAllocator` and is documented as
@@ -32,9 +32,9 @@ import java.util.function.Consumer;
 /// instead.
 ///
 /// These numbers are netty's logical usage, decremented on `release()`, so they say how much of the
-/// pooled memory is handed out, not how much the process holds. For the latter, run with
-/// `-XX:NativeMemoryTracking=summary`, see the README, and the prometheus client exposes it as
-/// `jvm_native_memory_committed_bytes{pool="Other"}`.
+/// pooled memory is handed out, not how much the process holds. Use process RSS for total resident
+/// memory. `jvm_native_memory_committed_bytes{pool="Other"}` includes Arena allocations when
+/// `-XX:NativeMemoryTracking=summary` is enabled. Direct libc allocations remain invisible.
 ///
 /// @author Jens Wilke
 public class NettyAllocatorMetrics implements HasMultipleMetrics {
