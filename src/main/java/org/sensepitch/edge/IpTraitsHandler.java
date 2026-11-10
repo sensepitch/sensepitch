@@ -66,13 +66,17 @@ public class IpTraitsHandler extends ChannelInboundHandlerAdapter {
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
     if (msg instanceof HttpRequest request) {
+      // never let a client pretend to have traits, e.g. to pass as a crawler, see DetectCrawler
+      request.headers().remove(TRAITS_HEADER);
+      request.headers().remove(COUNTRY_HEADER);
+      request.headers().remove(ASN_HEADER);
       if (traits != null) {
-        request.headers().add(TRAITS_HEADER, traits);
+        request.headers().set(TRAITS_HEADER, traits);
         if (ipTraits.isoCountry() != null) {
-          request.headers().add(COUNTRY_HEADER, ipTraits.isoCountry());
+          request.headers().set(COUNTRY_HEADER, ipTraits.isoCountry());
         }
         if (ipTraits.asn() >= 0) {
-          request.headers().add(ASN_HEADER, ipTraits.asn());
+          request.headers().set(ASN_HEADER, ipTraits.asn());
         }
       }
     }
