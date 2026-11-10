@@ -31,6 +31,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.Test;
 
 /// Test our understanding of the JVM memory metrics w.r.t. to the Netty byte buffers.
@@ -346,17 +348,18 @@ class MetricsAndMemoryTest {
         .isEqualTo(usedBefore);
   }
 
-  static boolean silent = true;
+  private static final Logger LOG = LogManager.getLogger(MetricsAndMemoryTest.class);
 
+  /// Diagnostic output, enable with level `DEBUG` for this class in `log4j2-test.xml`
   private static void printMetrics(Snapshots s) {
-    if (silent) {
+    if (!LOG.isDebugEnabled()) {
       return;
     }
-    System.out.println(s.getLinesContaining("jvm_buffer_pool_used_bytes"));
-    System.out.println(s.getLinesContaining("jvm_memory_used_bytes"));
-    System.out.println(s.getLinesContaining("process_resident_memory_bytes"));
-    System.out.println(s.getLinesContaining("process_virtual_memory_bytes"));
-    System.out.println(s.getLinesContaining("jvm_native_memory_committed_bytes{pool=\"Other\"}"));
+    LOG.debug(s.getLinesContaining("jvm_buffer_pool_used_bytes"));
+    LOG.debug(s.getLinesContaining("jvm_memory_used_bytes"));
+    LOG.debug(s.getLinesContaining("process_resident_memory_bytes"));
+    LOG.debug(s.getLinesContaining("process_virtual_memory_bytes"));
+    LOG.debug(s.getLinesContaining("jvm_native_memory_committed_bytes{pool=\"Other\"}"));
   }
 
   Snapshots snapshots() {

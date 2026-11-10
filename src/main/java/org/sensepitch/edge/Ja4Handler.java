@@ -26,7 +26,7 @@ public class Ja4Handler extends ChannelInboundHandlerAdapter {
   /// record layer allows 16k per record.
   static final int MAX_CLIENT_HELLO_BYTES = 16 * 1024;
 
-  static final ProxyLogger LOG = ProxyLogger.get(Ja4Handler.class);
+  private static final ProxyLogger LOG = ProxyLogger.get(Ja4Handler.class);
 
   private ByteBuf received;
 

@@ -108,8 +108,6 @@ public class RecordConstructor {
                   } else {
                     obj = createValueObject(elementType, t.getValueNode());
                   }
-                  // System.out.println(t.getKeyNode());
-                  // System.out.println(t.getValueNode());
                   map.put(scalarValue(t.getKeyNode()), obj);
                 });
         return map;

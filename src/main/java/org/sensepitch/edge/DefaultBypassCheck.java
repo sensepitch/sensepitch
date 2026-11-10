@@ -13,7 +13,7 @@ import java.util.TreeMap;
 /// @author Jens Wilke
 public class DefaultBypassCheck implements BypassCheck {
 
-  static ProxyLogger LOG = ProxyLogger.get(DefaultBypassCheck.class);
+  private static final ProxyLogger LOG = ProxyLogger.get(DefaultBypassCheck.class);
 
   private final Map<String, BypassCheck> uriMatch = new HashMap<>();
   private final NavigableMap<String, BypassCheck> uriPrefixList = new TreeMap<>();

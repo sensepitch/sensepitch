@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.StringReader;
 import java.util.Map;
+import org.apache.logging.log4j.LogManager;
 import org.junit.jupiter.api.Test;
 import org.sensepitch.edge.config.KeyInjector;
 import org.sensepitch.edge.config.RecordConstructor;
@@ -120,7 +121,6 @@ public class ConfigTest {
     Node root = parser.compose(new StringReader(yaml));
     // printNode(root, 2);
     AllFieldTypesConfig obj = RecordConstructor.construct(AllFieldTypesConfig.class, root);
-    // System.out.println(obj);
     assertThat(obj.number()).isEqualTo(123);
     assertThat(obj.flag()).isEqualTo(true);
     assertThat(obj.text()).isEqualTo("hello world");
@@ -221,21 +221,23 @@ public class ConfigTest {
     assertThat(obj.map().get("second").key()).isEqualTo("second");
   }
 
+  /// Debugging aid, logs the YAML node tree
   void printNode(Node node, int indent) {
+    var log = LogManager.getLogger(ConfigTest.class);
     String pad = " ".repeat(indent);
     if (node instanceof MappingNode m) {
-      System.out.println(pad + "MappingNode:");
+      log.info(pad + "MappingNode:");
       for (NodeTuple tuple : m.getValue()) {
         printNode(tuple.getKeyNode(), indent + 2);
         printNode(tuple.getValueNode(), indent + 2);
       }
     } else if (node instanceof SequenceNode s) {
-      System.out.println(pad + "SequenceNode:");
+      log.info(pad + "SequenceNode:");
       for (Node item : s.getValue()) {
         printNode(item, indent + 2);
       }
     } else if (node instanceof ScalarNode sc) {
-      System.out.printf("%sScalarNode: %s (%s)%n", pad, sc.getValue(), sc.getTag());
+      log.info("{}ScalarNode: {} ({})", pad, sc.getValue(), sc.getTag());
     }
   }
 }

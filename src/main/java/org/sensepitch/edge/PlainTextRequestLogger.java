@@ -3,17 +3,29 @@ package org.sensepitch.edge;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
+import java.io.PrintStream;
 import java.net.InetSocketAddress;
 import java.text.DecimalFormat;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 
+/// Writes the request log in a human readable single line format, prefixed with `RQ0`.
+///
+/// Each record is rendered completely and written with a single [PrintStream#println(String)]
+/// call, so records of concurrent event loops cannot interleave within one line.
+///
 /// @author Jens Wilke
-public class StandardOutRequestLogger implements RequestLogger {
+public class PlainTextRequestLogger implements RequestLogger {
 
   private static final DateTimeFormatter CLF_TIME =
       DateTimeFormatter.ofPattern("dd/MMM/yyyy:HH:mm:ss Z", Locale.ENGLISH);
+
+  private final PrintStream output;
+
+  public PlainTextRequestLogger(PrintStream output) {
+    this.output = output;
+  }
 
   @Override
   public void logRequest(RequestLogInfo info) {
@@ -67,7 +79,7 @@ public class StandardOutRequestLogger implements RequestLogger {
               sb.append(sanitize(kv.getKey()));
             });
     String headerNames = sb.toString();
-    System.out.println(
+    output.println(
         "RQ0 "
             + info.requestId()
             + " "

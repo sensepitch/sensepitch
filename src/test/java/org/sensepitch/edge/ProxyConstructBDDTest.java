@@ -296,11 +296,12 @@ class ProxyConstructBDDTest {
 
     Proxy proxy;
     Throwable constructionFailure;
+    final RequestLogCapture requestLog = new RequestLogCapture();
 
     @Step("Given a common configuration:")
     T given_the_configuration(ProxyConfig proxyConfig) {
       try {
-        proxy = new Proxy(proxyConfig);
+        proxy = new Proxy(proxyConfig, requestLog.stream());
       } catch (Throwable throwable) {
         constructionFailure = throwable;
       }

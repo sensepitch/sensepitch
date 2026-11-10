@@ -27,6 +27,7 @@ import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.MockTicker;
 import io.netty.util.concurrent.Promise;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 /// @author Jens Wilke
 class TimeoutsTest {
@@ -47,6 +48,11 @@ class TimeoutsTest {
     ticker.advance(123, SECONDS);
   }
 
+  @RegisterExtension LogCapture logs = new LogCapture();
+
+  RequestLogCapture requestLogCapture = new RequestLogCapture();
+  RequestLogger requestLog = requestLogCapture.plainText();
+
   EmbeddedChannel upstreamChannel;
 
   EmbeddedChannel ingressChannel =
@@ -54,7 +60,7 @@ class TimeoutsTest {
           .ticker(ticker)
           .handlers(
               new FakeSslHandler(),
-              new RequestLoggingHandler(new ProxyMetrics(), new StandardOutRequestLogger()),
+              new RequestLoggingHandler(new ProxyMetrics(), requestLog),
               new IngressTimeoutHandler(cfg, proxyMetrics),
               new HttpServerKeepAliveHandler(),
               new DownstreamHandler(new MockUpstream(), proxyMetrics),
@@ -123,6 +129,10 @@ class TimeoutsTest {
     assertThat(response).isNotNull();
     assertThat(response.status().code()).isEqualTo(504);
     assertThat(ingressChannel.isActive()).isFalse();
+    assertThat(requestLogCapture.lines())
+        .singleElement()
+        .asString()
+        .contains("GET /no-response HTTP/1.1 504");
   }
 
   @Test
@@ -165,6 +175,10 @@ class TimeoutsTest {
     rattle();
     assertThat(ingressChannel.isActive()).isFalse();
     ingressChannel.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT);
+    assertThat(logs.messages(ExceptionHandler.class))
+        .singleElement()
+        .asString()
+        .contains("DOWNSTREAM ERROR phase=responding");
   }
 
   private void sendRequest(String uri) {

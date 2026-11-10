@@ -18,10 +18,12 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.PrintStream;
 import java.net.InetSocketAddress;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLException;
 import org.sensepitch.edge.config.KeyInjector;
 import org.yaml.snakeyaml.DumperOptions;
@@ -32,7 +34,7 @@ import org.yaml.snakeyaml.representer.Representer;
 /// Minimal HTTP/1.1 proxy without aggregation, with keep-alive and basic logging
 public class Proxy implements ProxyContext {
 
-  ProxyLogger LOG = ProxyLogger.get(Proxy.class);
+  private static final ProxyLogger LOG = ProxyLogger.get(Proxy.class);
 
   private final Dummy404Handler dummy404Handler = new Dummy404Handler();
   private final TrackIngressConnectionsHandler trackIngressConnectionsHandler;
@@ -51,8 +53,16 @@ public class Proxy implements ProxyContext {
   private final SiteSelector siteSelector;
   private final Ja4Config ja4Config;
   private final Ja4HeaderHandler ja4HeaderHandler;
+  private final PrintStream requestLogOutput;
 
+  /// Proxy writing the request log to standard out, see [RequestLogger#bufferedStandardOut()]
   public Proxy(ProxyConfig config) {
+    this(config, RequestLogger.bufferedStandardOut());
+  }
+
+  /// @param requestLogOutput destination of the request log, tests pass a capturing stream here
+  public Proxy(ProxyConfig config, PrintStream requestLogOutput) {
+    this.requestLogOutput = requestLogOutput;
     config = KeyInjector.injectAllMapKeys(config);
     if (config.listen() == null) {
       throw new IllegalArgumentException("Missing listen configuration");
@@ -94,7 +104,9 @@ public class Proxy implements ProxyContext {
         config.requestLog() != null ? config.requestLog() : RequestLogConfig.DEFAULT;
     requestLogger =
         new DistributingRequestLogger(
-            requestLogConfig.plainText() ? new StandardOutRequestLogger() : new JsonRequestLogger(),
+            requestLogConfig.plainText()
+                ? new PlainTextRequestLogger(requestLogOutput)
+                : new JsonRequestLogger(requestLogOutput),
             metricsBridge.expose(new ExposeRequestCountPerStatusCodeHandler()));
     try {
       if (config.ipLookup() != null) {
@@ -115,7 +127,7 @@ public class Proxy implements ProxyContext {
     Representer repr = new Representer(options);
     repr.getPropertyUtils().setBeanAccess(BeanAccess.FIELD);
     Yaml yaml = new Yaml(repr, options);
-    System.out.println(yaml.dump(proxyConfig));
+    LOG.info("Configuration:\n" + yaml.dump(proxyConfig));
   }
 
   MetricsBridge initializeMetrics() {
@@ -236,9 +248,13 @@ public class Proxy implements ProxyContext {
       String addr = config.listen().address();
       int port = config.listen().httpsPort();
       ChannelFuture f = sb.bind(new InetSocketAddress(addr, port)).sync();
-      System.out.println("Open SSL: " + OpenSsl.versionString());
-      System.out.println("Proxy listening on " + addr + ":" + port);
+      LOG.info("Open SSL: " + OpenSsl.versionString());
+      LOG.info("Proxy listening on " + addr + ":" + port);
       LOG.trace("tracing enabled");
+      // the request log output is buffered, flush it regularly so collectors see it promptly.
+      // Flushing happens in the boss thread, so a blocked standard out does not stall requests.
+      bossGroup.scheduleAtFixedRate(requestLogOutput::flush, 1, 1, TimeUnit.SECONDS);
+      Runtime.getRuntime().addShutdownHook(new Thread(requestLogOutput::flush));
       f.channel().closeFuture().sync();
     } finally {
       bossGroup.shutdownGracefully();
@@ -248,6 +264,7 @@ public class Proxy implements ProxyContext {
 
   void shutdown() {
     eventLoopGroup.shutdownGracefully();
+    requestLogOutput.flush();
   }
 
   void addHttpHandlers(ChannelPipeline pipeline) {

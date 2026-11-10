@@ -38,7 +38,7 @@ class BindAddressTest {
             .metrics(MetricsConfig.builder().enable(false).build())
             .build();
 
-    var proxy = new Proxy(config);
+    var proxy = new Proxy(config, new RequestLogCapture().stream());
     assertThatThrownBy(() -> proxy.start()).isInstanceOf(Exception.class);
   }
 }

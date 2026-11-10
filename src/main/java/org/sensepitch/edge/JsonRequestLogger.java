@@ -41,10 +41,6 @@ public class JsonRequestLogger implements RequestLogger {
   private final JsonFactory jsonFactory = new JsonFactory();
   private final PrintStream output;
 
-  public JsonRequestLogger() {
-    this(System.out);
-  }
-
   public JsonRequestLogger(PrintStream output) {
     this.output = output;
   }

@@ -24,13 +24,16 @@ public class FlowAndExceptionTest {
 
   ProxyMetrics proxyMetrics = new ProxyMetrics();
 
+  RequestLogCapture requestLogCapture = new RequestLogCapture();
+  RequestLogger requestLog = requestLogCapture.plainText();
+
   EmbeddedChannel upstreamChannel;
 
   EmbeddedChannel ingressChannel =
       EmbeddedChannel.builder()
           .handlers(
               new TimeoutsTest.FakeSslHandler(),
-              new RequestLoggingHandler(new ProxyMetrics(), new StandardOutRequestLogger()),
+              new RequestLoggingHandler(new ProxyMetrics(), requestLog),
               new HttpServerKeepAliveHandler(),
               new DownstreamHandler(new MockUpstream(), proxyMetrics),
               new ExceptionHandler(proxyMetrics))

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Test logging. Takes precedence over the production log4j2.xml because of the "-test" suffix.
+
+  There is deliberately no appender, so the test run stays silent. Tests that want to assert on
+  log output register the LogCapture extension, which attaches an in-memory appender to the root
+  logger for the duration of the test.
+
+  For debugging, temporarily add the console appender reference below to the root logger.
+-->
+<Configuration xmlns="https://logging.apache.org/xml/ns"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+               xsi:schemaLocation="
+                   https://logging.apache.org/xml/ns
+                   https://logging.apache.org/xml/ns/log4j-config-2.xsd">
+  <Appenders>
+    <Console name="STDERR" target="SYSTEM_ERR">
+      <PatternLayout pattern="%d{HH:mm:ss.SSS} [%t] %-5p %c{1} %m%n"/>
+    </Console>
+  </Appenders>
+  <Loggers>
+    <Root level="INFO">
+      <!-- <AppenderRef ref="STDERR"/> -->
+    </Root>
+  </Loggers>
+</Configuration>

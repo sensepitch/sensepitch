@@ -8,8 +8,12 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.*;
 import io.netty.util.CharsetUtil;
+import org.sensepitch.edge.ProxyLogger;
 
 public class HelloWorldServer {
+
+  private static final ProxyLogger LOG = ProxyLogger.get(HelloWorldServer.class);
+
   private final int port;
 
   public HelloWorldServer(int port) {
@@ -36,7 +40,6 @@ public class HelloWorldServer {
                             @Override
                             protected void channelRead0(
                                 ChannelHandlerContext ctx, FullHttpRequest req) {
-                              // System.out.println(req.uri());
                               FullHttpResponse response =
                                   new DefaultFullHttpResponse(
                                       HttpVersion.HTTP_1_1,
@@ -56,7 +59,7 @@ public class HelloWorldServer {
                             @Override
                             public void exceptionCaught(
                                 ChannelHandlerContext ctx, Throwable cause) {
-                              cause.printStackTrace();
+                              LOG.error(ctx.channel(), "exception", cause);
                               ctx.close();
                             }
                           });
@@ -64,7 +67,7 @@ public class HelloWorldServer {
               });
 
       Channel ch = b.bind(port).sync().channel();
-      System.out.println("HTTP server started on port " + port);
+      LOG.info("HTTP server started on port " + port);
       ch.closeFuture().sync();
     } finally {
       bossGroup.shutdownGracefully();

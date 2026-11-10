@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.sensepitch.edge.DefaultAdmissionTokenGenerator.*;
 
 import java.util.Arrays;
+import org.apache.logging.log4j.LogManager;
 import org.junit.jupiter.api.Test;
 
 /// @author Jens Wilke
@@ -55,12 +56,10 @@ public class AdmissionTokenTest {
 
   // @Test
   public void printSequnce() {
-    System.out.println(admissionHandler.newAdmission());
-    System.out.println(admissionHandler.newAdmission());
-    System.out.println(admissionHandler.newAdmission());
-    System.out.println(admissionHandler.newAdmission());
-    System.out.println(admissionHandler.newAdmission());
-    System.out.println(admissionHandler.newAdmission());
+    var log = LogManager.getLogger(AdmissionTokenTest.class);
+    for (int i = 0; i < 6; i++) {
+      log.info(admissionHandler.newAdmission());
+    }
   }
 
   @Test

@@ -26,7 +26,7 @@ import java.net.InetSocketAddress;
 /// @author Jens Wilke
 public class DownstreamHandler extends ChannelDuplexHandler {
 
-  static final ProxyLogger DEBUG = ProxyLogger.get(DownstreamHandler.class);
+  private static final ProxyLogger DEBUG = ProxyLogger.get(DownstreamHandler.class);
 
   private final Upstream upstream;
   private Future<Channel> upstreamChannelFuture;

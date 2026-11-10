@@ -13,7 +13,7 @@ import java.net.InetAddress;
 /// @see <a href="https://ipinfo.io/lite">IP info lite</a>
 public class IpInfoCountryAndAsnLookup implements IpTraitsLookup {
 
-  ProxyLogger LOG = ProxyLogger.get(IpInfoCountryAndAsnLookup.class);
+  private static final ProxyLogger LOG = ProxyLogger.get(IpInfoCountryAndAsnLookup.class);
 
   private final Reader reader;
 

@@ -26,7 +26,7 @@ import io.netty.util.concurrent.Ticker;
 /// @author Jens Wilke
 public class RequestLoggingHandler extends ChannelDuplexHandler implements RequestLogInfo {
 
-  static ProxyLogger DEBUG = ProxyLogger.get(RequestLoggingHandler.class);
+  private static final ProxyLogger DEBUG = ProxyLogger.get(RequestLoggingHandler.class);
 
   private static final CountByteIoHandler DUMMY_COUNT_BYTE_IO_HANDLER = new CountByteIoHandler();
 

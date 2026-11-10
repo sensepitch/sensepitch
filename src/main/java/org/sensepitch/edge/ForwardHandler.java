@@ -15,7 +15,7 @@ import io.netty.handler.codec.http.LastHttpContent;
 /// @author Jens Wilke
 public class ForwardHandler extends ChannelInboundHandlerAdapter {
 
-  static ProxyLogger LOG = ProxyLogger.get(ForwardHandler.class);
+  private static final ProxyLogger LOG = ProxyLogger.get(ForwardHandler.class);
   private Channel downstream;
 
   public ForwardHandler(Channel ingress) {

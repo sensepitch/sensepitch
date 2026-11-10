@@ -13,7 +13,7 @@ import java.util.function.Consumer;
 /// @author Jens Wilke
 public class PrometheusMetricsBridge implements MetricsBridge {
 
-  static ProxyLogger DEBUG = ProxyLogger.get(PrometheusMetricsBridge.class);
+  private static final ProxyLogger DEBUG = ProxyLogger.get(PrometheusMetricsBridge.class);
 
   private final PrometheusRegistry prometheusRegistry;
 

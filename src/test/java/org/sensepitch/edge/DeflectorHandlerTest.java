@@ -211,7 +211,6 @@ public class DeflectorHandlerTest {
           @Override
           public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
               throws Exception {
-            // System.out.println("AdmissionHandler write " + msg);
             messageWritten = msg;
             super.write(ctx, msg, promise);
           }
@@ -221,7 +220,6 @@ public class DeflectorHandlerTest {
           @Override
           public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
             passed = true;
-            // System.out.println("AdmissionHandler read " + msg);
             super.channelRead(ctx, msg);
           }
         };

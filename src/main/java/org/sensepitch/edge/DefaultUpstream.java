@@ -22,7 +22,7 @@ import io.netty.util.concurrent.Promise;
 /// @author Jens Wilke
 public class DefaultUpstream implements Upstream {
 
-  private static ProxyLogger LOG = ProxyLogger.get(DefaultUpstream.class);
+  private static final ProxyLogger LOG = ProxyLogger.get(DefaultUpstream.class);
 
   private final Bootstrap bootstrap;
   private final SimpleChannelPool pool = null;

@@ -14,7 +14,7 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
   static final String CRAWLER_LABEL_PREFIX = "crawler:";
   static final String UNKNOWN_CRAWLER_NAME = "unknown";
 
-  ProxyLogger LOG = ProxyLogger.get(CombinedIpTraitsLookup.class);
+  private static final ProxyLogger LOG = ProxyLogger.get(CombinedIpTraitsLookup.class);
 
   private final List<IpTraitsLookup> ipAttributesLookups;
   private final IpLabelLookup ipLabelLookup;

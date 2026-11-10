@@ -32,7 +32,7 @@ import java.util.concurrent.TimeUnit;
 /// @author Jens Wilke
 public final class IngressTimeoutHandler extends ChannelDuplexHandler {
 
-  public static ProxyLogger LOG = ProxyLogger.get(IngressTimeoutHandler.class);
+  private static final ProxyLogger LOG = ProxyLogger.get(IngressTimeoutHandler.class);
 
   private final ConnectionConfig config;
   private boolean responding = false;

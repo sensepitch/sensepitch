@@ -23,7 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class ExceptionHandler extends ChannelInboundHandlerAdapter {
 
-  static final ProxyLogger LOG = ProxyLogger.get(ExceptionHandler.class);
+  private static final ProxyLogger LOG = ProxyLogger.get(ExceptionHandler.class);
 
   private boolean sslHandshakeComplete;
   private final ProxyMetrics metrics;

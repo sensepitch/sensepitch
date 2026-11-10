@@ -12,7 +12,6 @@ public class ChallengeTest {
   @Test
   public void challengeTestValid() {
     String challenge = generateChallengeString();
-    // System.out.println(challenge);
     assertThat(verifyChallengeString(challenge)).isNotEqualTo(0L);
   }
 

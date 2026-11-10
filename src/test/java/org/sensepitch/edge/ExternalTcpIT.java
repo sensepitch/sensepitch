@@ -3,16 +3,14 @@ package org.sensepitch.edge;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.netty.util.concurrent.EventExecutor;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.PrintStream;
-import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
@@ -24,6 +22,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 /// Boots the proxy on a real TCP port with TLS.
 ///
@@ -35,8 +34,9 @@ class ExternalTcpIT {
 
   private Proxy proxy;
   private int port;
-  private ByteArrayOutputStream logBuffer;
-  private PrintStream originalLogOutput;
+  private final RequestLogCapture requestLog = new RequestLogCapture();
+
+  @RegisterExtension LogCapture logs = new LogCapture();
 
   @BeforeEach
   void startProxy() throws Exception {
@@ -73,7 +73,7 @@ class ExternalTcpIT {
             .metrics(MetricsConfig.builder().enable(false).build())
             .build();
 
-    proxy = new Proxy(config);
+    proxy = new Proxy(config, requestLog.stream());
     Thread thread =
         new Thread(
             () -> {
@@ -88,14 +88,12 @@ class ExternalTcpIT {
     thread.start();
 
     awaitListening();
-    // redirect only now, so startup and the readiness probe stay out of the buffer
-    logBuffer = new ByteArrayOutputStream();
-    originalLogOutput = redirectProxyLog(new PrintStream(logBuffer, true));
+    // clear only now, so startup and the readiness probe stay out of the assertions
+    logs.clear();
   }
 
   @AfterEach
   void stopProxy() throws Exception {
-    redirectProxyLog(originalLogOutput);
     proxy.shutdown();
   }
 
@@ -196,16 +194,14 @@ class ExternalTcpIT {
   }
 
   private void assertLogged() {
-    assertThat(logBuffer.toString(StandardCharsets.UTF_8))
+    assertThat(proxyMessages())
         .describedAs("proxy must log the failed upstream connection")
         .isNotEmpty();
   }
 
   private void assertNothingLogged() throws InterruptedException {
     drainEventLoops();
-    assertThat(logBuffer.toString(StandardCharsets.UTF_8))
-        .describedAs("proxy must stay silent for malformed input")
-        .isEmpty();
+    assertThat(proxyMessages()).describedAs("proxy must stay silent for malformed input").isEmpty();
   }
 
   // the group is owned and closed by the proxy, the test only borrows it
@@ -218,12 +214,9 @@ class ExternalTcpIT {
     }
   }
 
-  private static PrintStream redirectProxyLog(PrintStream target) throws Exception {
-    Field field = LogTarget.StreamOutput.class.getDeclaredField("output");
-    field.setAccessible(true);
-    PrintStream previous = (PrintStream) field.get(LogTarget.INSTANCE); // get output from INSTANCE
-    field.set(LogTarget.INSTANCE, target);
-    return previous;
+  /// Messages of the proxy's own loggers, Netty and other libraries are not of interest here
+  private List<String> proxyMessages() {
+    return logs.messages("org.sensepitch.edge");
   }
 
   /// Writes bytes that are not a valid TLS ClientHello, then expects the peer to hang up.

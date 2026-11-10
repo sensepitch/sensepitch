@@ -29,7 +29,6 @@ public class IsolatedNettyTest {
             new ChannelInboundHandlerAdapter() {
               @Override
               public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-                // System.err.println(cause);
                 wasCaught.set(true);
                 ctx.close();
               }

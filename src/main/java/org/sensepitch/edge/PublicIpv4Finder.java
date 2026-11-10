@@ -20,10 +20,6 @@ public class PublicIpv4Finder {
                 .filter(
                     iface -> {
                       try {
-                        //          System.out.println(iface);
-                        //          iface.inetAddresses().forEach(inetAddress -> {
-                        //            System.out.println("- " + inetAddress);
-                        //          });
                         return iface.isUp() && !iface.isLoopback() && !iface.isVirtual();
                       } catch (SocketException e) {
                         return false;

@@ -5,23 +5,36 @@ import io.netty.channel.ChannelHandlerContext;
 import java.lang.System.Logger.Level;
 import java.net.InetSocketAddress;
 
+/// Logging facade of the proxy, with methods that render channel ids consistently.
+///
+/// Messages are forwarded to Log4j2 via [LogTarget], which also explains why diagnostics and
+/// the request log go to different streams.
+///
+/// Tracing is gated twice. Unless the environment variable `SENSEPITCH_EDGE_LOG_LEVEL` is set,
+/// every logger is an [ErrorOnly] instance whose [#isTraceEnabled()] is the constant `false`.
+/// Since the loggers are kept in `static final` fields and only this one implementation class is
+/// ever instantiated, the JIT inlines the check and removes trace code from the hot path
+/// entirely. When the variable is set, [WithTracing] asks Log4j2, so the configured level
+/// decides, at the cost of a level check per call.
+///
 /// @author Jens Wilke
 public interface ProxyLogger {
 
+  /// Read once, so the logger implementation is fixed for the JVM lifetime
+  boolean TRACE_POSSIBLE = System.getenv("SENSEPITCH_EDGE_LOG_LEVEL") != null;
+
   static ProxyLogger get(String source) {
-    String debugFlag = System.getenv("SENSEPITCH_EDGE_LOG_LEVEL");
-    if (debugFlag != null) {
-      return new WithTracing(source, LogTarget.INSTANCE);
+    LogTarget target = LogTarget.of(source);
+    if (TRACE_POSSIBLE) {
+      return new WithTracing(source, target);
     }
-    return new ErrorOnly(source, LogTarget.INSTANCE);
+    return new ErrorOnly(source, target);
   }
 
+  /// Logger named after the fully qualified class name, so levels can be configured per package.
+  /// Keep the result in a `static final` field, see the class documentation.
   static ProxyLogger get(Class<?> source) {
-    String sourceName = source.getSimpleName();
-    if (sourceName.isEmpty()) {
-      sourceName = source.getName();
-    }
-    return get(sourceName);
+    return get(source.getName());
   }
 
   boolean isTraceEnabled();
@@ -61,12 +74,14 @@ public interface ProxyLogger {
   abstract class BaseLogger implements ProxyLogger {
 
     private final LogTarget target;
-    private final String source;
-    private final ReportErrorOnce downstreamOnce = new ReportErrorOnce(this);
 
+    /// @param source unused, the source is the name of the logger behind `target`
     public BaseLogger(String source, LogTarget target) {
       this.target = target;
-      this.source = source;
+    }
+
+    LogTarget target() {
+      return target;
     }
 
     @Override
@@ -77,8 +92,6 @@ public interface ProxyLogger {
         remoteHost = addr.getAddress().getHostAddress();
       }
       error(downstream, "DOWNSTREAM ERROR " + msg + " " + remoteHost + " " + cause, cause);
-      // FIXME
-      // downstreamOnce.report(msg + " (subsequent errors suppressed) " + cause.getMessage());
     }
 
     @Override
@@ -89,12 +102,11 @@ public interface ProxyLogger {
         remoteHost = addr.getAddress().getHostAddress();
       }
       error(upstream, "UPSTREAM ERROR " + msg + " " + remoteHost + " " + cause);
-      // FIXME
     }
 
     @Override
     public void log(LogInfo record) {
-      target.log(source, record);
+      target.log(record);
     }
 
     @Override
@@ -144,7 +156,7 @@ public interface ProxyLogger {
     }
 
     public void error(Channel channel, Throwable cause) {
-      log(LogInfo.builder().level(Level.ERROR).channel(channel).build());
+      log(LogInfo.builder().level(Level.ERROR).channel(channel).error(cause).build());
     }
 
     public void error(Channel channel, String message, Throwable cause) {
@@ -194,7 +206,7 @@ public interface ProxyLogger {
 
     @Override
     public boolean isTraceEnabled() {
-      return true;
+      return target().isEnabled(Level.TRACE);
     }
   }
 
