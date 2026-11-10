@@ -1,15 +1,6 @@
 package org.sensepitch.edge;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.Unpooled;
-import io.netty.channel.embedded.EmbeddedChannel;
-import io.netty.handler.ssl.ApplicationProtocolConfig;
-import io.netty.handler.ssl.ApplicationProtocolNames;
-import io.netty.handler.ssl.SslContext;
-import io.netty.handler.ssl.SslContextBuilder;
-import io.netty.handler.ssl.SslProvider;
-import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import java.util.concurrent.TimeUnit;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -83,41 +74,10 @@ public class Ja4Benchmark {
     return Ja4Handler.compute(clientHello);
   }
 
-  /// Drives a client side [io.netty.handler.ssl.SslHandler] far enough to produce a ClientHello and
-  /// takes the bytes it writes. Using a generated one rather than a recorded byte array keeps the
-  /// input honest, at the cost of it being a JDK ClientHello and not a browser one. A browser sends
-  /// more extensions, so the numbers here are a lower bound.
+  /// A JDK ClientHello rather than a browser one. A browser sends more extensions, so the numbers
+  /// here are a lower bound.
   static ByteBuf captureClientHello() throws Exception {
-    SslContext context =
-        SslContextBuilder.forClient()
-            .sslProvider(SslProvider.JDK)
-            .trustManager(InsecureTrustManagerFactory.INSTANCE)
-            .applicationProtocolConfig(
-                new ApplicationProtocolConfig(
-                    ApplicationProtocolConfig.Protocol.ALPN,
-                    ApplicationProtocolConfig.SelectorFailureBehavior.NO_ADVERTISE,
-                    ApplicationProtocolConfig.SelectedListenerFailureBehavior.ACCEPT,
-                    ApplicationProtocolNames.HTTP_2,
-                    ApplicationProtocolNames.HTTP_1_1))
-            .build();
-    EmbeddedChannel channel =
-        new EmbeddedChannel(context.newHandler(ByteBufAllocator.DEFAULT, "localhost", 443));
-    try {
-      // the handshake starts as soon as the channel is active, the first thing written out is the
-      // ClientHello, possibly spread over several buffers
-      ByteBuf collected = Unpooled.buffer();
-      ByteBuf out;
-      while ((out = channel.readOutbound()) != null) {
-        collected.writeBytes(out);
-        out.release();
-      }
-      if (collected.readableBytes() == 0) {
-        throw new IllegalStateException("no ClientHello was written");
-      }
-      return collected;
-    } finally {
-      channel.finishAndReleaseAll();
-    }
+    return ClientHelloBuilder.captureJdkClientHello();
   }
 
   public static void main(String[] args) throws Exception {

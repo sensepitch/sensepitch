@@ -26,6 +26,20 @@ public class CombinedIpTraitsLookupTest {
     assertThat(other.crawlerName()).isNull();
   }
 
+  @Test
+  public void crawlerNameIpv6() throws IOException {
+    var lookup = new CombinedIpTraitsLookup(IpLookupConfig.builder().build());
+    assertThat(lookup(lookup, "2001:4860:4801:10::1").crawlerName()).isEqualTo("google:googlebot");
+    assertThat(lookup(lookup, "2001:db8::1").isCrawler()).isFalse();
+  }
+
+  @Test
+  public void crawlerListName() {
+    assertThat(CombinedIpTraitsLookup.crawlerListName("crawler-ips/google/googlebot.json"))
+        .isEqualTo("google:googlebot");
+    assertThat(CombinedIpTraitsLookup.crawlerListName("crawler-ips/plain")).isEqualTo("plain");
+  }
+
   private static IpTraits lookup(CombinedIpTraitsLookup lookup, String address) throws IOException {
     var builder = IpTraits.builder();
     lookup.lookup(builder, InetAddress.getByName(address));

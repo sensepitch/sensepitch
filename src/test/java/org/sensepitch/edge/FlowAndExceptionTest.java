@@ -4,40 +4,80 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOption;
+import io.netty.channel.ChannelOutboundHandlerAdapter;
+import io.netty.channel.ChannelPromise;
 import io.netty.channel.WriteBufferWaterMark;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.DefaultHttpContent;
 import io.netty.handler.codec.http.DefaultHttpRequest;
+import io.netty.handler.codec.http.DefaultHttpResponse;
 import io.netty.handler.codec.http.DefaultLastHttpContent;
+import io.netty.handler.codec.http.HttpContent;
+import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.HttpHeaderValues;
 import io.netty.handler.codec.http.HttpMethod;
+import io.netty.handler.codec.http.HttpRequest;
+import io.netty.handler.codec.http.HttpResponse;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpServerKeepAliveHandler;
 import io.netty.handler.codec.http.HttpVersion;
+import io.netty.handler.codec.http.LastHttpContent;
+import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.Promise;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.net.SocketException;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 /// @author Jens Wilke
 public class FlowAndExceptionTest {
 
+  @RegisterExtension LogCapture logs = new LogCapture();
+
   ProxyMetrics proxyMetrics = new ProxyMetrics();
+
+  /// When set, [MockUpstream] fails to connect with this cause
+  Throwable connectFailure;
+
+  /// When set, every write to the upstream channel fails
+  boolean failUpstreamWrites;
+
+  /// Upstream channels handed back for reuse
+  List<Channel> releasedUpstreams = new ArrayList<>();
 
   RequestLogCapture requestLogCapture = new RequestLogCapture();
   RequestLogger requestLog = requestLogCapture.plainText();
 
   EmbeddedChannel upstreamChannel;
 
-  EmbeddedChannel ingressChannel =
-      EmbeddedChannel.builder()
-          .handlers(
-              new TimeoutsTest.FakeSslHandler(),
-              new RequestLoggingHandler(new ProxyMetrics(), requestLog),
-              new HttpServerKeepAliveHandler(),
-              new DownstreamHandler(new MockUpstream(), proxyMetrics),
-              new ExceptionHandler(proxyMetrics))
-          .build();
+  EmbeddedChannel ingressChannel = ingressChannel(null);
+
+  /// @param remote remote address of the client, or `null` for the default of [EmbeddedChannel]
+  EmbeddedChannel ingressChannel(SocketAddress remote) {
+    ChannelHandler[] handlers = {
+      new TimeoutsTest.FakeSslHandler(),
+      new RequestLoggingHandler(new ProxyMetrics(), requestLog),
+      new HttpServerKeepAliveHandler(),
+      new DownstreamHandler(new MockUpstream(), proxyMetrics),
+      new ExceptionHandler(proxyMetrics)
+    };
+    if (remote == null) {
+      return new EmbeddedChannel(handlers);
+    }
+    return new EmbeddedChannel(handlers) {
+      @Override
+      protected SocketAddress remoteAddress0() {
+        return remote;
+      }
+    };
+  }
 
   // ch.config().setWriteBufferWaterMark(new WriteBufferWaterMark(1, 2));
   @Test
@@ -88,6 +128,176 @@ public class FlowAndExceptionTest {
     upstreamChannel.pipeline().fireExceptionCaught(new SocketException("Connection reset"));
   }
 
+  /// The response travels from upstream via [ForwardHandler] to the client. With keep alive the
+  /// upstream connection is handed back for reuse, hop-by-hop headers are not forwarded.
+  @Test
+  public void responseIsForwardedAndUpstreamReleased() {
+    sendGetRequest();
+    HttpResponse response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+    response.headers().set(HttpHeaderNames.KEEP_ALIVE, "timeout=5");
+    response.headers().set(HttpHeaderNames.CONTENT_LENGTH, 3);
+    HttpContent content = new DefaultHttpContent(Unpooled.copiedBuffer(new byte[] {1, 2, 3}));
+    upstreamChannel.writeInbound(response, content, new DefaultLastHttpContent());
+    rattle();
+    assertThat((Object) ingressChannel.readOutbound()).isSameAs(response);
+    assertThat(response.headers().contains(HttpHeaderNames.KEEP_ALIVE)).isFalse();
+    HttpContent received = ingressChannel.readOutbound();
+    assertThat(received.content().readableBytes()).isEqualTo(3);
+    received.release();
+    assertThat((Object) ingressChannel.readOutbound()).isInstanceOf(LastHttpContent.class);
+    assertThat(releasedUpstreams).containsExactly(upstreamChannel);
+    assertThat(upstreamChannel.isOpen()).isTrue();
+    assertThat(ingressChannel.isOpen()).isTrue();
+  }
+
+  /// Upstream wants to close the connection, so it is not reused.
+  @Test
+  public void upstreamConnectionCloseIsNotReused() {
+    sendGetRequest();
+    HttpResponse response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+    response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
+    upstreamChannel.writeInbound(response, new DefaultLastHttpContent());
+    rattle();
+    assertThat(releasedUpstreams).isEmpty();
+    assertThat(upstreamChannel.isOpen()).isFalse();
+    ingressChannel.finishAndReleaseAll();
+  }
+
+  /// Data arriving after the response is complete has nowhere to go and must be released.
+  @Test
+  public void unexpectedDataFromUpstreamIsDropped() {
+    sendGetRequest();
+    upstreamChannel.writeInbound(
+        new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK),
+        new DefaultLastHttpContent());
+    rattle();
+    ingressChannel.finishAndReleaseAll();
+    HttpContent stray = new DefaultHttpContent(Unpooled.copiedBuffer(new byte[] {1}));
+    upstreamChannel.writeInbound(stray);
+    assertThat(stray.refCnt()).isZero();
+    assertThat(logs.messages(ForwardHandler.class))
+        .anySatisfy(m -> assertThat(m).contains("downstream is null"));
+  }
+
+  @Test
+  public void proxyHeadersAreAdded() {
+    ingressChannel = ingressChannel(new InetSocketAddress("192.0.2.7", 4711));
+    HttpRequest request = new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/");
+    request.headers().set("X-Forwarded-For", "203.0.113.1");
+    ingressChannel.writeInbound(request);
+    upstreamChannel.flush();
+    HttpRequest forwarded = upstreamChannel.readOutbound();
+    assertThat(forwarded.headers().getAll("X-Forwarded-For")).containsExactly("192.0.2.7");
+    assertThat(forwarded.headers().get("X-Forwarded-Proto")).isEqualTo("https");
+  }
+
+  /// No pipelining, a second request before the response is complete is refused.
+  @Test
+  public void secondRequestIsRejected() {
+    sendGetRequest();
+    ingressChannel.writeInbound(new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/2"));
+    HttpResponse response = ingressChannel.readOutbound();
+    assertThat(response.status().code()).isEqualTo(400);
+    assertThat(ingressChannel.isOpen()).isFalse();
+  }
+
+  /// Body content without a request has no upstream to go to.
+  @Test
+  public void contentWithoutRequestIsReleased() {
+    HttpContent content = new DefaultHttpContent(Unpooled.copiedBuffer(new byte[] {1}));
+    LastHttpContent last = new DefaultLastHttpContent(Unpooled.copiedBuffer(new byte[] {1}));
+    ingressChannel.writeInbound(content, last);
+    assertThat(content.refCnt()).isZero();
+    assertThat(last.refCnt()).isZero();
+    assertThat(upstreamChannel).isNull();
+  }
+
+  @Test
+  public void upstreamConnectFailureIs502() {
+    connectFailure = new SocketException("Connection refused");
+    HttpContent body = new DefaultHttpContent(Unpooled.copiedBuffer(new byte[] {1}));
+    ingressChannel.writeInbound(
+        new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, "/"),
+        body,
+        new DefaultLastHttpContent());
+    rattle();
+    assertThat(body.refCnt()).isZero();
+    HttpResponse response = ingressChannel.readOutbound();
+    assertThat(response.status().code()).isEqualTo(502);
+    assertThat(ingressChannel.isOpen()).isFalse();
+    assertThat(requestLogCapture.lines()).anySatisfy(l -> assertThat(l).contains("502"));
+  }
+
+  @Test
+  public void connectionPoolExhaustedIs509() {
+    connectFailure = new IllegalStateException("Too many outstanding acquire operations");
+    sendGetRequest();
+    rattle();
+    HttpResponse response = ingressChannel.readOutbound();
+    assertThat(response.status().code()).isEqualTo(509);
+    assertThat(ingressChannel.isOpen()).isFalse();
+  }
+
+  @Test
+  public void upstreamWriteFailureIs502() {
+    failUpstreamWrites = true;
+    sendGetRequest();
+    rattle();
+    HttpResponse response = ingressChannel.readOutbound();
+    assertThat(response.status().code()).isEqualTo(502);
+    assertThat(response.status().reasonPhrase()).isEqualTo("Upstream write problem");
+    assertThat(ingressChannel.isOpen()).isFalse();
+  }
+
+  /// An exception on the upstream connection while waiting for the response ends the ingress
+  /// request with a 502 and closes the upstream.
+  @Test
+  public void upstreamExceptionWhileWaitingIs502() {
+    sendGetRequest();
+    upstreamChannel.pipeline().fireExceptionCaught(new SocketException("Connection reset"));
+    rattle();
+    HttpResponse response = ingressChannel.readOutbound();
+    assertThat(response.status().code()).isEqualTo(502);
+    assertThat(ingressChannel.isOpen()).isFalse();
+    assertThat(upstreamChannel.isOpen()).isFalse();
+  }
+
+  /// A slow client fills the ingress output buffer. Upstream reading is paused and the buffer is
+  /// flushed until it drains.
+  @Test
+  public void slowClientPausesUpstreamAndFlushes() {
+    sendGetRequest();
+    ingressChannel.config().setWriteBufferWaterMark(new WriteBufferWaterMark(10, 20));
+    upstreamChannel.writeInbound(
+        new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK),
+        new DefaultHttpContent(Unpooled.copiedBuffer(new byte[100])));
+    rattle();
+    // the empty buffers are the flushes DownstreamHandler issues while not writable, reading from
+    // upstream was paused meanwhile and is resumed after the buffer drained
+    assertThat(ingressChannel.outboundMessages())
+        .map(o -> o.getClass().getSimpleName())
+        .containsExactly(
+            "DefaultHttpResponse", "EmptyByteBuf", "DefaultHttpContent", "EmptyByteBuf");
+    assertThat(ingressChannel.isWritable()).isTrue();
+    assertThat(upstreamChannel.config().isAutoRead()).isTrue();
+    ingressChannel.finishAndReleaseAll();
+  }
+
+  /// When the client goes away, upstream reading continues so the response can be drained.
+  @Test
+  public void ingressInactiveResumesUpstreamReading() {
+    sendGetRequest();
+    upstreamChannel.config().setAutoRead(false);
+    ingressChannel.close();
+    assertThat(upstreamChannel.config().isAutoRead()).isTrue();
+  }
+
+  private void sendGetRequest() {
+    ingressChannel.writeInbound(
+        new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/"),
+        new DefaultLastHttpContent());
+  }
+
   /// If upstream is connected it might put tasks in the into ingress again
   private void rattle() {
     if (upstreamChannel != null) {
@@ -101,8 +311,19 @@ public class FlowAndExceptionTest {
   }
 
   Channel upstreamChannel(Channel ingressChannel) {
-    return upstreamChannel =
-        EmbeddedChannel.builder().handlers(new ForwardHandler(ingressChannel)).build();
+    ChannelHandler forward = new ForwardHandler(ingressChannel);
+    if (failUpstreamWrites) {
+      ChannelHandler failWrites =
+          new ChannelOutboundHandlerAdapter() {
+            @Override
+            public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) {
+              ReferenceCountUtil.release(msg);
+              promise.setFailure(new SocketException("Broken pipe"));
+            }
+          };
+      return upstreamChannel = new EmbeddedChannel(failWrites, forward);
+    }
+    return upstreamChannel = new EmbeddedChannel(forward);
   }
 
   class MockUpstream implements Upstream {
@@ -110,6 +331,10 @@ public class FlowAndExceptionTest {
     @Override
     public Future<Channel> connect(ChannelHandlerContext downstreamContext) {
       Promise<Channel> promise = downstreamContext.executor().newPromise();
+      if (connectFailure != null) {
+        promise.setFailure(connectFailure);
+        return promise;
+      }
       Channel upstreamChannel = upstreamChannel(downstreamContext.channel());
       promise.setSuccess(upstreamChannel);
       return promise;
@@ -117,7 +342,7 @@ public class FlowAndExceptionTest {
 
     @Override
     public void release(Channel ch) {
-      // ignore
+      releasedUpstreams.add(ch);
     }
   }
 }

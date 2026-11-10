@@ -74,12 +74,14 @@ public class DefaultBypassCheck implements BypassCheck {
     if (check != null) {
       return check.allowBypass(channel, request);
     }
+    // the closest entry is not necessarily a prefix, e.g. "/ab" for "/ac" when "/a" and "/ab"
+    // are configured, so look further down
     Map.Entry<String, BypassCheck> candidate = uriPrefixList.floorEntry(uri);
-    if (candidate != null) {
-      String prefix = candidate.getKey();
-      if (uri.startsWith(prefix)) {
+    while (candidate != null) {
+      if (uri.startsWith(candidate.getKey())) {
         return candidate.getValue().allowBypass(channel, request);
       }
+      candidate = uriPrefixList.lowerEntry(candidate.getKey());
     }
     if (uriSuffixList.size() == 0) {
       return false;

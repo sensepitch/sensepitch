@@ -201,9 +201,12 @@ public class Deflector {
   void handleChallengeAnswer(ChannelHandlerContext ctx, HttpRequest req) {
     QueryStringDecoder decoder = new QueryStringDecoder(req.uri());
     Map<String, List<String>> params = decoder.parameters();
-    String challenge = params.get("challenge").getFirst();
-    String nonce = params.get("nonce").getFirst();
-    long t = challengeVerification.verifyChallengeResponse(challenge, nonce);
+    String challenge = firstParameter(params, "challenge");
+    String nonce = firstParameter(params, "nonce");
+    long t =
+        challenge == null || nonce == null
+            ? 0
+            : challengeVerification.verifyChallengeResponse(challenge, nonce);
     FullHttpResponse response;
     if (t > 0) {
       response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
@@ -220,6 +223,15 @@ public class Deflector {
       response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.BAD_REQUEST);
     }
     ctx.writeAndFlush(response);
+  }
+
+  /// @return the first value of the parameter, `null` if absent or empty
+  private static String firstParameter(Map<String, List<String>> params, String name) {
+    List<String> values = params.get(name);
+    if (values == null || values.isEmpty() || values.getFirst().isEmpty()) {
+      return null;
+    }
+    return values.getFirst();
   }
 
   boolean checkAdmissionCookie(HttpRequest request) {

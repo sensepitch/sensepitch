@@ -46,6 +46,10 @@ public class ClientHelloParser {
   /// multiple records, so the record layer needs to be stripped before the handshake message can be
   /// read.
   ///
+  /// A client may send other records right after the ClientHello in the same flight, e.g.
+  /// change_cipher_spec and early data with TLS 1.3 0-RTT. Collecting stops at the first record
+  /// that is not a handshake record.
+  ///
   /// @return the handshake bytes available so far or {@code null} if this is not a handshake
   static ByteBuf reassembleHandshake(ByteBuf in) {
     int idx = in.readerIndex();
@@ -53,7 +57,7 @@ public class ClientHelloParser {
     ByteBuf handshake = Unpooled.buffer();
     while (idx + RECORD_HEADER_LENGTH <= end) {
       if (in.getUnsignedByte(idx) != RECORD_TYPE_HANDSHAKE) {
-        return null;
+        break;
       }
       int length = in.getUnsignedShort(idx + 3);
       if (idx + RECORD_HEADER_LENGTH + length > end) {

@@ -1,6 +1,7 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -133,6 +134,82 @@ public class DeflectorHandlerTest {
     req.headers().set(HttpHeaderNames.COOKIE, cookieHeader);
     request(req);
     assertThat(passed).isTrue();
+  }
+
+  /// The answer endpoint is reachable by anyone, malformed requests are refused.
+  @Test
+  public void challengeAnswerWithMissingParameters() throws Exception {
+    init(getDeflectorConfig());
+    for (String query : List.of("", "?challenge=abc", "?nonce=1", "?challenge=&nonce=")) {
+      request(Deflector.CHALLENGE_ANSWER_URL + query);
+      expectStatus(400);
+    }
+  }
+
+  @Test
+  public void challengeAnswerWithInvalidChallenge() throws Exception {
+    init(getDeflectorConfig());
+    request(Deflector.CHALLENGE_ANSWER_URL + "?challenge=garbage&nonce=0");
+    expectStatus(400);
+    assertThat(passed).isFalse();
+  }
+
+  @Test
+  public void challengeResourceErrors() throws Exception {
+    init(getDeflectorConfig());
+    request(Deflector.CHALLENGE_RESOURCES_URL + "/");
+    expectStatus(400);
+    request(Deflector.CHALLENGE_RESOURCES_URL + "/does-not-exist.js");
+    expectStatus(404);
+  }
+
+  /// Anything but a valid admission token leads to the challenge.
+  @Test
+  public void invalidAdmissionCookies() throws Exception {
+    init(getDeflectorConfig());
+    for (String token : List.of("", "Zunknown-prefix", "Xforged")) {
+      DefaultHttpRequest req =
+          new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/default");
+      req.headers().set(HttpHeaderNames.COOKIE, Deflector.TOKEN_COOKIE_NAME + "=" + token);
+      request(req);
+      assertThat(passed).as("token '" + token + "'").isFalse();
+      expectResponseIsChallenge();
+    }
+  }
+
+  /// URI bypass and crawler detection are both active when both are configured.
+  @Test
+  public void bypassAndDetectCrawlerCombined() throws Exception {
+    init(
+        getDeflectorConfig().toBuilder()
+            .detectCrawler(DetectCrawlerConfig.builder().build())
+            .build());
+    request("/bypass");
+    assertThat(passed).isTrue();
+    request("/default", TWITTER);
+    assertThat(passed).isTrue();
+    request("/default");
+    assertThat(passed).isFalse();
+  }
+
+  @Test
+  public void serverIpv4AddressMustBeIpv4() {
+    assertThatThrownBy(
+            () -> new Deflector(getDeflectorConfig().toBuilder().serverIpv4Address("::1").build()))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () ->
+                new Deflector(
+                    getDeflectorConfig().toBuilder()
+                        .serverIpv4Address("does-not-exist.invalid")
+                        .build()))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  private void expectStatus(int code) {
+    assertThat(messageWritten)
+        .isInstanceOfSatisfying(
+            HttpResponse.class, response -> assertThat(response.status().code()).isEqualTo(code));
   }
 
   private static DeflectorConfig getDeflectorConfig() {

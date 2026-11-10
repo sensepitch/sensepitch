@@ -56,12 +56,14 @@ public class ProtectionBypass {
     if (uriMatch.containsKey(uri)) {
       return true;
     }
+    // the closest entry is not necessarily a prefix, e.g. "/ab" for "/ac" when "/a" and "/ab"
+    // are configured, so look further down
     Map.Entry<String, Boolean> candidate = uriPrefixList.floorEntry(uri);
-    if (candidate != null) {
-      String prefix = candidate.getKey();
-      if (uri.startsWith(prefix)) {
+    while (candidate != null) {
+      if (uri.startsWith(candidate.getKey())) {
         return true;
       }
+      candidate = uriPrefixList.lowerEntry(candidate.getKey());
     }
     return false;
   }

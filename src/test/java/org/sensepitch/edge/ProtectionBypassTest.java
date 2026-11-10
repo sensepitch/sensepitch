@@ -1,6 +1,7 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
@@ -67,6 +68,32 @@ public class ProtectionBypassTest {
     request(req);
     assertThat(passed).isTrue();
     assertThat(messageWritten).isNull();
+  }
+
+  /// Every configured prefix counts, also when a longer prefix sorts in between.
+  @Test
+  public void overlappingPathPrefixes() throws Exception {
+    ProtectionBypass bypass =
+        new ProtectionBypass(new ProtectionBypassConfig(List.of("/a*", "/ab*", "/exact"), null));
+    EmbeddedChannel ch = new EmbeddedChannel(new ChannelInboundHandlerAdapter());
+    ChannelHandlerContext ctx = ch.pipeline().firstContext();
+    for (String uri : List.of("/a", "/ab", "/abc", "/ac", "/exact")) {
+      assertThat(bypass.allowBypass(ctx, get(uri))).as("bypass " + uri).isTrue();
+    }
+    for (String uri : List.of("/", "/b", "/exact/more")) {
+      assertThat(bypass.allowBypass(ctx, get(uri))).as("no bypass " + uri).isFalse();
+    }
+  }
+
+  @Test
+  public void suffixIsNotSupported() {
+    assertThatThrownBy(
+            () -> new ProtectionBypass(new ProtectionBypassConfig(List.of("*.png"), null)))
+        .isInstanceOf(UnsupportedOperationException.class);
+  }
+
+  private static HttpRequest get(String uri) {
+    return new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, uri);
   }
 
   private void init(ChannelHandler protectionHandler) {

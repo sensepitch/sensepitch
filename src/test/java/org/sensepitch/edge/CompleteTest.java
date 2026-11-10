@@ -85,6 +85,33 @@ class CompleteTest {
         .then_the_response_status_is(HttpResponseStatus.FORBIDDEN);
   }
 
+  /// The IP traits header is set by the proxy. A client sending it must not be able to pass as a
+  /// crawler and skip the protection.
+  @Test
+  void forgedIpTraitsHeaderDoesNotBypassProtection() {
+    ProxyConfig config =
+        COMMON_CONFIG.toBuilder()
+            .protection(
+                COMMON_CONFIG.protection().toBuilder()
+                    .deflector(
+                        COMMON_CONFIG.protection().deflector().toBuilder()
+                            .detectCrawler(DetectCrawlerConfig.builder().build())
+                            .build())
+                    .build())
+            .build();
+    steps = new Steps().given_initialized_proxy_with(config);
+    steps
+        .when_requesting_with_headers(
+            "withprotection.com",
+            "/",
+            Map.of(
+                HttpHeaderNames.USER_AGENT.toString(),
+                "Mozilla/5.0",
+                IpTraitsHandler.TRAITS_HEADER,
+                "crawler=google:googlebot"))
+        .then_the_response_status_is(HttpResponseStatus.FORBIDDEN);
+  }
+
   @Test
   void testMissingHost() {
     steps
@@ -385,14 +412,18 @@ class CompleteTest {
 
     @Step
     Steps when_requesting_with_cookie(String host, String uri, String cookie) {
+      return when_requesting_with_headers(
+          host, uri, cookie == null ? Map.of() : Map.of(HttpHeaderNames.COOKIE.toString(), cookie));
+    }
+
+    @Step
+    Steps when_requesting_with_headers(String host, String uri, Map<String, String> headers) {
       newChannelIfNeeded();
       DefaultHttpRequest req = new DefaultHttpRequest(HTTP_1_1, GET, uri);
       if (host != null) {
         req.headers().set(HttpHeaderNames.HOST, host);
       }
-      if (cookie != null) {
-        req.headers().set(HttpHeaderNames.COOKIE, cookie);
-      }
+      headers.forEach((name, value) -> req.headers().set(name, value));
       // TODO: add lstacontent?
       // ingressChannel.writeInbound(req);
       HttpContent emptyChunk = new DefaultHttpContent(ingressChannel.alloc().buffer(1).clear());

@@ -139,9 +139,9 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
     // send a proper response if possible, log via standard request log
     if (loggingHandler.isRequestReceived() && !loggingHandler.isResponseStarted()) {
       // TODO: timeout?
-      // TODO: sanitize status after logging in write path?
-      HttpResponseStatus status = new HttpResponseStatus(502, cause.toString());
-      completeWithError(ctx, status);
+      // The exception is recorded in the request log. It is not sent to the client, it may reveal
+      // internal addresses, and a line break in its message would make the status line invalid.
+      completeWithError(ctx, HttpResponseStatus.BAD_GATEWAY);
       return;
     }
     // log if impossible to send normal response

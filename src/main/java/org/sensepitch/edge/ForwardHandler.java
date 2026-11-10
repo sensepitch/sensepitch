@@ -9,6 +9,7 @@ import io.netty.channel.ChannelOption;
 import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.LastHttpContent;
+import io.netty.util.ReferenceCountUtil;
 
 /// Handler for upstream communication, receives response from upstream and pass it on downstream
 ///
@@ -41,6 +42,7 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
           ctx.channel(),
           msg.getClass().getName()
               + " -> downstream is null, getting unexpected data from upstream");
+      ReferenceCountUtil.release(msg);
       return;
     }
     if (msg instanceof HttpResponse) {
