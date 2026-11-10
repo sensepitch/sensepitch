@@ -19,7 +19,8 @@
 ## Coding Style & Naming Conventions
 - Java 25 is the target (`maven.compiler.release` set to 25).
 - Formatting uses Spotless with Google Java Format; prefer 2-space indentation and standard Google style.
-- Lombok is enabled; `lombok.config` enforces `toBuilder` support and a `Builder` class name.
+- Lombok is enabled; `lombok.config` sets the `Builder` class name. `toBuilder` can't be enabled
+  globally, so config records declare `@Builder(toBuilder = true)` explicitly.
 - Keep class and method names descriptive and consistent with existing `*Config`, `*Handler`, and `*Lookup` patterns.
 - Doc comments use Markdown (`///`, JEP 467): backticks for code, `[Foo#bar]` for references,
   `-` for lists, fenced blocks for samples. Do not use HTML tags or `{@code}`/`{@link}`.

@@ -321,12 +321,6 @@
               <version>${lombok.version}</version>
             </path>
           </annotationProcessorPaths>
-          <compilerArgs>
-            <!-- stop Lombok from searching parent dirs -->
-            <arg>-Alombok.config.stopBubbling=true</arg>
-            <!-- enable toBuilder by default -->
-            <arg>-Alombok.builder.toBuilder=true</arg>
-          </compilerArgs>
           <!-- TEMPORARY: work in progress that does not compile yet. Drop both blocks once
                Ja4Fingerprint exists and the JMH dependencies are declared.
                HttpFingerprint calls the missing class Ja4Fingerprint, Ja4Benchmark needs
