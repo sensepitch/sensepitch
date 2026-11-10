@@ -346,7 +346,7 @@ class MetricsAndMemoryTest {
         .isEqualTo(usedBefore);
   }
 
-  static boolean silent = false;
+  static boolean silent = true;
 
   private static void printMetrics(Snapshots s) {
     if (silent) {
