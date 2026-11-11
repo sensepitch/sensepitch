@@ -270,7 +270,8 @@
         <version>3.5.6</version>
         <configuration>
           <!-- failsafe does not inherit the surefire configuration, so repeat the agent here -->
-          <argLine>-javaagent:${project.build.directory}/byte-buddy-agent.jar --enable-native-access=ALL-UNNAMED</argLine>
+          <!-- jacoco agent as in surefire, both append to target/jacoco.exec, so the report includes the ITs -->
+          <argLine>@{jacocoArgLine} -javaagent:${project.build.directory}/byte-buddy-agent.jar --enable-native-access=ALL-UNNAMED</argLine>
           <systemPropertyVariables>
             <java.util.logging.manager>org.apache.logging.log4j.jul.LogManager</java.util.logging.manager>
           </systemPropertyVariables>
@@ -305,6 +306,33 @@
             <goals>
               <goal>report</goal>
             </goals>
+          </execution>
+          <execution>
+            <!-- coverage floor, slightly below the actual coverage, raise it when coverage improves -->
+            <id>jacoco-check</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <rule>
+                  <element>BUNDLE</element>
+                  <limits>
+                    <limit>
+                      <counter>LINE</counter>
+                      <value>COVEREDRATIO</value>
+                      <minimum>0.85</minimum>
+                    </limit>
+                    <limit>
+                      <counter>BRANCH</counter>
+                      <value>COVEREDRATIO</value>
+                      <minimum>0.80</minimum>
+                    </limit>
+                  </limits>
+                </rule>
+              </rules>
+            </configuration>
           </execution>
         </executions>
       </plugin>

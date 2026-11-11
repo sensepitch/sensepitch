@@ -61,14 +61,7 @@ public class DefaultUpstream implements Upstream {
                     new IdleStateHandler(0, poolCfg.idleTimeoutSeconds(), 0) {
                       @Override
                       protected void channelIdle(ChannelHandlerContext ctx, IdleStateEvent evt) {
-                        // TODO: temp for investigation, remove
-                        LOG.info(
-                            "Closing idle upstream connection: "
-                                + name
-                                + " "
-                                + ctx.channel().id()
-                                + ", event="
-                                + evt);
+                        LOG.trace(ctx.channel(), "closing idle upstream connection " + name);
                         ctx.close();
                       }
                     });

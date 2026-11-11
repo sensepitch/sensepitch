@@ -11,7 +11,9 @@
 - `./mvnw clean package` builds the project and produces a shaded JAR at `target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar`.
 - `./mvnw test` runs the JUnit/Serenity test suite via Surefire.
 - `./mvnw spotless:check` verifies formatting; `./mvnw spotless:apply` auto-formats Java sources.
-- `./mvnw verify` runs the whole gate: tests, `spotless:check`, and the Javadoc build.
+- `./mvnw verify` runs the whole gate: tests, `spotless:check`, the Javadoc build, and the JaCoCo
+  coverage floor (`jacoco-check` in `pom.xml`, unit and integration tests combined). Raise the floor
+  when coverage improves.
 - `./mvnw javadoc:javadoc` renders the API docs into `target/reports/apidocs` and fails on doc errors.
 - Run locally after packaging:
   `java -jar target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar`
