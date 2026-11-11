@@ -7,8 +7,6 @@ import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.NavigableMap;
-import java.util.TreeMap;
 
 /// @author Jens Wilke
 public class ProtectionBypass {
@@ -16,7 +14,7 @@ public class ProtectionBypass {
   private static final ProxyLogger LOG = ProxyLogger.get(ProtectionBypass.class);
 
   private final Map<String, Boolean> uriMatch = new HashMap<>();
-  private final NavigableMap<String, Boolean> uriPrefixList = new TreeMap<>();
+  private final PrefixTree<Boolean> uriPrefixList = new PrefixTree<>();
   private final Map<String, Boolean> remoteAddressMap = new HashMap<>();
 
   public ProtectionBypass(ProtectionBypassConfig cfg) {
@@ -56,15 +54,6 @@ public class ProtectionBypass {
     if (uriMatch.containsKey(uri)) {
       return true;
     }
-    // the closest entry is not necessarily a prefix, e.g. "/ab" for "/ac" when "/a" and "/ab"
-    // are configured, so look further down
-    Map.Entry<String, Boolean> candidate = uriPrefixList.floorEntry(uri);
-    while (candidate != null) {
-      if (uri.startsWith(candidate.getKey())) {
-        return true;
-      }
-      candidate = uriPrefixList.lowerEntry(candidate.getKey());
-    }
-    return false;
+    return uriPrefixList.lookup(uri) != null;
   }
 }

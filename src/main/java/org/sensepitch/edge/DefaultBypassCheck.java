@@ -7,8 +7,6 @@ import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.NavigableMap;
-import java.util.TreeMap;
 
 /// @author Jens Wilke
 public class DefaultBypassCheck implements BypassCheck {
@@ -16,7 +14,7 @@ public class DefaultBypassCheck implements BypassCheck {
   private static final ProxyLogger LOG = ProxyLogger.get(DefaultBypassCheck.class);
 
   private final Map<String, BypassCheck> uriMatch = new HashMap<>();
-  private final NavigableMap<String, BypassCheck> uriPrefixList = new TreeMap<>();
+  private final PrefixTree<BypassCheck> uriPrefixList = new PrefixTree<>();
   private final Map<String, BypassCheck> remoteAddressMap = new HashMap<>();
   private final DetectCrawler detectCrawler;
 
@@ -70,15 +68,7 @@ public class DefaultBypassCheck implements BypassCheck {
     if (check != null) {
       return check.allowBypass(channel, request);
     }
-    // the closest entry is not necessarily a prefix, e.g. "/ab" for "/ac" when "/a" and "/ab"
-    // are configured, so look further down
-    Map.Entry<String, BypassCheck> candidate = uriPrefixList.floorEntry(uri);
-    while (candidate != null) {
-      if (uri.startsWith(candidate.getKey())) {
-        return candidate.getValue().allowBypass(channel, request);
-      }
-      candidate = uriPrefixList.lowerEntry(candidate.getKey());
-    }
-    return false;
+    check = uriPrefixList.lookup(uri);
+    return check != null && check.allowBypass(channel, request);
   }
 }

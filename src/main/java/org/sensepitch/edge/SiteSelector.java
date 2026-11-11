@@ -24,7 +24,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -41,8 +40,7 @@ public class SiteSelector {
   private final Map<String, Upstream> namedUpstreams = new HashMap<>();
   private final Upstream defaultUpstream;
   private final Map<String, Routing<Suppliers>> directHostMatch = new HashMap<>();
-  private final Map<String, TreeMap<String, Routing<Suppliers>>> sitePrefixUriMatch =
-      new HashMap<>();
+  private final Map<String, PrefixTree<Routing<Suppliers>>> sitePrefixUriMatch = new HashMap<>();
 
   /// @param upstreams creates or takes over the upstreams, see [UpstreamRegistry] for the naming
   public SiteSelector(ProxyContext ctx, ProxyConfig config, UpstreamRegistry upstreams) {
@@ -100,7 +98,7 @@ public class SiteSelector {
                 directHostMatch.put(host, routing);
               } else if (site.uri().endsWith("*")) {
                 String matchUri = site.uri().substring(0, site.uri().length() - 1);
-                var tree = sitePrefixUriMatch.computeIfAbsent(host, k -> new TreeMap<>());
+                var tree = sitePrefixUriMatch.computeIfAbsent(host, k -> new PrefixTree<>());
                 tree.put(matchUri, routing);
               } else {
                 throw new IllegalArgumentException("Site match uri needs to be prefix");
@@ -309,10 +307,7 @@ public class SiteSelector {
     if (routing == null) {
       var tree = sitePrefixUriMatch.get(host);
       if (tree != null) {
-        var entry = tree.floorEntry(request.uri());
-        if (entry != null && request.uri().startsWith(entry.getKey())) {
-          routing = entry.getValue();
-        }
+        routing = tree.lookup(request.uri());
       }
     }
     return routing != null ? routing.select(request) : null;
