@@ -33,7 +33,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   private Runnable flushTask;
 
   /// This avoids that we sent stray content to upstream when not expected
-  private boolean ingressRequestComplete;
 
   public DownstreamHandler(Upstream upstream, ProxyMetrics metrics) {
     this.upstream = upstream;
@@ -42,7 +41,9 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) {
     if (msg instanceof HttpRequest request) {
-      if (upstreamChannelFuture != null || ingressRequestComplete) {
+      // no pipelining, the HttpServerCodec delivers content only between a request and its last
+      // content, so a new request while the exchange is active is the only unexpected case
+      if (upstreamChannelFuture != null) {
         DEBUG.error(ctx.channel(), "another request is unexpected");
         completeWithError(
             ctx,
@@ -59,14 +60,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
         ReferenceCountUtil.release(msg);
         return;
       }
-      if (ingressRequestComplete) {
-        DEBUG.error(ctx.channel(), "another request is unexpected");
-        completeWithError(
-            ctx,
-            new HttpResponseStatus(
-                HttpResponseStatus.BAD_REQUEST.code(), "another request is unexpected"));
-        return;
-      }
       // Upstream channel might be still connecting or retrieved and checked by the pool.
       // Queue in all content we receive via the listener.
       upstreamChannelFuture.addListener(
@@ -77,14 +70,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     } else if (msg instanceof HttpContent) {
       if (upstreamChannelFuture == null) {
         ReferenceCountUtil.release(msg);
-        return;
-      }
-      if (ingressRequestComplete) {
-        DEBUG.error(ctx.channel(), "another request is unexpected");
-        completeWithError(
-            ctx,
-            new HttpResponseStatus(
-                HttpResponseStatus.BAD_REQUEST.code(), "another request is unexpected"));
         return;
       }
       upstreamChannelFuture.addListener(

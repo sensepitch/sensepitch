@@ -6,7 +6,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 
 /// @author Jens Wilke
-public class GeoIp2CountryLookup {
+public class GeoIp2CountryLookup implements CountryLookup {
 
   private final DatabaseReader reader;
 
@@ -15,6 +15,7 @@ public class GeoIp2CountryLookup {
     reader = new DatabaseReader.Builder(database).build();
   }
 
+  @Override
   public String lookupCountry(InetAddress addr) throws Exception {
     var optional = reader.tryCountry(addr);
     if (optional.isEmpty()) {

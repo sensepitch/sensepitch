@@ -125,6 +125,24 @@ class UnservicedHostHandlerTest {
     assertThat(content.refCnt()).isZero();
   }
 
+  /// Without a default location, a host that is accepted but not serviced gets a 404, e.g. a host
+  /// only listed in `listen.hosts`. The redirect to www still works.
+  @Test
+  void unservicedHostWithoutDefaultLocationIsNotFound() {
+    UnservicedHostConfig cfg =
+        UnservicedHostConfig.builder().servicedDomains(Set.of("www.foo.com")).build();
+    channel = new EmbeddedChannel(new UnservicedHost(cfg).newHandler());
+    DefaultHttpRequest req = new DefaultHttpRequest(HTTP_1_1, GET, "/");
+    req.headers().set(HttpHeaderNames.HOST, "other.com");
+    assertThat(writeAndExpectResponse(req).status()).isEqualTo(NOT_FOUND);
+    channel = new EmbeddedChannel(new UnservicedHost(cfg).newHandler());
+    req = new DefaultHttpRequest(HTTP_1_1, GET, "/");
+    req.headers().set(HttpHeaderNames.HOST, "foo.com");
+    HttpResponse redirect = writeAndExpectResponse(req);
+    assertThat(redirect.status()).isEqualTo(MOVED_PERMANENTLY);
+    assertThat(redirect.headers().get(HttpHeaderNames.LOCATION)).isEqualTo("https://www.foo.com");
+  }
+
   /// A serviced domain is compared with the normalized host, see [SanitizeHostHandler]
   @Test
   void servicedDomainMustBeNormalized() {

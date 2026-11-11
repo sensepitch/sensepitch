@@ -20,22 +20,32 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
   private final IpLabelLookup ipLabelLookup;
 
   public CombinedIpTraitsLookup(IpLookupConfig ipLookupConfig) throws IOException {
-    ipAttributesLookups = new ArrayList<>();
-    if (ipLookupConfig.geoIp2() != null) {
-      if (ipLookupConfig.geoIp2().asnDbPath() != null) {
-        addAsnLookup(new GeoIp2AsnLookup(ipLookupConfig.geoIp2().asnDbPath()));
-      }
-      if (ipLookupConfig.geoIp2().countryDbPath() != null) {
-        addCountryLookup(new GeoIp2CountryLookup(ipLookupConfig.geoIp2().countryDbPath()));
-      }
-    }
-    if (ipLookupConfig.ipInfoPath() != null) {
-      IpInfoCountryAndAsnLookup ipLookup =
-          new IpInfoCountryAndAsnLookup(ipLookupConfig.ipInfoPath());
-      ipAttributesLookups.add(ipLookup);
-    }
+    this(databaseLookups(ipLookupConfig));
+  }
+
+  /// @param ipAttributesLookups queried in order for each address, a later one overwrites what an
+  ///   earlier one found. Tests pass fakes here instead of databases.
+  CombinedIpTraitsLookup(List<IpTraitsLookup> ipAttributesLookups) throws IOException {
+    this.ipAttributesLookups = List.copyOf(ipAttributesLookups);
     ipLabelLookup = readCrawlerIpLists();
     LOG.info("IP lookup nodes: " + ((TrieIpLabelLookup) ipLabelLookup).getNodeCount());
+  }
+
+  /// Opens the databases configured
+  private static List<IpTraitsLookup> databaseLookups(IpLookupConfig cfg) throws IOException {
+    List<IpTraitsLookup> lookups = new ArrayList<>();
+    if (cfg.geoIp2() != null) {
+      if (cfg.geoIp2().asnDbPath() != null) {
+        lookups.add(asnTraits(new GeoIp2AsnLookup(cfg.geoIp2().asnDbPath())));
+      }
+      if (cfg.geoIp2().countryDbPath() != null) {
+        lookups.add(countryTraits(new GeoIp2CountryLookup(cfg.geoIp2().countryDbPath())));
+      }
+    }
+    if (cfg.ipInfoPath() != null) {
+      lookups.add(new IpInfoCountryAndAsnLookup(cfg.ipInfoPath()));
+    }
+    return lookups;
   }
 
   /// Reads the published crawler IP lists named in `crawler-ips/index.txt`. Each address is labeled
@@ -71,24 +81,24 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
     return prefix.contains("/") ? prefix : prefix + "/" + addressBits;
   }
 
-  private void addAsnLookup(AsnLookup asnLookup) {
-    ipAttributesLookups.add(
-        (builder, address) -> {
-          long asn = asnLookup.lookupAsn(address);
-          if (asn >= 0) {
-            builder.asn(asn);
-          }
-        });
+  /// Sets the ASN, if found
+  static IpTraitsLookup asnTraits(AsnLookup asnLookup) {
+    return (builder, address) -> {
+      long asn = asnLookup.lookupAsn(address);
+      if (asn >= 0) {
+        builder.asn(asn);
+      }
+    };
   }
 
-  private void addCountryLookup(GeoIp2CountryLookup countryLookup) {
-    ipAttributesLookups.add(
-        (builder, address) -> {
-          var country = countryLookup.lookupCountry(address);
-          if (country != null) {
-            builder.isoCountry(country);
-          }
-        });
+  /// Sets the country, if found
+  static IpTraitsLookup countryTraits(CountryLookup countryLookup) {
+    return (builder, address) -> {
+      var country = countryLookup.lookupCountry(address);
+      if (country != null) {
+        builder.isoCountry(country);
+      }
+    };
   }
 
   private void lookupException(Exception e) {

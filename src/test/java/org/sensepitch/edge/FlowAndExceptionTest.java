@@ -2,6 +2,7 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
@@ -59,11 +60,20 @@ public class FlowAndExceptionTest {
 
   EmbeddedChannel upstreamChannel;
 
+  /// Simulates a slow client, see [FlushBlocker], set for each ingress channel
+  FlushBlocker ingressFlushBlocker;
+
+  /// Simulates a slow upstream, see [FlushBlocker]
+  FlushBlocker upstreamFlushBlocker = new FlushBlocker();
+
   EmbeddedChannel ingressChannel = ingressChannel(null);
 
   /// @param remote remote address of the client, or `null` for the default of [EmbeddedChannel]
   EmbeddedChannel ingressChannel(SocketAddress remote) {
+    // a handler instance can only be in one pipeline, so every ingress channel gets its own
+    ingressFlushBlocker = new FlushBlocker();
     ChannelHandler[] handlers = {
+      ingressFlushBlocker,
       new TimeoutsTest.FakeSslHandler(),
       new RequestLoggingHandler(new ProxyMetrics(), requestLog),
       new HttpServerKeepAliveHandler(),
@@ -163,6 +173,55 @@ public class FlowAndExceptionTest {
     assertThat(ingressChannel.config().isAutoRead()).isTrue();
     pendingConnect.setSuccess(upstreamChannel(ingressChannel));
     rattle();
+    ingressChannel.finishAndReleaseAll();
+  }
+
+  /// Slow client: while the response cannot be written out, the proxy stops reading from the
+  /// upstream, so a large response is not buffered in memory. Reading resumes once the client
+  /// catches up.
+  @Test
+  public void slowClientThrottlesUpstream() {
+    sendGetRequest();
+    rattle();
+    ingressChannel.config().setWriteBufferWaterMark(new WriteBufferWaterMark(1000, 2000));
+    ingressFlushBlocker.blocked = true;
+    HttpResponse response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+    HttpUtil.setTransferEncodingChunked(response, true);
+    upstreamChannel.writeInbound(
+        response, new DefaultHttpContent(Unpooled.copiedBuffer(new byte[5000])));
+    rattle();
+    assertThat(ingressChannel.isWritable()).isFalse();
+    assertThat(upstreamChannel.config().isAutoRead()).isFalse();
+    ingressFlushBlocker.release(ingressChannel);
+    rattle();
+    assertThat(ingressChannel.isWritable()).isTrue();
+    assertThat(upstreamChannel.config().isAutoRead()).isTrue();
+    assertThat((Object) readSkippingEmptyBuffers(ingressChannel)).isSameAs(response);
+    HttpContent content = readSkippingEmptyBuffers(ingressChannel);
+    assertThat(content.content().readableBytes()).isEqualTo(5000);
+    content.release();
+    ingressChannel.finishAndReleaseAll();
+  }
+
+  /// Slow upstream: while a request body cannot be written to the upstream, the proxy stops
+  /// reading from the client. Reading resumes once the upstream catches up.
+  @Test
+  public void slowUpstreamThrottlesClient() {
+    HttpRequest post = new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, "/upload");
+    HttpUtil.setTransferEncodingChunked(post, true);
+    ingressChannel.writeInbound(post);
+    rattle();
+    upstreamChannel.config().setWriteBufferWaterMark(new WriteBufferWaterMark(1000, 2000));
+    upstreamFlushBlocker.blocked = true;
+    ingressChannel.writeInbound(new DefaultHttpContent(Unpooled.copiedBuffer(new byte[5000])));
+    rattle();
+    assertThat(upstreamChannel.isWritable()).isFalse();
+    assertThat(ingressChannel.config().isAutoRead()).isFalse();
+    upstreamFlushBlocker.release(upstreamChannel);
+    rattle();
+    assertThat(upstreamChannel.isWritable()).isTrue();
+    assertThat(ingressChannel.config().isAutoRead()).isTrue();
+    upstreamChannel.finishAndReleaseAll();
     ingressChannel.finishAndReleaseAll();
   }
 
@@ -323,6 +382,16 @@ public class FlowAndExceptionTest {
     assertThat(upstreamChannel.config().isAutoRead()).isTrue();
   }
 
+  /// Reads the next outbound message, skipping the empty buffers written to trigger a flush
+  @SuppressWarnings("unchecked")
+  static <T> T readSkippingEmptyBuffers(EmbeddedChannel channel) {
+    Object msg;
+    do {
+      msg = channel.readOutbound();
+    } while (msg instanceof ByteBuf buf && buf.readableBytes() == 0);
+    return (T) msg;
+  }
+
   private void sendGetRequest() {
     ingressChannel.writeInbound(
         new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/"),
@@ -354,7 +423,7 @@ public class FlowAndExceptionTest {
           };
       return upstreamChannel = new EmbeddedChannel(failWrites, forward);
     }
-    return upstreamChannel = new EmbeddedChannel(forward);
+    return upstreamChannel = new EmbeddedChannel(upstreamFlushBlocker, forward);
   }
 
   class MockUpstream implements Upstream {
@@ -372,6 +441,29 @@ public class FlowAndExceptionTest {
       Channel upstreamChannel = upstreamChannel(downstreamContext.channel());
       promise.setSuccess(upstreamChannel);
       return promise;
+    }
+  }
+
+  /// Holds back flushes while blocked, so written data stays in the outbound buffer and the channel
+  /// becomes unwritable, like a peer that does not read fast enough. Placed first in the pipeline,
+  /// so it sees the flushes of all other handlers. Water marks used with it need to be well above
+  /// the 96 bytes Netty counts per buffer entry, otherwise a single empty flush buffer keeps the
+  /// channel unwritable and the flush loops of the handlers never end.
+  static class FlushBlocker extends ChannelOutboundHandlerAdapter {
+
+    boolean blocked;
+
+    @Override
+    public void flush(ChannelHandlerContext ctx) throws Exception {
+      if (!blocked) {
+        super.flush(ctx);
+      }
+    }
+
+    /// Unblocks and flushes what was held back
+    void release(EmbeddedChannel channel) {
+      blocked = false;
+      channel.flush();
     }
   }
 }
