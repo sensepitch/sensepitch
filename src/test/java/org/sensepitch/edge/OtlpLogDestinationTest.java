@@ -339,18 +339,43 @@ class OtlpLogDestinationTest {
     await(() -> bufferedBytesGauge() == 0);
   }
 
-  /// A server asking for a delay via `Retry-After` is not asked again before
+  /// A server asking for a delay via `Retry-After` is not asked again meanwhile, although the
+  /// backoff of this destination is only milliseconds. The exact delay is tested with
+  /// [OtlpLogDestination#retryDelayMillis], without waiting. At shutdown the batch gets a last
+  /// attempt, regardless of the requested delay, before its records would be dropped.
   @Test
   void retryAfterIsHonoured() throws Exception {
-    answers.add(new Answer(429, "1"));
+    answers.add(new Answer(429, "30"));
     destination = fastDestination(config().build());
     new OtlpRequestLogger(destination).logRequest(TestRequestLogInfo.of(HttpMethod.GET, 200));
-    Received first = received.take();
-    Received second = received.take();
-    assertThat(first.status()).isEqualTo(429);
-    assertThat(second.status()).isEqualTo(200);
-    assertThat(TimeUnit.NANOSECONDS.toMillis(second.nanoTime() - first.nanoTime()))
-        .isGreaterThanOrEqualTo(1_000);
+    assertThat(received.take().status()).isEqualTo(429);
+    assertThat(received.poll(100, TimeUnit.MILLISECONDS)).as("no retry before the delay").isNull();
+    assertThat(counter("sensepitch_request_log_export_retries")).isOne();
+    destination.close();
+    assertThat(received.take().status()).as("last attempt at shutdown").isEqualTo(200);
+    assertThat(destination.droppedCount()).isZero();
+  }
+
+  /// Exponential backoff with jitter, capped, a longer requested delay wins
+  @Test
+  void retryDelay() {
+    // without jitter (random 0) the delay is half the backoff, with the maximum jitter all of it
+    assertThat(OtlpLogDestination.retryDelayMillis(1_000, 30_000, 0, 0, 0)).isEqualTo(500);
+    assertThat(OtlpLogDestination.retryDelayMillis(1_000, 30_000, 0, 0, 0.999)).isEqualTo(1_000);
+    assertThat(OtlpLogDestination.retryDelayMillis(1_000, 30_000, 3, 0, 0)).isEqualTo(4_000);
+    assertThat(OtlpLogDestination.retryDelayMillis(1_000, 30_000, 10, 0, 0))
+        .as("capped")
+        .isEqualTo(15_000);
+    assertThat(OtlpLogDestination.retryDelayMillis(1_000, 30_000, 100, 0, 0.999))
+        .as("no overflow for many retries, at most the maximum")
+        .isBetween(29_900L, 30_000L);
+    assertThat(OtlpLogDestination.retryDelayMillis(1_000, 30_000, 0, 120_000, 0))
+        .as("longer Retry-After wins")
+        .isEqualTo(120_000);
+    assertThat(OtlpLogDestination.retryDelayMillis(1_000, 30_000, 3, 1_000, 0))
+        .as("shorter Retry-After does not shorten the backoff")
+        .isEqualTo(4_000);
+    assertThat(OtlpLogDestination.retryDelayMillis(1, 1, 0, 0, 0)).as("at least 1 ms").isOne();
   }
 
   @Test
@@ -440,14 +465,22 @@ class OtlpLogDestinationTest {
   @Test
   void closeDuringAnOutage() throws Exception {
     server.stop(0);
-    destination = fastDestination(config().flushIntervalMillis(60_000).build());
+    // a short close timeout, close waits it out while the log server is unavailable
+    destination =
+        new OtlpLogDestination(
+            "otlp",
+            config().flushIntervalMillis(60_000).build(),
+            new RequestLogMetrics(),
+            10,
+            50,
+            200);
     OtlpRequestLogger logger = new OtlpRequestLogger(destination);
     for (int i = 0; i < 10; i++) {
       logger.logRequest(TestRequestLogInfo.of(HttpMethod.GET, 200));
     }
     long start = System.nanoTime();
     destination.close();
-    assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start)).isLessThan(2_500);
+    assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start)).isLessThan(1_000);
     assertThat(destination.droppedCount()).isEqualTo(10);
     assertThat(counter("sensepitch_request_log_export_retries")).isPositive();
     assertThat(logs.messages(OtlpLogDestination.class))

@@ -412,13 +412,31 @@ public class OtlpLogDestination implements RequestLogMetrics.QueueSource, AutoCl
                   + " maxBufferedBytes");
         }
         long delay =
-            Math.min(maxRetryDelayMillis, initialRetryDelayMillis << Math.min(retries, 20));
+            retryDelayMillis(
+                initialRetryDelayMillis,
+                maxRetryDelayMillis,
+                retries,
+                result.retryAfterMillis(),
+                ThreadLocalRandom.current().nextDouble());
         retries++;
-        // jitter, so a fleet of proxies does not retry in lockstep
-        delay = delay / 2 + ThreadLocalRandom.current().nextLong(delay / 2 + 1);
-        return Math.max(1, Math.max(delay, result.retryAfterMillis()));
+        return delay;
       }
     }
+  }
+
+  /// Delay before the next attempt: exponential backoff from `initial` up to `max`, of which a
+  /// random half is taken, so a fleet of proxies does not retry in lockstep. A longer delay the
+  /// server requested via `Retry-After` wins, a shorter one does not shorten the backoff.
+  ///
+  /// @param retries failed attempts in a row before this one
+  /// @param retryAfterMillis delay the server requested, `0` if none
+  /// @param random a random value in `[0, 1)`
+  /// @return the delay, at least one millisecond
+  static long retryDelayMillis(
+      long initial, long max, int retries, long retryAfterMillis, double random) {
+    long backoff = Math.min(max, initial << Math.min(retries, 20));
+    long delay = backoff / 2 + (long) ((backoff / 2 + 1) * random);
+    return Math.max(1, Math.max(delay, retryAfterMillis));
   }
 
   private synchronized OtlpBatch peek() {

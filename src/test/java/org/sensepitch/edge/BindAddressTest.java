@@ -9,9 +9,11 @@ import org.junit.jupiter.api.Timeout;
 
 class BindAddressTest {
 
-  /// Flaky: hit the 5 second timeout once in a full test run (2026-10-08), but passed three times
-  /// in a row when run alone. A slow DNS lookup of `not-a-valid-address` may be the cause; not
-  /// investigated.
+  /// An address the proxy cannot listen on makes the start fail. `192.0.2.1` is from TEST-NET-1
+  /// (RFC 5737) and never assigned to a local interface, so the bind fails without a DNS lookup.
+  /// The host name used before, `not-a-valid-address`, depended on the resolver, which may have
+  /// let the test hit its timeout once (2026-10-08). Most of the remaining second is the warm-up
+  /// of Netty and OpenSSL, when this class runs first in the test JVM.
   @Test
   @Timeout(value = 5, unit = TimeUnit.SECONDS)
   void invalidBindAddressThrows() {
@@ -22,7 +24,7 @@ class BindAddressTest {
                     .keyPath("classpath:ssl/test.key")
                     .certPath("classpath:ssl/test.crt")
                     .build())
-            .address("not-a-valid-address")
+            .address("192.0.2.1")
             .build();
 
     var config =
