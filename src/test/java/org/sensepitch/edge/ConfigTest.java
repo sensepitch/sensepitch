@@ -240,4 +240,21 @@ public class ConfigTest {
       log.info("{}ScalarNode: {} ({})", pad, sc.getValue(), sc.getTag());
     }
   }
+
+  /// The connection pool was removed, a configuration still setting it is rejected instead of
+  /// silently ignored.
+  @Test
+  public void removedConnectionPoolIsRejected() {
+    String yaml =
+        """
+        upstreams:
+          shop:
+            target: shop:8080
+            connectionPool:
+              maxSize: 10
+        """;
+    IllegalArgumentException ex =
+        assertThrows(IllegalArgumentException.class, () -> Main.parseConfig(yaml));
+    assertThat(ex).hasMessageContaining("Unknown parameter in UpstreamConfig: connectionPool");
+  }
 }

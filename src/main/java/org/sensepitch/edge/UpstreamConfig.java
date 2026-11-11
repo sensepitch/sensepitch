@@ -13,5 +13,4 @@ import lombok.Builder;
 ///   Java DNS resolver is used
 /// @author Jens Wilke
 @Builder(toBuilder = true)
-public record UpstreamConfig(
-    String key, String ref, String target, ConnectionPoolConfig connectionPool) implements HasKey {}
+public record UpstreamConfig(String key, String ref, String target) implements HasKey {}

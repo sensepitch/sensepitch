@@ -8,31 +8,24 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelPipeline;
-import io.netty.channel.pool.ChannelPoolHandler;
-import io.netty.channel.pool.SimpleChannelPool;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.http.HttpClientCodec;
-import io.netty.handler.timeout.IdleStateEvent;
-import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.FutureListener;
 import io.netty.util.concurrent.Promise;
 
+/// Opens a new connection to the upstream for each request. There is no connection pool, the
+/// [DownstreamHandler] closes the connection after the response.
+///
 /// @author Jens Wilke
 public class DefaultUpstream implements Upstream {
 
-  private static final ProxyLogger LOG = ProxyLogger.get(DefaultUpstream.class);
-
   private final String name;
   private final Bootstrap bootstrap;
-  private final SimpleChannelPool pool = null;
 
   /// @param name identifies the upstream within the configuration, see [UpstreamRegistry]
   public DefaultUpstream(ProxyContext ctx, String name, UpstreamConfig cfg) {
     this.name = name;
-    ConnectionPoolConfig poolCfg =
-        cfg.connectionPool() != null ? cfg.connectionPool() : ConnectionPoolConfig.DEFAULT;
     String[] sa = cfg.target().split(":");
     int port = 80;
     String target = sa[0];
@@ -50,49 +43,6 @@ public class DefaultUpstream implements Upstream {
             // like the ingress side does, see Proxy.start()
             .option(ChannelOption.SO_KEEPALIVE, true)
             .remoteAddress(target, port);
-    ChannelPoolHandler channelHandler =
-        new ChannelPoolHandler() {
-          @Override
-          public void channelReleased(Channel ch) throws Exception {
-            ch.pipeline()
-                .replace(
-                    "forward",
-                    "forward",
-                    new IdleStateHandler(0, poolCfg.idleTimeoutSeconds(), 0) {
-                      @Override
-                      protected void channelIdle(ChannelHandlerContext ctx, IdleStateEvent evt) {
-                        LOG.trace(ctx.channel(), "closing idle upstream connection " + name);
-                        ctx.close();
-                      }
-                    });
-          }
-
-          @Override
-          public void channelAcquired(Channel ch) throws Exception {}
-
-          @Override
-          public void channelCreated(Channel ch) throws Exception {
-            addHttpHandler(ch.pipeline());
-            ch.pipeline().addLast("forward", new ForwardHandler(null));
-          }
-        };
-    int maxConnections = poolCfg.maxSize();
-    /*-
-    if (maxConnections <= 0) {
-      pool = new SimpleChannelPool(bootstrap, channelHandler, ChannelHealthChecker.ACTIVE);
-    } else {
-      pool =
-          new FixedChannelPool(
-              bootstrap,
-              channelHandler,
-              ChannelHealthChecker.ACTIVE,
-              FixedChannelPool.AcquireTimeoutAction.FAIL,
-              50, // acquire timeout ms
-              maxConnections, // max connections
-              1,
-              true);
-    }
-    -*/
   }
 
   public String name() {
@@ -105,52 +55,18 @@ public class DefaultUpstream implements Upstream {
 
   @Override
   public Future<Channel> connect(ChannelHandlerContext ingressCtx) {
-    if (pool != null) {
-      return getPooledChannel(ingressCtx.channel());
-    } else {
-      ChannelFuture upstreamFuture = connectToUpstream(ingressCtx.channel());
-      Promise<Channel> promise = ingressCtx.executor().newPromise();
-      upstreamFuture.addListener(
-          (ChannelFutureListener)
-              cf -> {
-                //                LOG.info(
-                //                  ingressCtx.channel().id()
-                //                    + ">"
-                //                    + cf.channel().id()
-                //                    + " upstream connected, forwarding to promise");
-                if (cf.isSuccess()) {
-                  promise.setSuccess(cf.channel());
-                } else {
-                  promise.setFailure(cf.cause());
-                }
-              });
-      return promise;
-    }
-  }
-
-  @Override
-  public void release(Channel ch) {
-    if (pool != null) {
-      // TODO: void promise
-      pool.release(ch);
-    }
-  }
-
-  private Future<Channel> getPooledChannel(Channel ingress) {
-    Future<Channel> future = pool.acquire(ingress.eventLoop().newPromise());
-    future.addListener(
-        (FutureListener<Channel>)
-            f -> {
-              if (f.isSuccess()) {
-                Channel ch = f.resultNow();
-                // make sure read is on, it can happen that its till off from previous request
-                // handling
-                ch.setOption(ChannelOption.AUTO_READ, true);
-                // we need to do this in the listener call back, to set the downstream
-                ch.pipeline().replace("forward", "forward", new ForwardHandler(ingress));
+    ChannelFuture upstreamFuture = connectToUpstream(ingressCtx.channel());
+    Promise<Channel> promise = ingressCtx.executor().newPromise();
+    upstreamFuture.addListener(
+        (ChannelFutureListener)
+            cf -> {
+              if (cf.isSuccess()) {
+                promise.setSuccess(cf.channel());
+              } else {
+                promise.setFailure(cf.cause());
               }
             });
-    return future;
+    return promise;
   }
 
   private ChannelFuture connectToUpstream(Channel ingress) {
@@ -165,7 +81,6 @@ public class DefaultUpstream implements Upstream {
                     ch.pipeline().addLast("forward", new ForwardHandler(ingress));
                   }
                 });
-    ChannelFuture f = bs.connect();
-    return f;
+    return bs.connect();
   }
 }

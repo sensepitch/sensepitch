@@ -141,7 +141,8 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [x] pow deflection: make time a parameter
 - [x] make admission secret configurable
 - [x] can we use Builder in lombok?
-- [x] use keep alive / connection pool upstream
+- [ ] upstream connection pool with keep-alive (an earlier version was disabled 2025-09-20 and removed,
+  see git history)
 - [x] openssl support for HTTPS
 - [x] upstream backpressure
 - [x] YAML based configuration

@@ -14,10 +14,7 @@ public interface Upstream {
   /// extracted from the context.
   Future<Channel> connect(ChannelHandlerContext downstreamContext);
 
-  /// Release the channel back to the connection pool if enabled.
-  void release(Channel ch);
-
   /// Called when a configuration reload removed or changed this upstream. Requests that are in
-  /// flight may still use it. A pooled implementation closes its idle connections here.
+  /// flight may still use it.
   default void close() {}
 }

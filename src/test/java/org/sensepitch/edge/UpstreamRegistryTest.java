@@ -85,9 +85,6 @@ class UpstreamRegistryTest {
     }
 
     @Override
-    public void release(Channel ch) {}
-
-    @Override
     public void close() {
       closed = true;
     }

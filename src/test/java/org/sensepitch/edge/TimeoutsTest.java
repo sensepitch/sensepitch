@@ -249,10 +249,5 @@ class TimeoutsTest {
       promise.setSuccess(upstreamChannel);
       return promise;
     }
-
-    @Override
-    public void release(Channel ch) {
-      // ignore
-    }
   }
 }

@@ -30,7 +30,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
 
   private final Upstream upstream;
   private Future<Channel> upstreamChannelFuture;
-  private boolean returnUpstreamToPool;
   private Runnable flushTask;
 
   /// This avoids that we sent stray content to upstream when not expected
@@ -121,13 +120,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       assert ctx.executor().inEventLoop();
       ReferenceCountUtil.release(msg);
       Throwable cause = future.cause();
-      // TODO: counter!
-      if (cause instanceof IllegalStateException
-          && cause.getMessage() != null
-          && cause.getMessage().contains("Too many outstanding acquire operations")) {
-        completeWithError(ctx, HttpResponseStatus.valueOf(509, "Bandwidth Limit Exceeded"));
-        return;
-      }
       DEBUG.error(ctx.channel(), "unknown upstream connection problem", future.cause());
       ctx.pipeline().get(RequestLoggingHandler.class).setException(cause);
       completeWithError(ctx, HttpResponseStatus.valueOf(502, "Upstream connection problem"));
@@ -246,23 +238,15 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       throws Exception {
     // FIXME: sanitize headers
     if (msg instanceof HttpResponse response) {
-      // NGINX will send Connection: close after 100 requests
-      returnUpstreamToPool = HttpUtil.isKeepAlive(response);
-      // DEBUG.trace(ctx.channel(), upstreamChannelFuture.resultNow(),
-      //  "connection=" + response.headers().get(HttpHeaderNames.CONNECTION) +
-      //  ", keepAlive=" + response.headers().get(HttpHeaderNames.KEEP_ALIVE) +
-      //  ", returnUpstreamToPool=" + returnUpstreamToPool);
+      // hop-by-hop headers of the upstream connection, the client connection has its own
       response.headers().remove(HttpHeaderNames.KEEP_ALIVE);
       response.headers().remove(HttpHeaderNames.CONNECTION);
     }
     if (msg instanceof LastHttpContent) {
-      // we can release upstream channel to pool only as soon as we cleared out
-      // the reference here to ensure no more throttling is done
-      if (returnUpstreamToPool) {
-        upstream.release(upstreamChannelFuture.resultNow());
-      } else {
-        upstreamChannelFuture.resultNow().close();
-      }
+      // there is no connection pool, so the upstream connection is closed after each response,
+      // also if the upstream would keep it alive. The reference is cleared here to ensure no more
+      // throttling is done.
+      upstreamChannelFuture.resultNow().close();
       upstreamChannelFuture = null;
     }
     super.write(ctx, msg, promise);

@@ -88,6 +88,9 @@ class ExternalTcpIT {
     thread.start();
 
     awaitListening();
+    // the proxy logs after binding the port, wait for it, so the startup messages are not
+    // captured after the clear
+    awaitLogged("Proxy listening");
     // clear only now, so startup and the readiness probe stay out of the assertions
     logs.clear();
   }
@@ -265,6 +268,17 @@ class ExternalTcpIT {
   private static int freePort() throws IOException {
     try (ServerSocket probe = new ServerSocket(0)) {
       return probe.getLocalPort();
+    }
+  }
+
+  @SuppressWarnings("BusyWait")
+  private void awaitLogged(String messagePart) throws InterruptedException {
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+    while (proxyMessages().stream().noneMatch(m -> m.contains(messagePart))) {
+      if (System.nanoTime() > deadline) {
+        throw new IllegalStateException("proxy did not log: " + messagePart);
+      }
+      Thread.sleep(5);
     }
   }
 

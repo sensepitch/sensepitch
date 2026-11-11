@@ -96,8 +96,5 @@ class RoutingTest {
     public Future<Channel> connect(ChannelHandlerContext downstreamContext) {
       throw new UnsupportedOperationException();
     }
-
-    @Override
-    public void release(Channel ch) {}
   }
 }

@@ -31,8 +31,6 @@ import io.netty.util.concurrent.Promise;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.net.SocketException;
-import java.util.ArrayList;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
@@ -50,7 +48,6 @@ public class FlowAndExceptionTest {
   boolean failUpstreamWrites;
 
   /// Upstream channels handed back for reuse
-  List<Channel> releasedUpstreams = new ArrayList<>();
 
   RequestLogCapture requestLogCapture = new RequestLogCapture();
   RequestLogger requestLog = requestLogCapture.plainText();
@@ -128,10 +125,11 @@ public class FlowAndExceptionTest {
     upstreamChannel.pipeline().fireExceptionCaught(new SocketException("Connection reset"));
   }
 
-  /// The response travels from upstream via [ForwardHandler] to the client. With keep alive the
-  /// upstream connection is handed back for reuse, hop-by-hop headers are not forwarded.
+  /// The response travels from upstream via [ForwardHandler] to the client, hop-by-hop headers are
+  /// not forwarded. There is no connection pool, so the upstream connection is closed after the
+  /// response, also if the upstream offers keep alive. The client connection stays open.
   @Test
-  public void responseIsForwardedAndUpstreamReleased() {
+  public void responseIsForwardedAndUpstreamClosed() {
     sendGetRequest();
     HttpResponse response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
     response.headers().set(HttpHeaderNames.KEEP_ALIVE, "timeout=5");
@@ -145,35 +143,37 @@ public class FlowAndExceptionTest {
     assertThat(received.content().readableBytes()).isEqualTo(3);
     received.release();
     assertThat((Object) ingressChannel.readOutbound()).isInstanceOf(LastHttpContent.class);
-    assertThat(releasedUpstreams).containsExactly(upstreamChannel);
-    assertThat(upstreamChannel.isOpen()).isTrue();
+    assertThat(upstreamChannel.isOpen()).isFalse();
     assertThat(ingressChannel.isOpen()).isTrue();
   }
 
-  /// Upstream wants to close the connection, so it is not reused.
+  /// Upstream sends `Connection: close`, the upstream connection is closed like after every
+  /// response.
   @Test
-  public void upstreamConnectionCloseIsNotReused() {
+  public void upstreamConnectionCloseIsClosed() {
     sendGetRequest();
     HttpResponse response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
     response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
     upstreamChannel.writeInbound(response, new DefaultLastHttpContent());
     rattle();
-    assertThat(releasedUpstreams).isEmpty();
     assertThat(upstreamChannel.isOpen()).isFalse();
     ingressChannel.finishAndReleaseAll();
   }
 
-  /// Data arriving after the response is complete has nowhere to go and must be released.
+  /// Data arriving after the response is complete has nowhere to go and must be released. The
+  /// upstream connection is closed after the response, so this only happens when the extra bytes
+  /// are decoded within the same read as the end of the response.
   @Test
   public void unexpectedDataFromUpstreamIsDropped() {
     sendGetRequest();
+    HttpContent stray = new DefaultHttpContent(Unpooled.copiedBuffer(new byte[] {1}));
     upstreamChannel.writeInbound(
         new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK),
-        new DefaultLastHttpContent());
+        new DefaultLastHttpContent(),
+        stray);
     rattle();
     ingressChannel.finishAndReleaseAll();
-    HttpContent stray = new DefaultHttpContent(Unpooled.copiedBuffer(new byte[] {1}));
-    upstreamChannel.writeInbound(stray);
+    assertThat(upstreamChannel.isOpen()).isFalse();
     assertThat(stray.refCnt()).isZero();
     assertThat(logs.messages(ForwardHandler.class))
         .anySatisfy(m -> assertThat(m).contains("downstream is null"));
@@ -226,16 +226,6 @@ public class FlowAndExceptionTest {
     assertThat(response.status().code()).isEqualTo(502);
     assertThat(ingressChannel.isOpen()).isFalse();
     assertThat(requestLogCapture.lines()).anySatisfy(l -> assertThat(l).contains("502"));
-  }
-
-  @Test
-  public void connectionPoolExhaustedIs509() {
-    connectFailure = new IllegalStateException("Too many outstanding acquire operations");
-    sendGetRequest();
-    rattle();
-    HttpResponse response = ingressChannel.readOutbound();
-    assertThat(response.status().code()).isEqualTo(509);
-    assertThat(ingressChannel.isOpen()).isFalse();
   }
 
   @Test
@@ -338,11 +328,6 @@ public class FlowAndExceptionTest {
       Channel upstreamChannel = upstreamChannel(downstreamContext.channel());
       promise.setSuccess(upstreamChannel);
       return promise;
-    }
-
-    @Override
-    public void release(Channel ch) {
-      releasedUpstreams.add(ch);
     }
   }
 }

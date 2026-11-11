@@ -263,11 +263,6 @@ public class SiteSelector {
         promise.setSuccess(upstreamChannel);
         return promise;
       }
-
-      @Override
-      public void release(Channel ch) {
-        // ignore, embedded
-      }
     };
   }
 
@@ -279,7 +274,7 @@ public class SiteSelector {
       throw new IllegalArgumentException("upstream missing");
     }
     if (cfg.ref() != null) {
-      if (cfg.target() != null || cfg.connectionPool() != null) {
+      if (cfg.target() != null) {
         throw new IllegalArgumentException(
             "Upstream ref must not be combined with other settings: " + cfg.ref());
       }
