@@ -1,7 +1,6 @@
 package org.sensepitch.edge;
 
-import io.prometheus.metrics.core.metrics.Counter;
-import io.prometheus.metrics.core.metrics.GaugeWithCallback;
+import io.prometheus.metrics.core.datapoints.CounterDataPoint;
 import io.prometheus.metrics.model.registry.Collector;
 import java.io.BufferedOutputStream;
 import java.io.FileDescriptor;
@@ -17,7 +16,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
-/// Writes the request log from a dedicated thread, so event loops never block on I/O.
+/// Writes the request log to a stream, usually standard out, from a dedicated thread, so event
+/// loops never block on I/O.
 ///
 /// Why: with a shared buffered stream, the event loop that fills the buffer does the `write`
 /// system call while holding the stream lock. If standard out is a pipe and the log collector is
@@ -37,9 +37,13 @@ import java.util.function.Consumer;
 /// - [#close()] writes out everything queued before and stops the thread.
 ///
 /// @author Jens Wilke
-public class AsyncRequestLogWriter implements RequestLogOutput, HasMultipleMetrics {
+public class AsyncRequestLogWriter
+    implements RequestLogOutput, RequestLogMetrics.QueueSource, HasMultipleMetrics {
 
-  /// Default queue capacity, at about 500 bytes per record this caps the memory at a few
+  /// Name of the destination, the metric label
+  public static final String STDOUT = "stdout";
+
+  /// Default queue capacity, at about 1000 bytes per record this caps the memory at a few
   /// megabytes
   public static final int DEFAULT_CAPACITY = 8 * 1024;
 
@@ -53,42 +57,59 @@ public class AsyncRequestLogWriter implements RequestLogOutput, HasMultipleMetri
 
   private static final long CLOSE_TIMEOUT_MILLIS = 5_000;
 
+  private final String destination;
   private final BlockingQueue<byte[]> queue;
   private final OutputStream output;
+  private final RequestLogMetrics metrics;
+  private final CounterDataPoint dropped;
   private final Thread thread;
   private final AtomicBoolean closed = new AtomicBoolean();
   private final AtomicBoolean dropReported = new AtomicBoolean();
   private final AtomicBoolean errorReported = new AtomicBoolean();
-
-  private final Counter dropped =
-      Counter.builder()
-          .name("sensepitch_request_log_dropped")
-          .help("Request log records dropped because the writer could not keep up")
-          .build();
 
   /// Writer to standard out with the default capacity
   public static AsyncRequestLogWriter standardOut() {
     return new AsyncRequestLogWriter(new FileOutputStream(FileDescriptor.out), DEFAULT_CAPACITY);
   }
 
+  /// Writer with its own metrics, named [#STDOUT]
   public AsyncRequestLogWriter(OutputStream output, int capacity) {
+    this(STDOUT, output, capacity, new RequestLogMetrics());
+  }
+
+  public AsyncRequestLogWriter(
+      String destination, OutputStream output, int capacity, RequestLogMetrics metrics) {
+    this.destination = destination;
     this.output = new BufferedOutputStream(output, BUFFER_SIZE);
     this.queue = new ArrayBlockingQueue<>(capacity);
-    thread = new Thread(this::run, "request-log-writer");
+    this.metrics = metrics;
+    metrics.add(this);
+    dropped = metrics.dropped.labelValues(destination);
+    thread = new Thread(this::run, "request-log-" + destination);
     // must not keep the JVM alive, close() makes sure nothing is lost on a regular shutdown
     thread.setDaemon(true);
     thread.start();
   }
 
   @Override
+  public String destination() {
+    return destination;
+  }
+
+  @Override
+  public int queueSize() {
+    return queue.size();
+  }
+
+  /// Metrics shared by all destinations of the proxy
+  public RequestLogMetrics metrics() {
+    return metrics;
+  }
+
+  /// Registers the shared metrics, used when the writer is the only destination, e.g. in tests
+  @Override
   public void registerCollectors(Consumer<Collector> consumer) {
-    consumer.accept(dropped);
-    consumer.accept(
-        GaugeWithCallback.builder()
-            .name("sensepitch_request_log_queued")
-            .help("Request log records waiting to be written")
-            .callback(cb -> cb.call(queue.size()))
-            .build());
+    metrics.registerCollectors(consumer);
   }
 
   /// Number of dropped records since start
@@ -140,6 +161,8 @@ public class AsyncRequestLogWriter implements RequestLogOutput, HasMultipleMetri
         batch.add(queue.take());
         queue.drainTo(batch);
         for (byte[] bytes : batch) {
+          // a record after the end marker was queued by an event loop racing with close, it is
+          // lost like a record written after close
           if (bytes == END) {
             flush();
             return;

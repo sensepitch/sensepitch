@@ -180,6 +180,14 @@
       <version>${bytebuddy.version}</version>
       <scope>test</scope>
     </dependency>
+    <!-- official OTLP message classes, to verify the hand written OTLP encoding in tests.
+         Production code has no dependency on protobuf, see ProtobufWriter -->
+    <dependency>
+      <groupId>io.opentelemetry.proto</groupId>
+      <artifactId>opentelemetry-proto</artifactId>
+      <version>1.11.1-alpha</version>
+      <scope>test</scope>
+    </dependency>
     <!-- microbenchmarks, see Ja4Benchmark. Not run by surefire, launched via its main() -->
     <dependency>
       <groupId>org.openjdk.jmh</groupId>
@@ -322,7 +330,7 @@
                     <limit>
                       <counter>LINE</counter>
                       <value>COVEREDRATIO</value>
-                      <minimum>0.94</minimum>
+                      <minimum>0.95</minimum>
                     </limit>
                     <limit>
                       <counter>BRANCH</counter>

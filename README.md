@@ -290,6 +290,26 @@ A high ratio of `challenge_sent` to `answer_accepted` is normal under bot traffi
 `answer_rejected` hint at clients trying to forge answers. Requests for the challenge's scripts and
 styles are not counted.
 
+### `sensepitch_request_log_dropped_total{destination="..."}`
+
+Request log records dropped because a destination could not keep up, by `destination`: `stdout`,
+or the name of an OTLP destination. The request log is written by a thread of its own per
+destination; when its queue (stdout) or a thread buffer (OTLP) is full, records are dropped
+instead of stalling traffic. `sensepitch_request_log_queued{destination="..."}` shows the records
+waiting to be written.
+
+### `sensepitch_request_log_export_failed_total{destination="..."}`
+
+Batches an OTLP destination gave up, because the log server rejected them in a way retrying
+cannot fix, e.g. status 400. Their records are dropped. The first failure is also logged as an
+error.
+
+### `sensepitch_request_log_export_retries_total{destination="..."}` and `sensepitch_request_log_buffered_bytes{destination="..."}`
+
+Failed attempts that are retried, e.g. while the log server is restarted, and the bytes of the
+batches waiting to be sent. A rising `buffered_bytes` shows an outage being bridged; when it nears
+`otlp.maxBufferedBytes`, records will be dropped.
+
 ## Put Sensepitch Edge in front of NGINX
 
 Assuming your existing inbound reverse proxy is NGINX, here is an example how to augment
@@ -490,7 +510,7 @@ reloaded, so adding the marker enables live reload. Starting the proxy does not 
   certificates (`listen.ssl`, `snis`, Let's Encrypt) and `ipLookup`. The IP lookup databases are
   only read again if `ipLookup` changed. Upstreams with unchanged configuration are kept.
 - **Restart needed:** changes of `listen.address`, `listen.httpsPort`, `listen.connection`,
-  `metrics`, `ja4` and `requestLog` are logged as a warning and ignored.
+  `metrics`, `ja4`, `requestLog` and `traceContext` are logged as a warning and ignored.
 - **Invalid configuration:** the error is logged and the active configuration stays.
 - **Log:** a reload logs the configuration changes as a diff, and added, changed or removed
   certificates with subject, serial and expiry.
@@ -517,6 +537,180 @@ rejected (invalid configuration, missing `#END`), and `409` if the configuration
 environment variables. The endpoint has no authentication, so it binds to the loopback interface
 by default. Binding another address exposes it to that network. A reload only reads the local
 file again, so the worst case is repeated reloads.
+
+## Request log
+
+Each request is logged with its fields named after the
+[OpenTelemetry semantic conventions](https://opentelemetry.io/docs/specs/semconv/) (checked
+against version 1.45.0). The same names are used whatever the destination, so a query works for
+the JSON lines on standard out and for the OTLP export alike.
+
+By default the request log goes to standard out, one JSON object per line:
+
+````json
+{"timestamp":"2026-11-11T10:00:00.123Z","observed_timestamp":"2026-11-11T10:00:00.130Z",
+ "event.name":"sensepitch.request","severity_text":"INFO","severity_number":9,
+ "trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","span_id":"00f067aa0ba902b7",
+ "client.address":"192.0.2.7","client.port":51234,"server.address":"example.com",
+ "server.port":443,"http.request.method":"GET","url.path":"/search","url.query":"q=edge", ...}
+````
+
+`requestLog.plainText: true` switches standard out to the legacy single line format, useful for
+local debugging.
+
+### Destinations
+
+With `requestLog.destinations` the request log is written to several destinations, each with its
+own settings. `stdout` writes JSON lines (or plain text) to standard out, `otlp` sends the records
+via OTLP/HTTP with protobuf encoding, e.g. to VictoriaLogs or an OpenTelemetry collector:
+
+````yaml
+requestLog:
+  destinations:
+    - type: stdout
+    - type: otlp
+      name: victorialogs          # metric label, defaults to the type
+      anonymizeClientIp: true
+      otlp:                       # settings of the OTLP destination, mandatory for type otlp
+        endpoint: http://victorialogs:9428/insert/opentelemetry/v1/logs
+        headers:
+          VL-Stream-Fields: service.name,server.address
+        resourceAttributes:       # service.name defaults to sensepitch-edge
+          deployment.environment: prod
+        timeoutMillis: 10000      # defaults shown
+        flushIntervalMillis: 1000
+        batchBytes: 1048576       # per event loop buffer and request
+        maxBufferedBytes: 67108864  # batches waiting during an outage
+````
+
+`type`, `name` and `anonymizeClientIp` apply to every destination, `plainText` to `stdout` only.
+Everything specific to OTLP is in the `otlp` object, which is rejected on a `stdout` destination.
+
+- **`anonymizeClientIp`:** per destination. The client address is truncated to its network, `/24`
+  for IPv4 (`192.0.2.7` becomes `192.0.2.0`) and `/48` for IPv6, and the client port is left out.
+  The country and ASN are still derived from the full address.
+- **Batching:** each event loop encodes its records into a buffer of its own, so logging a request
+  allocates nothing and needs no shared queue. A buffer is handed to the sender when it reaches
+  `otlp.batchBytes` or after `otlp.flushIntervalMillis`, and the event loop continues with an
+  empty one from a pool. One request carries one batch.
+- **Outages:** connection errors, timeouts and the status codes 429, 502, 503 and 504 are retried
+  with exponential backoff up to 30 seconds, honouring `Retry-After`. The batches wait meanwhile,
+  so a restart of the log server loses no records. The waiting batches are limited by
+  `otlp.maxBufferedBytes`; when the limit is reached, new records are dropped and counted in
+  `sensepitch_request_log_dropped_total`, the waiting ones are kept. After the outage the extra
+  buffers are released again. Other errors, e.g. status 400, cannot succeed by retrying, the batch
+  is dropped and counted in `sensepitch_request_log_export_failed_total`.
+- **Memory:** about `otlp.batchBytes` per event loop, plus the waiting batches up to
+  `otlp.maxBufferedBytes`. Buffers are kept in memory only: when the proxy itself is restarted
+  during an outage of the log server, the waiting records are lost. At shutdown the proxy tries
+  for 5 seconds to send them.
+- **VictoriaLogs:** the `VL-Stream-Fields` header selects the
+  [log stream](https://docs.victoriametrics.com/victorialogs/keyconcepts/#stream-fields) fields.
+  Keep them to a few low-cardinality fields, never `client.address` or `url.path`.
+- **Environment variables:** destinations are indexed, map entries have a key and a value
+  variable:
+
+  ````
+  SENSEPITCH_EDGE_REQUEST_LOG_DESTINATIONS_0_TYPE=otlp
+  SENSEPITCH_EDGE_REQUEST_LOG_DESTINATIONS_0_OTLP_ENDPOINT=http://victorialogs:9428/insert/opentelemetry/v1/logs
+  SENSEPITCH_EDGE_REQUEST_LOG_DESTINATIONS_0_OTLP_HEADERS_0_KEY=Authorization
+  SENSEPITCH_EDGE_REQUEST_LOG_DESTINATIONS_0_OTLP_HEADERS_0_VALUE=Bearer ...
+  ````
+
+- **Configuration dump:** the configuration, including `otlp.headers`, is logged at startup and
+  in the diff of a reload. Do not put credentials into `otlp.headers` if the diagnostic log is not
+  protected.
+
+### Trace context
+
+OpenTelemetry has no request id attribute; requests are identified by their trace context. The
+edge assigns every request a W3C trace context: the `span_id` is the request id, logged with the
+`trace_id` and sent to upstream in the `traceparent` header. Backends that read the header, which
+OpenTelemetry instrumented ones do, continue the trace, so their logs and traces correlate with
+the edge.
+
+The edge faces the internet, so by default it ignores a `traceparent` sent by the client, starts
+a new trace and removes `tracestate`. The client's header is logged as
+`http.request.header.traceparent`. When a trusted CDN or load balancer in front of the edge sets
+the header, continue its trace:
+
+````yaml
+traceContext:
+  trustTraceparent: true
+````
+
+A trace started by the edge is flagged as sampled, so backends with a parent based sampler record
+it.
+
+### Fields
+
+In the code, the OpenTelemetry names are defined in `OtelLogFields`, the Sensepitch extensions in
+`SensepitchLogFields`.
+
+Record level fields are top level keys in JSON and the fields of the log data model in OTLP:
+
+| JSON key | OTLP | Content |
+|---|---|---|
+| `timestamp` | `time_unix_nano` | start of the request |
+| `observed_timestamp` | `observed_time_unix_nano` | when the record was produced, after the response was sent |
+| `event.name` | `event_name` | `sensepitch.request`, identifies request log records |
+| `severity_text`, `severity_number` | same | `INFO` (9), `WARN` (13) for server errors and failed requests |
+| `trace_id`, `span_id` | same, plus `flags` | trace context of the request, the span id is the request id |
+| — | `body` | summary, e.g. `GET /search?q=edge 200` |
+
+Attributes, semantic convention names:
+
+| Name | Content |
+|---|---|
+| `client.address`, `client.port` | client, subject to `anonymizeClientIp` |
+| `server.address`, `server.port` | requested host (sanitized `Host` header) and local port |
+| `http.request.method` | method, `_OTHER` for unknown methods, then `http.request.method_original` holds it |
+| `url.scheme`, `url.path`, `url.query` | `https` with TLS; the request target split at `?` |
+| `network.protocol.name`, `network.protocol.version`, `network.transport` | `http`, `1.1`, `tcp` |
+| `tls.protocol.name`, `tls.protocol.version`, `tls.cipher` | e.g. `tls`, `1.3`, `TLS_AES_128_GCM_SHA256` |
+| `http.response.status_code` | status code |
+| `http.request.body.size`, `http.response.body.size` | body bytes |
+| `http.request.size`, `http.response.size` | bytes including headers |
+| `user_agent.original` | `User-Agent` header |
+| `http.request.header.<name>` | string arrays, for `accept-language`, `sec-ch-ua`, `sec-ch-ua-platform`, `sec-ch-ua-mobile`, `referer`, `signature-agent` and the client's `traceparent` |
+| `geo.country.iso_code` | country of the client address, if the IP lookup knows it |
+| `error.type` | exception class, or the status code for a server error without exception |
+| `exception.type`, `exception.message` | the exception, if the request failed |
+
+Attributes without a semantic convention:
+
+| Name | Content |
+|---|---|
+| `sensepitch.connection.id`, `sensepitch.connection.request_count` | groups the requests of a keep-alive connection |
+| `sensepitch.client.asn` | autonomous system number of the client address |
+| `sensepitch.ip_traits` | traits of the client address, e.g. `asn=64496, country=DE, crawler=...` |
+| `sensepitch.tls.client.ja4` | JA4 TLS fingerprint, if enabled |
+| `sensepitch.admission_token` | admission token of the protection |
+| `sensepitch.bypass` | reason the protection was bypassed |
+| `sensepitch.request.cookie_present` | whether a cookie header was sent, not its content |
+| `sensepitch.request.header_names` | names of the request headers, in order |
+| `sensepitch.duration.receive_ns`, `…response_ns`, `…total_ns` | durations, see `RequestLogInfo` |
+
+### Migrating from the previous JSON format
+
+The JSON keys were renamed. Collectors that recognised the records by `type: request` must filter
+on `event.name: sensepitch.request` instead:
+
+| Previous | Now |
+|---|---|
+| `type` | `event.name` |
+| `time` | `timestamp` |
+| `request_id` | `span_id`; the connection is `sensepitch.connection.id` and `…request_count` |
+| `host`, `remote_addr` | `server.address`, `client.address` |
+| `method`, `uri`, `protocol`, `status` | `http.request.method`, `url.path` + `url.query`, `network.protocol.*`, `http.response.status_code` |
+| `content_bytes`, `bytes_received`, `bytes_sent` | `http.response.body.size`, `http.request.size`, `http.response.size` |
+| `receive_nanos`, `response_nanos`, `total_nanos` | `sensepitch.duration.*_ns` |
+| `headers.*` | `http.request.header.*`, string arrays |
+| `user_agent`, `referer`, `signature_agent` | `user_agent.original`, `http.request.header.referer`, `http.request.header.signature-agent` |
+| `cookie`, `header_names`, `ip_traits`, `admission_token`, `bypass` | `sensepitch.request.cookie_present`, `sensepitch.request.header_names`, `sensepitch.ip_traits`, `sensepitch.admission_token`, `sensepitch.bypass` |
+| `error` | `error.type`, `exception.type`, `exception.message` |
+
+Upstreams now receive the edge's `traceparent` header on every request, see Trace context.
 
 ## Diagnostic logging
 

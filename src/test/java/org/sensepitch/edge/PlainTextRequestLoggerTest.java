@@ -2,7 +2,6 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import org.junit.jupiter.api.Test;
@@ -23,17 +22,13 @@ class PlainTextRequestLoggerTest {
 
   @Test
   void clientAddress() {
-    String line =
-        log(
-            TestRequestLogInfo.of(HttpMethod.GET, 200)
-                .withChannel(TestChannels.channelFrom("192.0.2.7")));
+    String line = log(TestRequestLogInfo.of(HttpMethod.GET, 200).withClientAddress("192.0.2.7"));
     assertThat(line).startsWith("RQ0 0 example.com 192.0.2.7 ");
   }
 
   @Test
   void noClientAddressWithoutSocket() {
-    String line =
-        log(TestRequestLogInfo.of(HttpMethod.GET, 200).withChannel(new EmbeddedChannel()));
+    String line = log(TestRequestLogInfo.of(HttpMethod.GET, 200));
     assertThat(line).startsWith("RQ0 0 example.com - ");
   }
 
@@ -41,8 +36,7 @@ class PlainTextRequestLoggerTest {
   /// otherwise a client could inject fields into the log line. Quotes are escaped as `\"`.
   @Test
   void quotesInValuesAreEscaped() {
-    TestRequestLogInfo info =
-        TestRequestLogInfo.of(HttpMethod.GET, 200).withChannel(new EmbeddedChannel());
+    TestRequestLogInfo info = TestRequestLogInfo.of(HttpMethod.GET, 200);
     info.request().headers().set(HttpHeaderNames.USER_AGENT, "evil\" 200 \"injected");
     assertThat(log(info)).contains(" \"evil\\\" 200 \\\"injected\" ");
   }
@@ -50,8 +44,7 @@ class PlainTextRequestLoggerTest {
   /// A trailing backslash must not escape the closing quote, so backslashes are escaped as well.
   @Test
   void backslashesAreEscaped() {
-    TestRequestLogInfo info =
-        TestRequestLogInfo.of(HttpMethod.GET, 200).withChannel(new EmbeddedChannel());
+    TestRequestLogInfo info = TestRequestLogInfo.of(HttpMethod.GET, 200);
     info.request().headers().set(HttpHeaderNames.USER_AGENT, "agent\\");
     assertThat(log(info)).contains(" \"agent\\\\\" ");
   }
@@ -60,7 +53,6 @@ class PlainTextRequestLoggerTest {
   void serverErrorAndHeaderNames() {
     TestRequestLogInfo info =
         TestRequestLogInfo.of(HttpMethod.GET, 502)
-            .withChannel(new EmbeddedChannel())
             .withError(new IllegalStateException("upstream gone"));
     info.request().headers().set(HttpHeaderNames.USER_AGENT, "curl");
     String line = log(info);

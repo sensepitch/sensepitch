@@ -1,12 +1,18 @@
 package org.sensepitch.edge;
 
-import io.netty.channel.Channel;
 import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpVersion;
+import java.net.InetAddress;
 
+/// Data of one completed request, passed to a [RequestLogger].
+///
+/// The interface exposes only what the request log needs, not the Netty channel, so request
+/// loggers stay independent of the transport and a wrapper can alter single values, see
+/// [AnonymizedClientRequestLogInfo].
+///
 /// @author Jens Wilke
 public interface RequestLogInfo {
 
@@ -16,9 +22,46 @@ public interface RequestLogInfo {
   /// Used as a mock when the request was not received or was malformed
   HttpMethod NIL_METHOD = new HttpMethod("NIL");
 
-  Channel channel();
+  /// Address of the client, `null` if the connection has no IP remote address, e.g. in tests.
+  InetAddress clientAddress();
 
-  String requestId();
+  /// Port of the client, `0` if unknown
+  int clientPort();
+
+  /// Local port the request was received on, `0` if unknown
+  int serverPort();
+
+  /// Negotiated TLS protocol as reported by the JDK, e.g. `TLSv1.3`, or `null` without TLS
+  String tlsProtocol();
+
+  /// Negotiated TLS cipher suite, IANA name, e.g. `TLS_AES_128_GCM_SHA256`, or `null` without TLS
+  String tlsCipher();
+
+  /// Short id of the connection, unique within this proxy instance
+  String connectionId();
+
+  /// Number of requests before this one on the same connection, `0` for the first request
+  int connectionRequestCount();
+
+  /// Id of the request in the form `connection/count`, used by the plain text format
+  default String requestId() {
+    return connectionId() + "/" + connectionRequestCount();
+  }
+
+  /// W3C trace id of the request, 32 lowercase hex characters, or `null` if not assigned
+  ///
+  /// @see TraceContext
+  String traceId();
+
+  /// W3C span id the edge assigned to the request, 16 lowercase hex characters, or `null` if not
+  /// assigned. This is the standard request id, it is sent to upstream in the `traceparent` header.
+  String spanId();
+
+  /// W3C trace flags of the request, e.g. `01` for sampled, or `null` if not assigned
+  String traceFlags();
+
+  /// The `traceparent` header as sent by the client, or `null` if absent
+  String clientTraceparent();
 
   /// The http request received from the client with augmented headers as it was sent to upstream.
   /// If the request was not received but an error response was generated, this contains a mock
@@ -49,6 +92,9 @@ public interface RequestLogInfo {
 
   /// Total bytes received for this request including headers.
   long bytesReceived();
+
+  /// Size, in bytes, of the request body received from the client
+  long requestBodyBytes();
 
   long requestStartTimeMillis();
 

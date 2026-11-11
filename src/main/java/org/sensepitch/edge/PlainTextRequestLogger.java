@@ -3,7 +3,7 @@ package org.sensepitch.edge;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
-import java.net.InetSocketAddress;
+import java.net.InetAddress;
 import java.text.DecimalFormat;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -12,8 +12,8 @@ import java.util.Locale;
 /// Writes the request log in a human readable single line format, prefixed with `RQ0`.
 ///
 /// Each record is rendered completely and written with a single
-// [RequestLogOutput#writeLine(String)]
-/// call, so records of concurrent event loops cannot interleave within one line.
+/// [RequestLogOutput#writeLine(String)] call, so records of concurrent event loops cannot
+/// interleave within one line.
 ///
 /// @author Jens Wilke
 public class PlainTextRequestLogger implements RequestLogger {
@@ -31,11 +31,8 @@ public class PlainTextRequestLogger implements RequestLogger {
   public void logRequest(RequestLogInfo info) {
     HttpRequest request = info.request();
     HttpResponse response = info.response();
-    String remoteHost = "-";
-    if (info.channel().remoteAddress() instanceof InetSocketAddress) {
-      InetSocketAddress addr = (InetSocketAddress) info.channel().remoteAddress();
-      remoteHost = addr.getAddress().getHostAddress();
-    }
+    InetAddress clientAddress = info.clientAddress();
+    String remoteHost = clientAddress != null ? clientAddress.getHostAddress() : "-";
     String admissionToken = request.headers().get(Deflector.ADMISSION_TOKEN_HEADER);
     if (admissionToken == null) {
       admissionToken = "-";

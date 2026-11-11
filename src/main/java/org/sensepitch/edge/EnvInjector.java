@@ -95,7 +95,19 @@ public class EnvInjector {
     Map<String, Object> map = new LinkedHashMap<>();
     for (int i = 0; true; i++) {
       String indexPrefix = envName + "_" + i + "_";
-      if (hasSettingsWithPrefix(env, indexPrefix)) {
+      if (targetType == String.class) {
+        // a string map has no key in the value, so key and value are separate variables:
+        // <NAME>_<i>_KEY and <NAME>_<i>_VALUE
+        String key = env.get(indexPrefix + "KEY");
+        if (key == null) {
+          break;
+        }
+        String value = env.get(indexPrefix + "VALUE");
+        if (value == null) {
+          throw new IllegalArgumentException("Missing env var " + indexPrefix + "VALUE");
+        }
+        map.put(key, value);
+      } else if (hasSettingsWithPrefix(env, indexPrefix)) {
         Method builderMethod = targetType.getMethod("builder");
         Object nestedTargetBuilder = builderMethod.invoke(null);
         Object obj = injectFromEnv(indexPrefix, env, nestedTargetBuilder);

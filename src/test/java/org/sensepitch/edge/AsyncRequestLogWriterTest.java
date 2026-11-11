@@ -175,10 +175,13 @@ public class AsyncRequestLogWriterTest {
       writer.writeLine("x".repeat(AsyncRequestLogWriter.BUFFER_SIZE + 1));
     }
     var snapshots = new MetricsAndMemoryTest.Snapshots(registry.scrape());
-    assertThat(snapshots.counter("sensepitch_request_log_dropped").getValue())
+    // labelled with the destination, since the proxy can have several
+    assertThat(
+            snapshots.counter("sensepitch_request_log_dropped", "destination", "stdout").getValue())
         .isEqualTo(writer.droppedCount())
         .isPositive();
-    assertThat(snapshots.gauge("sensepitch_request_log_queued").getValue()).isBetween(0.0, 2.0);
+    assertThat(snapshots.gauge("sensepitch_request_log_queued", "destination", "stdout").getValue())
+        .isBetween(0.0, 2.0);
     release.countDown();
     writer.close();
   }

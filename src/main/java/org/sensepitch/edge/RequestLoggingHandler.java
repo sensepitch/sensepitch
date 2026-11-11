@@ -14,10 +14,17 @@ import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
+import io.netty.handler.ssl.SslHandler;
 import io.netty.util.concurrent.Ticker;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import javax.net.ssl.SSLSession;
 
 /// Listens to incoming and outgoing http messages and collects all relevant information during
 /// request processing and calls the request logger implementation when the last content is written.
+///
+/// It also assigns each request its W3C trace context and sets the `traceparent` header that is
+/// sent to upstream, see [TraceContext] and [TraceContextConfig].
 ///
 /// Note on concurrency: there is no concurrent activity on this object. The downstream request
 /// comes from one thread, after submitting the upstream request, writes come from the upstream
@@ -68,10 +75,30 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   CountByteIoHandler countByteIoHandler;
 
   private final ProxyMetrics metrics;
+  private final boolean trustTraceparent;
 
+  private long requestBodyBytes;
+  private TraceContext traceContext;
+  private String clientTraceparent;
+
+  /// TLS session data, read once per connection, when the first request is logged
+  private boolean tlsResolved;
+
+  private String tlsProtocol;
+  private String tlsCipher;
+
+  /// Handler that never trusts a `traceparent` header from the client
   public RequestLoggingHandler(ProxyMetrics metrics, RequestLogger logger) {
+    this(metrics, logger, false);
+  }
+
+  /// @param trustTraceparent continue the trace of the client, see
+  ///   [TraceContextConfig#trustTraceparent()]
+  public RequestLoggingHandler(
+      ProxyMetrics metrics, RequestLogger logger, boolean trustTraceparent) {
     this.logger = logger;
     this.metrics = metrics;
+    this.trustTraceparent = trustTraceparent;
   }
 
   @Override
@@ -98,11 +125,32 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
       requestStartTime = System.currentTimeMillis();
       requestStartTimeNanos = ticker.nanoTime();
       response = null;
+      requestBodyBytes = 0;
+      assignTraceContext(request);
+    }
+    // count before passing on, the content is released further down the pipeline
+    if (msg instanceof HttpContent content) {
+      requestBodyBytes += content.content().readableBytes();
     }
     if (msg instanceof LastHttpContent) {
       requestCompleteTimeNanos = ticker.nanoTime();
     }
     super.channelRead(ctx, msg);
+  }
+
+  /// Assigns the trace context of the request and sets the `traceparent` header for upstream. A
+  /// trusted, valid header of the client is continued with a new span id, otherwise a new trace is
+  /// started and a `tracestate` of the client is removed, since it belongs to the client's trace.
+  private void assignTraceContext(HttpRequest request) {
+    clientTraceparent = request.headers().get(TraceContext.TRACEPARENT);
+    TraceContext parent = trustTraceparent ? TraceContext.parse(request) : null;
+    if (parent != null) {
+      traceContext = parent.child();
+    } else {
+      traceContext = TraceContext.generate();
+      request.headers().remove(TraceContext.TRACESTATE);
+    }
+    request.headers().set(TraceContext.TRACEPARENT, traceContext.header());
   }
 
   @Override
@@ -152,6 +200,9 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
 
   private void log(ChannelHandlerContext ctx) {
     channel = ctx.channel();
+    if (!tlsResolved) {
+      resolveTls(ctx);
+    }
     responseReceivedTimeNanos = ticker.nanoTime();
     // TODO: in case of error, maybe different status code? maybe set content to 0?
     try {
@@ -167,6 +218,23 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     bytesReceivedStart = countByteIoHandler.getBytesReceived();
     bytesSentStart = countByteIoHandler.getBytesSent();
     request = null;
+    traceContext = null;
+    clientTraceparent = null;
+  }
+
+  /// The SNI handler replaces itself by the SSL handler, so it is looked up when the handshake is
+  /// done, which is the case when a request was received
+  private void resolveTls(ChannelHandlerContext ctx) {
+    tlsResolved = true;
+    SslHandler sslHandler = ctx.pipeline().get(SslHandler.class);
+    if (sslHandler == null) {
+      return;
+    }
+    SSLSession session = sslHandler.engine().getSession();
+    if (session != null) {
+      tlsProtocol = session.getProtocol();
+      tlsCipher = session.getCipherSuite();
+    }
   }
 
   private void consolidateTimes() {
@@ -208,13 +276,72 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   }
 
   @Override
-  public String requestId() {
-    return LogTarget.localChannelId(channel) + "/" + requestCount;
+  public String connectionId() {
+    return LogTarget.localChannelId(channel);
   }
 
   @Override
-  public Channel channel() {
-    return channel;
+  public int connectionRequestCount() {
+    return requestCount;
+  }
+
+  @Override
+  public InetAddress clientAddress() {
+    if (channel != null && channel.remoteAddress() instanceof InetSocketAddress address) {
+      return address.getAddress();
+    }
+    return null;
+  }
+
+  @Override
+  public int clientPort() {
+    if (channel != null && channel.remoteAddress() instanceof InetSocketAddress address) {
+      return address.getPort();
+    }
+    return 0;
+  }
+
+  @Override
+  public int serverPort() {
+    if (channel != null && channel.localAddress() instanceof InetSocketAddress address) {
+      return address.getPort();
+    }
+    return 0;
+  }
+
+  @Override
+  public String tlsProtocol() {
+    return tlsProtocol;
+  }
+
+  @Override
+  public String tlsCipher() {
+    return tlsCipher;
+  }
+
+  @Override
+  public String traceId() {
+    return traceContext != null ? traceContext.traceId() : null;
+  }
+
+  @Override
+  public String spanId() {
+    return traceContext != null ? traceContext.spanId() : null;
+  }
+
+  @Override
+  public String traceFlags() {
+    return traceContext != null ? traceContext.flags() : null;
+  }
+
+  @Override
+  public String clientTraceparent() {
+    return clientTraceparent;
+  }
+
+  @Override
+  public long requestBodyBytes() {
+    return requestBodyBytes;
   }
 
   @Override

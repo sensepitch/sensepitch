@@ -54,12 +54,14 @@ public class Proxy implements ProxyContext {
   /// Delegates to the current state, so the SNI handler picks up reloaded certificates
   private final Mapping<String, SslContext> sniMapping = host -> state.get().sniMapping().map(host);
   private final EventLoopGroup eventLoopGroup;
+  /// Request log destinations plus the metrics per status code, closed on shutdown
   private final RequestLogger requestLogger;
   private final SanitizeHostHandler sanitizeHostHandler =
       new SanitizeHostHandler(() -> state.get().knownHosts());
   private final Ja4Config ja4Config;
   private final Ja4HeaderHandler ja4HeaderHandler;
   private final RequestLogOutput requestLogOutput;
+  private final boolean trustTraceparent;
 
   /// Proxy writing the request log to standard out, see [AsyncRequestLogWriter]
   public Proxy(ProxyConfig config) {
@@ -87,19 +89,21 @@ public class Proxy implements ProxyContext {
     expose(metrics);
     trackIngressConnectionsHandler = expose(new TrackIngressConnectionsHandler());
     expose(new NettyAllocatorMetrics());
-    if (requestLogOutput instanceof HasMultipleMetrics withMetrics) {
-      expose(withMetrics);
-    }
+    trustTraceparent = config.traceContext() != null && config.traceContext().trustTraceparent();
     state.set(EdgeState.build(this, config, null));
     LOG.info("Certificates loaded:" + Certificates.list(state.get().certificates()));
-    RequestLogConfig requestLogConfig =
-        config.requestLog() != null ? config.requestLog() : RequestLogConfig.DEFAULT;
+    // the destinations share the metrics of the standard out writer, a metric name can be
+    // registered only once
+    RequestLogMetrics requestLogMetrics =
+        requestLogOutput instanceof AsyncRequestLogWriter writer
+            ? writer.metrics()
+            : new RequestLogMetrics();
+    RequestLogger destinations =
+        RequestLoggerFactory.create(config.requestLog(), requestLogOutput, requestLogMetrics);
+    expose(requestLogMetrics);
     requestLogger =
         new DistributingRequestLogger(
-            requestLogConfig.plainText()
-                ? new PlainTextRequestLogger(requestLogOutput)
-                : new JsonRequestLogger(requestLogOutput),
-            expose(new ExposeRequestCountPerStatusCodeHandler()));
+            destinations, expose(new ExposeRequestCountPerStatusCodeHandler()));
     // last, so a configuration error does not leave a running server behind
     metricsServer = startMetricsServer();
   }
@@ -151,6 +155,7 @@ public class Proxy implements ProxyContext {
     warnIfChanged("metrics", config.metrics(), cfg.metrics());
     warnIfChanged("ja4", config.ja4(), cfg.ja4());
     warnIfChanged("requestLog", config.requestLog(), cfg.requestLog());
+    warnIfChanged("traceContext", config.traceContext(), cfg.traceContext());
     warnIfChanged("admin", config.admin(), cfg.admin());
   }
 
@@ -324,7 +329,7 @@ public class Proxy implements ProxyContext {
       LOG.info("Proxy listening on " + addr + ":" + port);
       LOG.trace("tracing enabled");
       // write out queued request log records when the JVM is stopped, e.g. by SIGTERM
-      Runtime.getRuntime().addShutdownHook(new Thread(requestLogOutput::close));
+      Runtime.getRuntime().addShutdownHook(new Thread(this::closeRequestLog));
       f.channel().closeFuture().sync();
     } finally {
       bossGroup.shutdownGracefully();
@@ -334,10 +339,16 @@ public class Proxy implements ProxyContext {
 
   void shutdown() {
     eventLoopGroup.shutdownGracefully();
-    requestLogOutput.close();
+    closeRequestLog();
     if (metricsServer != null) {
       metricsServer.close();
     }
+  }
+
+  /// Writes out queued request log records of all destinations, can be called more than once
+  private void closeRequestLog() {
+    requestLogger.close();
+    requestLogOutput.close();
   }
 
   void addHttpHandlers(ChannelPipeline pipeline) {
@@ -345,7 +356,7 @@ public class Proxy implements ProxyContext {
     // logger sits between codec and rest so it sees header modifications
     // from timeout and keep alive below
     // pipeline.addLast(new LoggingHandler(LogLevel.INFO, ByteBufFormat.SIMPLE));
-    pipeline.addLast(new RequestLoggingHandler(metrics, requestLogger));
+    pipeline.addLast(new RequestLoggingHandler(metrics, requestLogger, trustTraceparent));
     pipeline.addLast(new IngressTimeoutHandler(connectionConfig, metrics));
     pipeline.addLast(new HttpServerKeepAliveHandler());
     pipeline.addLast(new IpTraitsHandler(() -> state.get().ipTraitsLookup()));

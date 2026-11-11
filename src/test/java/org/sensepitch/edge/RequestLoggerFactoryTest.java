@@ -1,0 +1,217 @@
+package org.sensepitch.edge;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import io.netty.handler.codec.http.HttpMethod;
+import io.prometheus.metrics.model.registry.PrometheusRegistry;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+
+/// Configuration of the request log destinations
+///
+/// @author Jens Wilke
+class RequestLoggerFactoryTest {
+
+  final RequestLogCapture stdout = new RequestLogCapture();
+  final RequestLogMetrics metrics = new RequestLogMetrics();
+
+  RequestLogger build(RequestLogConfig config) {
+    return RequestLoggerFactory.create(config, stdout, metrics);
+  }
+
+  /// Destinations with a queue of their own, from the queue length metric
+  List<String> queuedDestinations() {
+    PrometheusRegistry registry = new PrometheusRegistry();
+    metrics.registerCollectors(registry::register);
+    return new MetricsAndMemoryTest.Snapshots(registry.scrape())
+        .containsSnapshot("sensepitch_request_log_queued").getDataPoints().stream()
+            .map(point -> point.getLabels().get(RequestLogMetrics.DESTINATION_LABEL))
+            .toList();
+  }
+
+  static RequestLogDestinationConfig stdout(boolean plainText, boolean anonymize) {
+    return RequestLogDestinationConfig.builder()
+        .type("stdout")
+        .plainText(plainText)
+        .anonymizeClientIp(anonymize)
+        .build();
+  }
+
+  static RequestLogDestinationConfig otlp(String name) {
+    return RequestLogDestinationConfig.builder()
+        .type("otlp")
+        .name(name)
+        .otlp(OtlpConfig.builder().endpoint("http://127.0.0.1:1/v1/logs").build())
+        .build();
+  }
+
+  static void logOneRequest(RequestLogger logger) {
+    logger.logRequest(TestRequestLogInfo.of(HttpMethod.GET, 200).withClientAddress("192.0.2.7"));
+  }
+
+  /// Without destinations the request log goes to standard out, as in earlier versions
+  @Test
+  void defaultIsJsonOnStandardOut() {
+    try (RequestLogger logger = build(null)) {
+      assertThat(logger).isInstanceOf(JsonRequestLogger.class);
+      logOneRequest(logger);
+    }
+    assertThat(queuedDestinations()).isEmpty();
+    assertThat(stdout.lines()).singleElement().asString().startsWith("{\"timestamp\"");
+  }
+
+  @Test
+  void legacyPlainTextShorthand() {
+    try (RequestLogger logger = build(RequestLogConfig.builder().plainText(true).build())) {
+      logOneRequest(logger);
+    }
+    assertThat(stdout.lines()).singleElement().asString().startsWith("RQ0 ");
+  }
+
+  /// Every destination gets the request, each with its own format and anonymization
+  @Test
+  void multipleDestinations() {
+    try (RequestLogger logger =
+        build(
+            RequestLogConfig.builder()
+                .destinations(List.of(stdout(false, false), stdout(true, true), otlp(null)))
+                .build())) {
+      assertThat(threadNames()).contains("request-log-otlp");
+      logOneRequest(logger);
+    }
+    assertThat(threadNames())
+        .as("closing the logger stops the destination")
+        .doesNotContain("request-log-otlp");
+    assertThat(queuedDestinations()).containsExactly("otlp");
+    assertThat(stdout.lines()).hasSize(2);
+    assertThat(stdout.lines().get(0)).contains("\"client.address\":\"192.0.2.7\"");
+    assertThat(stdout.lines().get(1)).startsWith("RQ0 0 example.com 192.0.2.0 ");
+  }
+
+  @Test
+  void defaultNamesAreNumberedPerType() {
+    assertThat(
+            RequestLoggerFactory.names(
+                List.of(otlp(null), stdout(false, false), otlp(null), otlp("vl"))))
+        .containsExactly("otlp", "stdout", "otlp1", "vl");
+  }
+
+  @Test
+  void emptyDestinationsAreRejected() {
+    assertThatThrownBy(() -> build(RequestLogConfig.builder().destinations(List.of()).build()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("requestLog.destinations is empty");
+  }
+
+  @Test
+  void unknownTypeIsRejected() {
+    RequestLogDestinationConfig file = RequestLogDestinationConfig.builder().type("file").build();
+    assertThatThrownBy(() -> build(RequestLogConfig.builder().destinations(List.of(file)).build()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("unknown type 'file'");
+  }
+
+  @Test
+  void duplicateNameIsRejected() {
+    assertThatThrownBy(() -> RequestLoggerFactory.names(List.of(otlp("vl"), otlp("vl"))))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("duplicate name 'vl'");
+    assertThatThrownBy(() -> RequestLoggerFactory.names(List.of(otlp("stdout"))))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("reserved");
+  }
+
+  @Test
+  void otlpSettingsAreMandatoryForOtlp() {
+    RequestLogDestinationConfig noSettings =
+        RequestLogDestinationConfig.builder().type("otlp").build();
+    assertThatThrownBy(() -> RequestLoggerFactory.names(List.of(stdout(false, false), noSettings)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("requestLog.destinations[1]: otlp settings missing");
+  }
+
+  /// Settings that would be ignored are an error
+  @Test
+  void otlpSettingsAreRejectedOnStdout() {
+    RequestLogDestinationConfig misplaced =
+        stdout(false, false).toBuilder()
+            .otlp(OtlpConfig.builder().endpoint("http://x").build())
+            .build();
+    assertThatThrownBy(() -> RequestLoggerFactory.names(List.of(misplaced)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("requestLog.destinations[0]: otlp settings on a stdout destination");
+  }
+
+  /// An invalid destination after a valid one stops the valid one, no thread is left behind
+  @Test
+  void invalidOtlpDestinationIsRejected() {
+    RequestLogDestinationConfig noEndpoint =
+        RequestLogDestinationConfig.builder()
+            .type("otlp")
+            .name("broken")
+            .otlp(OtlpConfig.builder().build())
+            .build();
+    assertThatThrownBy(
+            () ->
+                build(
+                    RequestLogConfig.builder()
+                        .destinations(List.of(otlp("first"), noEndpoint))
+                        .build()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("endpoint missing");
+    assertThat(threadNames()).doesNotContain("request-log-first");
+  }
+
+  /// Destinations can be configured via environment variables, by index
+  @Test
+  void environmentVariables() throws Exception {
+    Map<String, String> env =
+        Map.of(
+            "XX_REQUEST_LOG_DESTINATIONS_0_TYPE", "stdout",
+            "XX_REQUEST_LOG_DESTINATIONS_1_TYPE", "otlp",
+            "XX_REQUEST_LOG_DESTINATIONS_1_OTLP_ENDPOINT",
+                "http://victorialogs:9428/insert/opentelemetry/v1/logs",
+            "XX_REQUEST_LOG_DESTINATIONS_1_ANONYMIZE_CLIENT_IP", "true",
+            "XX_REQUEST_LOG_DESTINATIONS_1_OTLP_HEADERS_0_KEY", "Authorization",
+            "XX_REQUEST_LOG_DESTINATIONS_1_OTLP_HEADERS_0_VALUE", "Bearer secret",
+            "XX_REQUEST_LOG_DESTINATIONS_1_OTLP_HEADERS_1_KEY", "VL-Stream-Fields",
+            "XX_REQUEST_LOG_DESTINATIONS_1_OTLP_HEADERS_1_VALUE", "service.name,server.address",
+            "XX_TRACE_CONTEXT_TRUST_TRACEPARENT", "true");
+    ProxyConfig config = (ProxyConfig) EnvInjector.injectFromEnv("XX_", env, ProxyConfig.builder());
+    List<RequestLogDestinationConfig> destinations = config.requestLog().destinations();
+    assertThat(destinations).hasSize(2);
+    assertThat(destinations.get(0).type()).isEqualTo("stdout");
+    assertThat(destinations.get(1).type()).isEqualTo("otlp");
+    assertThat(destinations.get(1).anonymizeClientIp()).isTrue();
+    OtlpConfig otlp = destinations.get(1).otlp();
+    assertThat(otlp.endpoint()).isEqualTo("http://victorialogs:9428/insert/opentelemetry/v1/logs");
+    assertThat(otlp.headers())
+        .containsExactly(
+            Map.entry("Authorization", "Bearer secret"),
+            Map.entry("VL-Stream-Fields", "service.name,server.address"));
+    assertThat(config.traceContext().trustTraceparent()).isTrue();
+  }
+
+  @Test
+  void environmentVariableMapEntryNeedsValue() {
+    Map<String, String> env =
+        Map.of("XX_REQUEST_LOG_DESTINATIONS_0_OTLP_HEADERS_0_KEY", "Authorization");
+    assertThatThrownBy(() -> EnvInjector.injectFromEnv("XX_", env, ProxyConfig.builder()))
+        .hasMessageContaining("Missing env var XX_REQUEST_LOG_DESTINATIONS_0_OTLP_HEADERS_0_VALUE");
+  }
+
+  @Test
+  void configDefaults() {
+    OtlpConfig config = OtlpConfig.builder().build();
+    assertThat(config.effectiveTimeoutMillis()).isEqualTo(10_000);
+    assertThat(config.effectiveFlushIntervalMillis()).isEqualTo(1_000);
+    assertThat(config.effectiveBatchBytes()).isEqualTo(1024 * 1024);
+    assertThat(config.effectiveMaxBufferedBytes()).isEqualTo(64L * 1024 * 1024);
+  }
+
+  static List<String> threadNames() {
+    return Thread.getAllStackTraces().keySet().stream().map(Thread::getName).toList();
+  }
+}

@@ -2,6 +2,9 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpServer;
 import io.netty.util.concurrent.EventExecutor;
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -13,6 +16,8 @@ import java.security.cert.X509Certificate;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocket;
@@ -38,9 +43,26 @@ class ExternalTcpIT {
 
   @RegisterExtension LogCapture logs = new LogCapture();
 
+  /// Plain HTTP upstream, records the `traceparent` header of each request it receives
+  private HttpServer upstream;
+
+  private final BlockingQueue<String> upstreamTraceparents = new LinkedBlockingQueue<>();
+
   @BeforeEach
   void startProxy() throws Exception {
     port = freePort();
+    upstream = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    upstream.createContext(
+        "/",
+        exchange -> {
+          String traceparent = exchange.getRequestHeaders().getFirst(TraceContext.TRACEPARENT);
+          upstreamTraceparents.add(traceparent != null ? traceparent : "missing");
+          byte[] body = "from upstream".getBytes(StandardCharsets.US_ASCII);
+          exchange.sendResponseHeaders(200, body.length);
+          exchange.getResponseBody().write(body);
+          exchange.close();
+        });
+    upstream.start();
 
     ProxyConfig config =
         ProxyConfig.builder()
@@ -59,6 +81,14 @@ class ExternalTcpIT {
                     "example.com",
                     SiteConfig.builder()
                         .response(ResponseConfig.builder().text("a test response").build())
+                        .protection(ProtectionConfig.builder().disable(true).build())
+                        .build(),
+                    "upstream.com",
+                    SiteConfig.builder()
+                        .upstream(
+                            UpstreamConfig.builder()
+                                .target("127.0.0.1:" + upstream.getAddress().getPort())
+                                .build())
                         .protection(ProtectionConfig.builder().disable(true).build())
                         .build(),
                     // port 1 is closed, so forwarding here fails and the proxy logs
@@ -98,6 +128,63 @@ class ExternalTcpIT {
   @AfterEach
   void stopProxy() throws Exception {
     proxy.shutdown();
+    upstream.stop(0);
+  }
+
+  /// The upstream receives the trace context the edge assigned, and the request log reports the
+  /// same span id, plus the data only a real TLS connection has
+  @Test
+  void upstreamReceivesTraceparentOfRequestLog() throws Exception {
+    String clientTraceparent = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+    try (SSLSocket socket = tlsSocket()) {
+      socket.startHandshake();
+      socket
+          .getOutputStream()
+          .write(
+              ("GET /path?q=1 HTTP/1.1\r\nHost: upstream.com\r\nConnection: close\r\n"
+                      + "traceparent: "
+                      + clientTraceparent
+                      + "\r\n\r\n")
+                  .getBytes(StandardCharsets.US_ASCII));
+      socket.getOutputStream().flush();
+      String response =
+          new String(socket.getInputStream().readAllBytes(), StandardCharsets.US_ASCII);
+      assertThat(response).startsWith("HTTP/1.1 200").contains("from upstream");
+    }
+    TraceContext forwarded = TraceContext.parse(upstreamTraceparents.poll(10, TimeUnit.SECONDS));
+    assertThat(forwarded).as("valid traceparent forwarded").isNotNull();
+    assertThat(forwarded.traceId())
+        .as("client trace is not trusted by default")
+        .isNotEqualTo("0af7651916cd43dd8448eb211c80319c");
+    JsonNode record = new ObjectMapper().readTree(awaitRequestLog());
+    assertThat(record.get("trace_id").asText()).isEqualTo(forwarded.traceId());
+    assertThat(record.get("span_id").asText()).isEqualTo(forwarded.spanId());
+    assertThat(record.get("http.request.header.traceparent").get(0).asText())
+        .isEqualTo(clientTraceparent);
+    assertThat(record.get("client.address").asText()).isEqualTo("127.0.0.1");
+    assertThat(record.get("client.port").asInt()).isPositive();
+    assertThat(record.get("server.address").asText()).isEqualTo("upstream.com");
+    assertThat(record.get("server.port").asInt()).isEqualTo(port);
+    assertThat(record.get("url.scheme").asText()).isEqualTo("https");
+    assertThat(record.get("url.path").asText()).isEqualTo("/path");
+    assertThat(record.get("url.query").asText()).isEqualTo("q=1");
+    assertThat(record.get("tls.protocol.name").asText()).isEqualTo("tls");
+    assertThat(record.get("tls.protocol.version").asText()).isIn("1.2", "1.3");
+    assertThat(record.get("tls.cipher").asText()).startsWith("TLS_");
+    assertThat(record.get("http.response.status_code").asInt()).isEqualTo(200);
+  }
+
+  /// The record is written when the response is sent, which can be after the client read it
+  @SuppressWarnings("BusyWait")
+  private String awaitRequestLog() throws InterruptedException {
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+    while (requestLog.lines().isEmpty()) {
+      if (System.nanoTime() > deadline) {
+        throw new IllegalStateException("no request log record");
+      }
+      Thread.sleep(5);
+    }
+    return requestLog.lines().getFirst();
   }
 
   @Test
