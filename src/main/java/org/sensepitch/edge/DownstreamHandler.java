@@ -183,8 +183,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   /// this is already set in the Host header, also for https and SNI. We also don't include code
   /// here the support non-standard ports. If additional headers are needed, another handler can be
   /// added depending on configuration.
-  ///
-  /// @see SniToHostHeader
   private static void addProxyHeaders(ChannelHandlerContext ctx, HttpRequest request) {
     if (ctx.channel().remoteAddress() instanceof InetSocketAddress) {
       InetSocketAddress addr = (InetSocketAddress) ctx.channel().remoteAddress();

@@ -330,7 +330,6 @@ public class Proxy implements ProxyContext {
     pipeline.addLast(new HttpServerKeepAliveHandler());
     pipeline.addLast(new IpTraitsHandler(() -> state.get().ipTraitsLookup()));
     pipeline.addLast(ja4HeaderHandler);
-    //            ch.pipeline().addLast(new ReportIoErrorsHandler("downstream"));
     pipeline.addLast(new UnservicedHost.Handler(() -> state.get().unservicedHost()));
     pipeline.addLast("siteSelector", new SiteSelectorHandler(() -> state.get().siteSelector()));
     pipeline.addLast("fallback", dummy404Handler);

@@ -17,8 +17,6 @@ public class DefaultBypassCheck implements BypassCheck {
 
   private final Map<String, BypassCheck> uriMatch = new HashMap<>();
   private final NavigableMap<String, BypassCheck> uriPrefixList = new TreeMap<>();
-  private final NavigableMap<String, BypassCheck> uriSuffixList = new TreeMap<>();
-  private final Map<String, BypassCheck> hostMap = new HashMap<>();
   private final Map<String, BypassCheck> remoteAddressMap = new HashMap<>();
   private final DetectCrawler detectCrawler;
 
@@ -28,8 +26,6 @@ public class DefaultBypassCheck implements BypassCheck {
           .forEach(
               uri -> {
                 if (uri.startsWith("*")) {
-                  String reversed = new StringBuilder(uri.substring(1)).reverse().toString();
-                  uriSuffixList.put(reversed, BypassCheck.DO_BYPASS);
                   throw new UnsupportedOperationException("URI suffix not supported: " + uri);
                 } else if (uri.endsWith("*")) {
                   uriPrefixList.put(uri.substring(0, uri.length() - 1), BypassCheck.DO_BYPASS);
@@ -82,17 +78,6 @@ public class DefaultBypassCheck implements BypassCheck {
         return candidate.getValue().allowBypass(channel, request);
       }
       candidate = uriPrefixList.lowerEntry(candidate.getKey());
-    }
-    if (uriSuffixList.size() == 0) {
-      return false;
-    }
-    String uriReversed = new StringBuilder(uri).reverse().toString();
-    candidate = uriSuffixList.floorEntry(uriReversed);
-    if (candidate != null) {
-      String prefix = candidate.getKey();
-      if (uri.startsWith(prefix)) {
-        return candidate.getValue().allowBypass(channel, request);
-      }
     }
     return false;
   }
