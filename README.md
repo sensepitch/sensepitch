@@ -426,6 +426,27 @@ sites:
 | `/products` with cookie `beta` | `shop-beta` |
 | `/api/v2/x` with cookie `beta` | `api-beta` |
 
+### Several sites for one host
+
+The site key is the host, unless the site sets `host`. Several sites can share a host and split
+it by `uri` prefix, e.g. to give a part of the host its own protection or fallback, which `paths`
+cannot do. The longest matching prefix selects the site, independent of the configuration order. A
+site without `uri` (or with `*` or `/*`) gets every request no other site of the host matches;
+without such a site, those requests get a 404. Two sites with the same host and `uri` are a
+configuration error.
+
+````yaml
+sites:
+  shop:
+    host: www.example.com
+    upstream: { target: shop:8080 }
+  api:
+    host: www.example.com
+    uri: /api/*
+    protection: { disable: true }
+    upstream: { target: api:8080 }
+````
+
 ## Configuration reload
 
 A YAML configuration file is reloaded without a restart if its last non-empty line is the end

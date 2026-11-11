@@ -5,7 +5,9 @@ import java.util.Map;
 import lombok.Builder;
 
 /// @param uri request path prefix ending with `*` that selects this site among the sites of the
-///   same host, the longest matching prefix wins. Unset, `*` or `/*` serves the whole host.
+///   same host, the longest matching prefix wins. Unset, `*` or `/*` serves the whole host, i.e.
+///   every request no prefix of another site matches. Two sites with the same host and prefix are
+///   rejected.
 /// @param upstream default upstream of the site, used when no path matches
 /// @param paths upstreams by request path, the map key is either a prefix ending with `*` or an
 ///   exact path. An exact path is matched against the request path without query string and wins

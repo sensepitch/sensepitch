@@ -39,8 +39,8 @@ public class SiteSelector {
   private final UpstreamRegistry upstreams;
   private final Map<String, Upstream> namedUpstreams = new HashMap<>();
   private final Upstream defaultUpstream;
-  private final Map<String, Routing<Suppliers>> directHostMatch = new HashMap<>();
-  private final Map<String, PrefixTree<Routing<Suppliers>>> sitePrefixUriMatch = new HashMap<>();
+  /// Sites by host and uri prefix, a site serving the whole host has the empty prefix
+  private final Map<String, PrefixTree<Routing<Suppliers>>> sitesByHost = new HashMap<>();
 
   /// @param upstreams creates or takes over the upstreams, see [UpstreamRegistry] for the naming
   public SiteSelector(ProxyContext ctx, ProxyConfig config, UpstreamRegistry upstreams) {
@@ -94,14 +94,16 @@ public class SiteSelector {
                 // TODO: support wildcard hosts
                 throw new IllegalArgumentException("Host wildcards are not yet supported");
               }
-              if (site.uri() == null || site.uri().equals("*") || site.uri().equals("/*")) {
-                directHostMatch.put(host, routing);
-              } else if (site.uri().endsWith("*")) {
-                String matchUri = site.uri().substring(0, site.uri().length() - 1);
-                var tree = sitePrefixUriMatch.computeIfAbsent(host, k -> new PrefixTree<>());
-                tree.put(matchUri, routing);
-              } else {
-                throw new IllegalArgumentException("Site match uri needs to be prefix");
+              String uriPrefix = uriPrefix(site.uri());
+              var tree = sitesByHost.computeIfAbsent(host, k -> new PrefixTree<>());
+              if (tree.put(uriPrefix, routing) != null) {
+                throw new IllegalArgumentException(
+                    "Duplicate site for host "
+                        + host
+                        + " and uri "
+                        + (uriPrefix.isEmpty() ? "*" : uriPrefix + "*")
+                        + ", site: "
+                        + site.key());
               }
             });
   }
@@ -292,24 +294,29 @@ public class SiteSelector {
     return upstreams.get(name, cfg);
   }
 
+  /// The prefix of a site uri without the trailing `*`. The empty prefix matches the whole host.
+  /// `/*` is treated like `*`, so it also matches a request target that does not start with `/`,
+  /// e.g. `OPTIONS *`.
+  private static String uriPrefix(String uri) {
+    if (uri == null || uri.equals("*") || uri.equals("/*")) {
+      return "";
+    }
+    if (!uri.endsWith("*")) {
+      throw new IllegalArgumentException("Site match uri needs to be prefix");
+    }
+    return uri.substring(0, uri.length() - 1);
+  }
+
   public Set<String> getServicedHosts() {
-    Set<String> hosts = new HashSet<>();
-    hosts.addAll(directHostMatch.keySet());
-    hosts.addAll(sitePrefixUriMatch.keySet());
-    return hosts;
+    return new HashSet<>(sitesByHost.keySet());
   }
 
   /// Selects site and upstream for the request.
   ///
   /// @return the handler suppliers, or `null` if no site matches
   public Suppliers getSuppliers(HttpRequest request, String host) {
-    var routing = directHostMatch.get(host);
-    if (routing == null) {
-      var tree = sitePrefixUriMatch.get(host);
-      if (tree != null) {
-        routing = tree.lookup(request.uri());
-      }
-    }
+    var tree = sitesByHost.get(host);
+    var routing = tree != null ? tree.lookup(request.uri()) : null;
     return routing != null ? routing.select(request) : null;
   }
 

@@ -19,7 +19,9 @@ class SiteUriMatchTest {
 
   @AfterEach
   void finish() {
-    steps.finish_and_check_for_leaks();
+    if (steps != null) {
+      steps.finish_and_check_for_leaks();
+    }
   }
 
   static SiteConfig site(String uri, String text) {
@@ -53,6 +55,45 @@ class SiteUriMatchTest {
     steps.when_requesting("a.com", "/api/v3/items").then_expect_content("API");
     steps.when_requesting("a.com", "/api/vz").then_expect_content("API");
     steps.when_requesting("a.com", "/xyz").then_expect_content("X");
+  }
+
+  /// A whole host site serves everything that no prefix site matches.
+  @Test
+  void prefixSiteNextToWholeHostSite() {
+    given_sites("api", site("/api/*", "API"), "main", site(null, "MAIN"));
+    steps.when_requesting("a.com", "/api/x").then_expect_content("API");
+    steps.when_requesting("a.com", "/api").then_expect_content("MAIN");
+    steps.when_requesting("a.com", "/").then_expect_content("MAIN");
+    steps.when_requesting("a.com", "/other").then_expect_content("MAIN");
+  }
+
+  @Test
+  void allWholeHostSpellingsServeTheWholeHost() {
+    for (String uri : new String[] {"*", "/*"}) {
+      given_sites("api", site("/api/*", "API"), "main", site(uri, "MAIN"));
+      steps.when_requesting("a.com", "/api/x").then_expect_content("API");
+      steps.when_requesting("a.com", "/other").then_expect_content("MAIN");
+      steps.finish_and_check_for_leaks();
+    }
+    given_sites("main", site(null, "MAIN"));
+    steps.when_requesting("a.com", "/").then_expect_content("MAIN");
+  }
+
+  @Test
+  void duplicateWholeHostSiteIsRejected() {
+    expectDuplicate(site(null, "ONE"), site("/*", "TWO"));
+  }
+
+  @Test
+  void duplicatePrefixSiteIsRejected() {
+    expectDuplicate(site("/api/*", "ONE"), site("/api/*", "TWO"));
+  }
+
+  void expectDuplicate(SiteConfig one, SiteConfig two) {
+    new ProxyConstructBDDTest.Steps()
+        .given_the_configuration(CONFIG.toBuilder().sites(sites("one", one, "two", two)).build())
+        .then_expect_exception_with_message("Duplicate site for host a.com");
+    steps = null;
   }
 
   @Test

@@ -12,8 +12,10 @@ public class PrefixTree<V> {
   private final TreeMap<String, V> tree = new TreeMap<>();
 
   /// Adds a prefix, replacing a previous value of the same prefix.
-  public void put(String prefix, V value) {
-    tree.put(prefix, value);
+  ///
+  /// @return the previous value of the prefix, or `null` if there was none
+  public V put(String prefix, V value) {
+    return tree.put(prefix, value);
   }
 
   public boolean isEmpty() {
