@@ -69,6 +69,14 @@ class ConfigReloadTest {
   }
 
   @Test
+  void reloadWithoutListenIsRejected() {
+    ReloadResult result = steps.proxy.reload(CONFIG.toBuilder().listen(null).build());
+    assertThat(result.applied()).isFalse();
+    assertThat(result.message()).contains("Missing listen configuration");
+    steps.when_requesting("a.com", "/").then_expect_content("A");
+  }
+
+  @Test
   void keepAliveConnectionUsesNewConfigOnNextRequest() {
     steps.when_requesting("a.com", "/").then_expect_content("A");
     var channel = steps.ingressChannel;

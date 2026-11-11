@@ -12,6 +12,8 @@ import java.util.Map;
 /// @author Jens Wilke
 public class EnvInjector {
 
+  private EnvInjector() {}
+
   public static Object injectFromEnv(String prefix, Map<String, String> env, Object targetBuilder)
       throws Exception {
     Class<?> clazz = targetBuilder.getClass();

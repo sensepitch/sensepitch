@@ -19,6 +19,8 @@ import org.yaml.snakeyaml.nodes.Tag;
 
 public class RecordConstructor {
 
+  private RecordConstructor() {}
+
   private static final Map<String, Boolean> BOOL_VALUES = new HashMap<>();
 
   static {

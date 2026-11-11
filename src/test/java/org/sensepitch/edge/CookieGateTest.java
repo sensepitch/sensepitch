@@ -1,6 +1,7 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.netty.buffer.ByteBufUtil;
 import io.netty.channel.Channel;
@@ -165,5 +166,12 @@ public class CookieGateTest {
     passed = false;
     handler.channelRead(ctx, req);
     handler.channelRead(ctx, LastHttpContent.EMPTY_LAST_CONTENT);
+  }
+
+  @Test
+  void cookieNameIsRequired() {
+    assertThatThrownBy(() -> new CookieGate(List.of(new CookieGateConfig(null, "/open", "/"))))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Cookie name is required");
   }
 }

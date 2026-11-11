@@ -187,6 +187,48 @@ class ProxyConstructBDDTest {
   }
 
   @Test
+  void hostWildcardIsRejected() {
+    ProxyConfig config = routingConfig(SiteConfig.builder().upstream(LOCAL).build());
+    SiteConfig site = config.sites().get("example.com");
+    steps
+        .given_the_configuration(config.toBuilder().sites(Map.of("*.example.com", site)).build())
+        .then_expect_exception_with_message("Host wildcards are not yet supported");
+  }
+
+  @Test
+  void siteUriMustBePrefix() {
+    SiteConfig site = SiteConfig.builder().uri("/api").upstream(LOCAL).build();
+    steps
+        .given_the_configuration(routingConfig(site))
+        .then_expect_exception_with_message("Site match uri needs to be prefix");
+  }
+
+  /// A site without own upstream uses the global `upstream`.
+  @Test
+  void siteUsesGlobalUpstream() {
+    ProxyConfig config =
+        routingConfig(SiteConfig.builder().build()).toBuilder().upstream(LOCAL).build();
+    steps.given_the_configuration(config).then_expect_initialized_without_exception();
+  }
+
+  /// A wrong database path fails at startup with the path in the message, not at the first request.
+  @Test
+  void missingIpLookupDatabaseFailsStartup() {
+    ProxyConfig config =
+        routingConfig(SiteConfig.builder().upstream(LOCAL).build()).toBuilder()
+            .ipLookup(
+                IpLookupConfig.builder()
+                    .geoIp2(
+                        GeoIp2Config.builder()
+                            .countryDbPath("/does/not/exist/country.mmdb")
+                            .build())
+                    .build())
+            .build();
+    steps.given_the_configuration(config);
+    assertThat(steps.constructionFailure).hasMessageContaining("/does/not/exist/country.mmdb");
+  }
+
+  @Test
   void exactPathAccepted() {
     SiteConfig site =
         SiteConfig.builder()

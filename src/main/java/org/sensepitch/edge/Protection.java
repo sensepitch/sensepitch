@@ -12,6 +12,8 @@ import java.util.function.Supplier;
 /// @author Jens Wilke
 public class Protection {
 
+  private Protection() {}
+
   /// @param metrics receives the counts of the [Deflector]
   static Supplier<ChannelHandler> handlerSupplier(
       ProtectionConfig protection, ProxyMetrics metrics) {

@@ -10,6 +10,8 @@ import org.sensepitch.edge.HasKey;
 /// mapping key.
 public class KeyInjector {
 
+  private KeyInjector() {}
+
   /// Walks through all Map<K,V> components of any record R, and for each V that has
   /// toBuilder()/build() and a key(K) setter on its builder, injects the map-key into its 'key'
   /// component.

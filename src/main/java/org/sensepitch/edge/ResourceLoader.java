@@ -14,6 +14,8 @@ import java.util.stream.Collectors;
 /// @author Jens Wilke
 public class ResourceLoader {
 
+  private ResourceLoader() {}
+
   public static String loadTextFile(String resourcePath) {
     try (InputStream in = ResourceLoader.class.getClassLoader().getResourceAsStream(resourcePath)) {
       if (in == null) {

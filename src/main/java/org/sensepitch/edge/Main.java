@@ -22,6 +22,8 @@ import org.yaml.snakeyaml.nodes.Node;
 /// @author Jens Wilke
 public class Main {
 
+  private Main() {}
+
   public static void main(String[] args) throws Exception {
     // route java.util.logging to Log4j2 as well, so libraries using JUL log to the same place.
     // Must happen before anything touches JUL.

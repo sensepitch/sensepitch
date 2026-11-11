@@ -257,4 +257,63 @@ public class ConfigTest {
         assertThrows(IllegalArgumentException.class, () -> Main.parseConfig(yaml));
     assertThat(ex).hasMessageContaining("Unknown parameter in UpstreamConfig: connectionPool");
   }
+
+  /// A nested record starts from its `DEFAULT`, so the YAML only needs the values that differ.
+  @Test
+  public void nestedRecordStartsFromDefault() {
+    ProxyConfig cfg = Main.parseConfig("listen:\n  httpsPort: 8443\n");
+    assertEquals(8443, cfg.listen().httpsPort());
+    assertEquals(ListenConfig.DEFAULT.address(), cfg.listen().address());
+  }
+
+  /// A map entry without value, like `www.example.com:` in the README, is an empty record.
+  @Test
+  public void emptyMapValueIsEmptyRecord() {
+    ProxyConfig cfg = Main.parseConfig("sites:\n  www.example.com:\n");
+    assertNotNull(cfg.sites().get("www.example.com"));
+    assertNull(cfg.sites().get("www.example.com").upstream());
+  }
+
+  @Test
+  public void listExpected() {
+    IllegalArgumentException ex =
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> Main.parseConfig("listen:\n  hosts:\n    a: b\n"));
+    assertThat(ex).hasMessageContaining("Sequence expected");
+  }
+
+  @Test
+  public void mapExpected() {
+    IllegalArgumentException ex =
+        assertThrows(IllegalArgumentException.class, () -> Main.parseConfig("sites:\n  - a\n"));
+    assertThat(ex).hasMessageContaining("Mapping expected");
+  }
+
+  @Test
+  public void documentMustBeMapping() {
+    IllegalArgumentException ex =
+        assertThrows(IllegalArgumentException.class, () -> Main.parseConfig("just text"));
+    assertThat(ex).hasMessageContaining("Cannot construct record of type");
+  }
+
+  @Test
+  public void environmentWithUnsupportedType() {
+    Map<String, String> env = Map.of("XX_RATIO", "0.5");
+    RuntimeException ex =
+        assertThrows(
+            RuntimeException.class,
+            () -> EnvInjector.injectFromEnv("XX_", env, EnvErrorsConfig.builder()));
+    assertThat(ex).hasStackTraceContaining("Unsupported type double");
+  }
+
+  @Test
+  public void environmentMapValueNeedsKey() {
+    Map<String, String> env = Map.of("XX_NO_KEYS_0_NUMBER", "1");
+    RuntimeException ex =
+        assertThrows(
+            RuntimeException.class,
+            () -> EnvInjector.injectFromEnv("XX_", env, EnvErrorsConfig.builder()));
+    assertThat(ex).hasStackTraceContaining("Map value needs to have key");
+  }
 }
