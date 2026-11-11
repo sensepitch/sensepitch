@@ -8,9 +8,10 @@
   collector can read standard out as pure request log, without filtering and without the JSON
   record being wrapped in another layout.
 
-  The level of the proxy's own loggers comes from the environment variable
-  SENSEPITCH_EDGE_LOG_LEVEL (e.g. "debug" or "trace"), default is INFO. Override the whole file
-  with -Dlog4j2.configurationFile=...
+  The proxy's own loggers log at INFO. For tracing select log4j2-trace.xml, which is also in the
+  JAR, with the environment variable LOG4J_CONFIGURATION_FILE=classpath:log4j2-trace.xml, or point
+  it to an own file. SENSEPITCH_EDGE_DISABLE_TRACE=true removes the trace code completely for
+  maximum performance, see ProxyLogger.
 -->
 <Configuration xmlns="https://logging.apache.org/xml/ns"
                xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -26,6 +27,6 @@
     <Root level="INFO">
       <AppenderRef ref="STDERR"/>
     </Root>
-    <Logger name="org.sensepitch.edge" level="${env:SENSEPITCH_EDGE_LOG_LEVEL:-INFO}"/>
+    <Logger name="org.sensepitch.edge" level="INFO"/>
   </Loggers>
 </Configuration>

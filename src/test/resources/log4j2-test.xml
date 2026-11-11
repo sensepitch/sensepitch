@@ -6,6 +6,10 @@
   log output register the LogCapture extension, which attaches an in-memory appender to the root
   logger for the duration of the test.
 
+  The proxy's own loggers are at TRACE, so every test also runs the trace code, which in production
+  is only active with log4j2-trace.xml. Nothing is written, since there is no appender. LogCapture
+  only captures INFO and above, unless a test asks for a lower level.
+
   For debugging, temporarily add the console appender reference below to the root logger.
 -->
 <Configuration xmlns="https://logging.apache.org/xml/ns"
@@ -22,5 +26,6 @@
     <Root level="INFO">
       <!-- <AppenderRef ref="STDERR"/> -->
     </Root>
+    <Logger name="org.sensepitch.edge" level="TRACE"/>
   </Loggers>
 </Configuration>

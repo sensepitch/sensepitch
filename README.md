@@ -518,6 +518,20 @@ environment variables. The endpoint has no authentication, so it binds to the lo
 by default. Binding another address exposes it to that network. A reload only reads the local
 file again, so the worst case is repeated reloads.
 
+## Diagnostic logging
+
+Diagnostic messages go to standard error at level `INFO`, the request log goes to standard out.
+To trace the proxy, select the trace configuration that is part of the JAR with Log4j2's own
+environment variable, or point it to an own file:
+
+````
+LOG4J_CONFIGURATION_FILE=classpath:log4j2-trace.xml
+````
+
+Tracing costs a level check per trace call. For maximum performance,
+`SENSEPITCH_EDGE_DISABLE_TRACE=true` removes the trace code completely, a configured trace level
+then has no effect. The former variable `SENSEPITCH_EDGE_LOG_LEVEL` is no longer supported.
+
 ## Local testing
 
 ````

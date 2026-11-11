@@ -10,25 +10,33 @@ import java.net.InetSocketAddress;
 /// Messages are forwarded to Log4j2 via [LogTarget], which also explains why diagnostics and
 /// the request log go to different streams.
 ///
-/// Tracing is gated twice. Unless the environment variable `SENSEPITCH_EDGE_LOG_LEVEL` is set,
-/// every logger is an [ErrorOnly] instance whose [#isTraceEnabled()] is the constant `false`.
-/// Since the loggers are kept in `static final` fields and only this one implementation class is
-/// ever instantiated, the JIT inlines the check and removes trace code from the hot path
-/// entirely. When the variable is set, [WithTracing] asks Log4j2, so the configured level
-/// decides, at the cost of a level check per call.
+/// Tracing is available by default: every logger is a [WithTracing] instance that asks Log4j2, so
+/// the configured level decides, at the cost of a level check per trace call. The level is set in
+/// the Log4j2 configuration, e.g. `LOG4J_CONFIGURATION_FILE=classpath:log4j2-trace.xml`.
+///
+/// For maximum performance the environment variable `SENSEPITCH_EDGE_DISABLE_TRACE=true` is a kill
+/// switch: then every logger is an [ErrorOnly] instance whose [#isTraceEnabled()] is the constant
+/// `false`. Since the loggers are kept in `static final` fields and only one implementation class
+/// is ever instantiated in a JVM, the JIT inlines the check and removes trace code from the hot
+/// path entirely.
 ///
 /// @author Jens Wilke
 public interface ProxyLogger {
 
-  /// Read once, so the logger implementation is fixed for the JVM lifetime
-  boolean TRACE_POSSIBLE = System.getenv("SENSEPITCH_EDGE_LOG_LEVEL") != null;
+  /// Kill switch for tracing, read once, so the logger implementation is fixed for the JVM lifetime
+  boolean TRACE_DISABLED = "true".equalsIgnoreCase(System.getenv("SENSEPITCH_EDGE_DISABLE_TRACE"));
 
   static ProxyLogger get(String source) {
+    return create(source, TRACE_DISABLED);
+  }
+
+  /// @param traceDisabled see [#TRACE_DISABLED]
+  static ProxyLogger create(String source, boolean traceDisabled) {
     LogTarget target = LogTarget.of(source);
-    if (TRACE_POSSIBLE) {
-      return new WithTracing(source, target);
+    if (traceDisabled) {
+      return new ErrorOnly(source, target);
     }
-    return new ErrorOnly(source, target);
+    return new WithTracing(source, target);
   }
 
   /// Logger named after the fully qualified class name, so levels can be configured per package.
