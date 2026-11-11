@@ -525,4 +525,20 @@
     </plugins>
   </build>
 
+  <profiles>
+    <profile>
+      <!-- VS Code and Eclipse (m2e) compile into their own directory, so their background builds
+           never overwrite the classes of a Maven build in target/ -->
+      <id>m2e</id>
+      <activation>
+        <property>
+          <name>m2e.version</name>
+        </property>
+      </activation>
+      <build>
+        <directory>${project.basedir}/target-ide</directory>
+      </build>
+    </profile>
+  </profiles>
+
 </project>

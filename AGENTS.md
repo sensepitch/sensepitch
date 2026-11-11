@@ -15,6 +15,8 @@
   coverage floor (`jacoco-check` in `pom.xml`, unit and integration tests combined). Raise the floor
   when coverage improves.
 - `./mvnw javadoc:javadoc` renders the API docs into `target/reports/apidocs` and fails on doc errors.
+- VS Code and Eclipse (m2e) compile into `target-ide/` (the `m2e` profile in `pom.xml`), so their
+  background builds never overwrite the classes of a Maven build in `target/`.
 - Run locally after packaging:
   `java -jar target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar`
 
