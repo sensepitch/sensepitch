@@ -40,17 +40,21 @@ final class OtlpThreadLogger {
     return owner;
   }
 
-  void log(RequestLogInfo info) {
+  /// Encodes the record into the active batch.
+  ///
+  /// @return `false` if this logger is retired or its destination closed, the caller passes the
+  ///   record on to a successor. A record dropped because the waiting batches reached the limit
+  ///   is counted here and returns `true`, it is handled.
+  boolean log(RequestLogInfo info) {
     boolean handedOff;
     synchronized (this) {
       if (retired || destination.isClosed()) {
-        destination.countDropped(1);
-        return;
+        return false;
       }
       if ((active == null || active.size() >= batchBytes) && !handOff()) {
         // no room for waiting batches, drop the newest record
         destination.countDropped(1);
-        return;
+        return true;
       }
       ProtobufWriter out = active.writer;
       int mark = out.size();
@@ -70,6 +74,7 @@ final class OtlpThreadLogger {
     if (handedOff) {
       destination.wake();
     }
+    return true;
   }
 
   /// Hands a non-empty active batch to the destination and continues with the batch it returns.

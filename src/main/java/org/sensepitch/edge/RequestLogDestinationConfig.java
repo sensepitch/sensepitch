@@ -6,10 +6,15 @@ import lombok.Builder;
 ///
 /// @param type `stdout` writes one record per line to standard out, `otlp` sends the records via
 ///   OTLP/HTTP with protobuf encoding, e.g. to VictoriaLogs or an OpenTelemetry collector
-/// @param name name of the destination, must be unique. Defaults to the type, followed by the
-///   index for the second destination of a type. An `otlp` destination reports its metrics with
-///   the name as `destination` label. All `stdout` destinations share the standard out writer,
-///   labelled `stdout`, so that name is reserved.
+/// @param name name of the destination, must be unique. It identifies the destination across a
+///   configuration reload: an unchanged destination is kept, a changed `otlp` destination hands
+///   its buffered records over to its replacement of the same name. Renaming counts as removing
+///   the destination and adding a new one, the old one gets 5 seconds to send what it buffered.
+///   Defaults to the type for a single destination of a type, further `stdout` destinations get
+///   the index appended. Several `otlp` destinations must be named, so inserting one cannot hand a
+///   backlog to the wrong endpoint. An `otlp` destination reports its metrics with the name as
+///   `destination` label. All `stdout` destinations share the standard out writer, labelled
+///   `stdout`, so that name is reserved.
 /// @param anonymizeClientIp truncate the client address, see [AnonymizedClientRequestLogInfo]
 /// @param plainText `stdout` only: emit the legacy human readable single line format instead of
 ///   JSON

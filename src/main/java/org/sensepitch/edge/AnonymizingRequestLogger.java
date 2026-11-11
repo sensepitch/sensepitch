@@ -38,6 +38,11 @@ public class AnonymizingRequestLogger implements RequestLogger {
     }
   }
 
+  /// The wrapped logger
+  RequestLogger delegate() {
+    return delegate;
+  }
+
   @Override
   public void close() {
     delegate.close();

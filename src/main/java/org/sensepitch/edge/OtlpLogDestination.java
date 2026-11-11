@@ -19,6 +19,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +27,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 
 /// Sends request log records via OTLP/HTTP with protobuf encoding, e.g. to VictoriaLogs or an
@@ -107,6 +109,13 @@ public class OtlpLogDestination implements RequestLogMetrics.QueueSource, AutoCl
   private final List<OtlpThreadLogger> threadLoggers = new CopyOnWriteArrayList<>();
   private final Thread sender;
   private volatile boolean closed;
+
+  /// Takes over the buffered records when a reload replaced this destination, see [#handOverTo]
+  private volatile OtlpLogDestination successor;
+
+  /// Handovers of replaced destinations into this one that have not arrived yet, closing waits
+  /// for them, see [#takeOver(List)]
+  private final AtomicInteger incoming = new AtomicInteger();
   private final AtomicBoolean failureReported = new AtomicBoolean();
 
   // guarded by this, ArrayDeque does not allocate per element
@@ -114,6 +123,9 @@ public class OtlpLogDestination implements RequestLogMetrics.QueueSource, AutoCl
   private final ArrayDeque<OtlpBatch> free = new ArrayDeque<>();
   private long pendingBytes;
   private long pendingRecords;
+
+  /// The sender has sent or handed over its batches and ended, see [#takeOver(List)]
+  private boolean finished;
 
   /// Failed attempts in a row, sender thread only
   private int retries;
@@ -338,6 +350,69 @@ public class OtlpLogDestination implements RequestLogMetrics.QueueSource, AutoCl
     }
   }
 
+  /// Hands the buffered records to the destination that replaces this one in a configuration
+  /// reload, instead of sending them. Returns at once: the sender finishes an attempt in progress
+  /// and then moves its waiting batches and those of the threads to the successor, see
+  /// [#takeOver(List)]. Records logged after this call are refused by the thread loggers and
+  /// passed on by the [OtlpRequestLogger].
+  void handOverTo(OtlpLogDestination successor) {
+    if (closed) {
+      return;
+    }
+    // registered before the close, so the successor waits for the batches when it closes
+    successor.incoming.incrementAndGet();
+    this.successor = successor;
+    closed = true;
+    LockSupport.unpark(sender);
+  }
+
+  /// Takes over the batches of the destination this one replaces. They go to the head of the
+  /// queue, in their order, so older records are sent first. Batches beyond the limit of the
+  /// waiting batches are dropped and counted, the oldest first. When this destination itself was
+  /// replaced meanwhile, the batches go on to its successor.
+  void takeOver(List<OtlpBatch> batches) {
+    try {
+      takeOverBatches(batches);
+    } finally {
+      incoming.decrementAndGet();
+    }
+  }
+
+  private void takeOverBatches(List<OtlpBatch> batches) {
+    long dropped = 0;
+    synchronized (this) {
+      if (!finished) {
+        for (int i = batches.size() - 1; i >= 0; i--) {
+          OtlpBatch batch = batches.get(i);
+          if (pendingBytes + batch.size() > maxBufferedBytes) {
+            dropped += batch.records;
+            continue;
+          }
+          pending.addFirst(batch);
+          pendingBytes += batch.size();
+          pendingRecords += batch.records;
+        }
+        batches = null;
+      }
+    }
+    if (batches != null) {
+      OtlpLogDestination next = successor;
+      if (next != null) {
+        // the expected handover moves on to the successor
+        next.incoming.incrementAndGet();
+        next.takeOver(batches);
+        return;
+      }
+      for (OtlpBatch batch : batches) {
+        dropped += batch.records;
+      }
+    }
+    if (dropped > 0) {
+      countDropped(dropped);
+    }
+    wake();
+  }
+
   private void run() {
     long nextFlush = System.nanoTime() + flushIntervalNanos;
     long retryAt = System.nanoTime();
@@ -357,7 +432,12 @@ public class OtlpLogDestination implements RequestLogMetrics.QueueSource, AutoCl
         long delayMillis = attempt(head, timeout);
         retryAt = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(delayMillis);
       }
-      shutdown();
+      OtlpLogDestination next = successor;
+      if (next != null) {
+        transfer(next);
+      } else {
+        shutdown();
+      }
     } finally {
       client.shutdownNow();
       // e.g. removed by a configuration reload, the gauges stop reporting it
@@ -447,7 +527,8 @@ public class OtlpLogDestination implements RequestLogMetrics.QueueSource, AutoCl
   /// suffice when sending keeps up, more are released, so the memory taken during an outage is
   /// returned.
   private synchronized void recycle(OtlpBatch head) {
-    pending.removeFirst();
+    // not removeFirst: a takeover may have put batches before it while it was being sent
+    pending.removeFirstOccurrence(head);
     pendingBytes -= head.size();
     pendingRecords -= head.records;
     head.reset();
@@ -477,13 +558,56 @@ public class OtlpLogDestination implements RequestLogMetrics.QueueSource, AutoCl
     }
   }
 
-  /// Sends the waiting batches until the close timeout, then counts the rest as dropped
-  private void shutdown() {
+  /// Moves all waiting batches, including the last ones of the threads, to the successor. First
+  /// waits for the batches of destinations this one replaced, so a chain of quick reloads hands
+  /// everything on together. A predecessor may still be in a request, so the wait is bounded by a
+  /// request timeout; batches arriving later go on to the successor directly.
+  private void transfer(OtlpLogDestination next) {
+    awaitIncoming(
+        System.nanoTime() + timeout.toNanos() + TimeUnit.MILLISECONDS.toNanos(closeTimeoutMillis));
     for (OtlpThreadLogger threadLogger : threadLoggers) {
       retire(threadLogger);
     }
     threadLoggers.clear();
+    List<OtlpBatch> batches;
+    long records;
+    synchronized (this) {
+      batches = new ArrayList<>(pending);
+      records = pendingRecords;
+      pending.clear();
+      free.clear();
+      pendingBytes = 0;
+      pendingRecords = 0;
+      finished = true;
+    }
+    if (records > 0) {
+      log.info(
+          "Request log destination "
+              + name
+              + " replaced, handing "
+              + records
+              + " buffered records over to its replacement");
+    }
+    next.takeOver(batches);
+  }
+
+  /// Waits until the handovers of replaced destinations into this one have arrived, at most until
+  /// the deadline
+  private void awaitIncoming(long deadlineNanos) {
+    while (incoming.get() > 0 && deadlineNanos - System.nanoTime() > 0) {
+      LockSupport.parkNanos(this, TimeUnit.MILLISECONDS.toNanos(1));
+    }
+  }
+
+  /// Sends the waiting batches until the close timeout, then counts the rest as dropped. Waits
+  /// for the batches of destinations this one replaced, they may still be on their way.
+  private void shutdown() {
     long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(closeTimeoutMillis);
+    awaitIncoming(deadline);
+    for (OtlpThreadLogger threadLogger : threadLoggers) {
+      retire(threadLogger);
+    }
+    threadLoggers.clear();
     OtlpBatch head;
     while ((head = peek()) != null) {
       long remaining = deadline - System.nanoTime();
@@ -503,6 +627,7 @@ public class OtlpLogDestination implements RequestLogMetrics.QueueSource, AutoCl
       free.clear();
       pendingBytes = 0;
       pendingRecords = 0;
+      finished = true;
     }
     if (left > 0) {
       countDropped(left);

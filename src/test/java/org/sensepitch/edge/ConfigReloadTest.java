@@ -120,6 +120,26 @@ class ConfigReloadTest {
     assertThat(steps.requestLog.lines()).singleElement().asString().startsWith("{");
   }
 
+  /// Adding a second OTLP destination without a name is rejected, it would shift the default
+  /// name of the first one
+  @Test
+  void secondUnnamedOtlpDestinationRejectsReload() {
+    RequestLogDestinationConfig otlp =
+        RequestLogDestinationConfig.builder()
+            .type("otlp")
+            .otlp(OtlpConfig.builder().endpoint("http://127.0.0.1:1/v1/logs").build())
+            .build();
+    ReloadResult result =
+        steps.proxy.reload(
+            CONFIG.toBuilder()
+                .requestLog(RequestLogConfig.builder().destinations(List.of(otlp, otlp)).build())
+                .build());
+    assertThat(result.applied()).isFalse();
+    assertThat(result.message()).contains("name required");
+    steps.when_requesting("a.com", "/");
+    assertThat(steps.requestLog.lines()).singleElement().asString().startsWith("{");
+  }
+
   @Test
   void keepAliveConnectionUsesNewConfigOnNextRequest() {
     steps.when_requesting("a.com", "/").then_expect_content("A");

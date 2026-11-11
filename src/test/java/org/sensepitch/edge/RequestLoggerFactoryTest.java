@@ -128,8 +128,21 @@ class RequestLoggerFactoryTest {
   void defaultNamesAreNumberedPerType() {
     assertThat(
             RequestLoggerFactory.names(
-                List.of(otlp(null), stdout(false, false), otlp(null), otlp("vl"))))
-        .containsExactly("otlp", "stdout", "otlp1", "vl");
+                List.of(otlp(null), stdout(false, false), stdout(true, false))))
+        .containsExactly("otlp", "stdout", "stdout1");
+    assertThat(RequestLoggerFactory.names(List.of(otlp("vl"), otlp("collector"))))
+        .as("several otlp destinations with names")
+        .containsExactly("vl", "collector");
+  }
+
+  /// The name identifies an OTLP destination across a reload, a positional default would shift
+  /// when one is inserted, so several OTLP destinations must be named
+  @Test
+  void severalOtlpDestinationsNeedNames() {
+    assertThatThrownBy(() -> RequestLoggerFactory.names(List.of(otlp("vl"), otlp(null))))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage(
+            "requestLog.destinations[1]: name required, there are several otlp destinations");
   }
 
   @Test

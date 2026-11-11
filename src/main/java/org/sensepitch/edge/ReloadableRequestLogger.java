@@ -8,9 +8,11 @@ import java.util.Objects;
 /// configuration is reloaded, see [#prepare(RequestLogConfig)].
 ///
 /// A destination whose name and configuration are unchanged is kept, so an OTLP destination keeps
-/// its buffered records and its sender thread. Changed and removed destinations are closed after
-/// the switch, which sends what they buffered. Records an event loop logs into a destination that
-/// is just being closed are dropped and counted, like any record logged into a closed destination.
+/// its buffered records and its sender thread. A changed OTLP destination hands its buffered
+/// records over to its replacement of the same name, and records an event loop still logs into it
+/// after the switch are passed on as well, so a reload loses nothing, see
+/// [OtlpRequestLogger#handOverTo]. A removed destination is closed, which sends what it buffered
+/// within the close timeout.
 ///
 /// The destinations are held in an array that is replaced as a whole, logging a request reads it
 /// once and does not allocate.
@@ -19,7 +21,25 @@ import java.util.Objects;
 public final class ReloadableRequestLogger implements RequestLogger {
 
   /// A destination with the configuration it was built from
-  record Destination(String name, RequestLogDestinationConfig config, RequestLogger logger) {}
+  ///
+  /// @param otlp the OTLP logger inside `logger`, `null` for other types
+  record Destination(
+      String name,
+      RequestLogDestinationConfig config,
+      RequestLogger logger,
+      OtlpRequestLogger otlp) {
+
+    Destination(String name, RequestLogDestinationConfig config, RequestLogger logger) {
+      this(name, config, logger, otlpOf(logger));
+    }
+
+    private static OtlpRequestLogger otlpOf(RequestLogger logger) {
+      if (logger instanceof AnonymizingRequestLogger anonymizing) {
+        logger = anonymizing.delegate();
+      }
+      return logger instanceof OtlpRequestLogger otlp ? otlp : null;
+    }
+  }
 
   private final RequestLogOutput stdout;
   private final RequestLogMetrics metrics;
@@ -109,15 +129,36 @@ public final class ReloadableRequestLogger implements RequestLogger {
       this.next = next;
     }
 
-    /// Activates the destinations and closes the ones that were not taken over
+    /// Activates the destinations. A replaced OTLP destination hands over to its successor of the
+    /// same name, other destinations that were not taken over are closed. Does not wait for a log
+    /// server.
     public void apply() {
       Destination[] previous = destinations;
       destinations = next;
       for (Destination old : previous) {
-        if (!contains(next, old)) {
+        if (contains(next, old)) {
+          continue;
+        }
+        Destination successor = successorOf(old);
+        if (successor != null) {
+          old.otlp().handOverTo(successor.otlp(), successor.logger());
+        } else {
           old.logger().close();
         }
       }
+    }
+
+    /// The new OTLP destination of the same name, or `null`
+    private Destination successorOf(Destination old) {
+      if (old.otlp() == null) {
+        return null;
+      }
+      for (Destination candidate : next) {
+        if (candidate.name().equals(old.name()) && candidate.otlp() != null) {
+          return candidate;
+        }
+      }
+      return null;
     }
 
     private static boolean contains(Destination[] destinations, Destination destination) {

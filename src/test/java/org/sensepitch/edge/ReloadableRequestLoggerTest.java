@@ -27,8 +27,15 @@ class ReloadableRequestLoggerTest {
   final RequestLogCapture stdout = new RequestLogCapture();
   final RequestLogMetrics metrics = new RequestLogMetrics();
 
-  /// Records received by the OTLP server
+  /// Records accepted by the OTLP server, per request
   final BlockingQueue<Integer> received = new LinkedBlockingQueue<>();
+
+  /// Status the OTLP server answers with, records are only received with 200
+  volatile int status = 200;
+
+  /// Requests the OTLP server got, including refused ones
+  final java.util.concurrent.atomic.AtomicInteger attempts =
+      new java.util.concurrent.atomic.AtomicInteger();
 
   HttpServer server;
   ReloadableRequestLogger logger;
@@ -41,8 +48,12 @@ class ReloadableRequestLoggerTest {
         exchange -> {
           ExportLogsServiceRequest request =
               ExportLogsServiceRequest.parseFrom(exchange.getRequestBody().readAllBytes());
-          received.add(request.getResourceLogs(0).getScopeLogs(0).getLogRecordsCount());
-          exchange.sendResponseHeaders(200, -1);
+          attempts.incrementAndGet();
+          int answer = status;
+          if (answer == 200) {
+            received.add(request.getResourceLogs(0).getScopeLogs(0).getLogRecordsCount());
+          }
+          exchange.sendResponseHeaders(answer, -1);
           exchange.close();
         });
     server.start();
@@ -119,7 +130,9 @@ class ReloadableRequestLoggerTest {
     logOneRequest();
     reload(config(otlp("vl", 30_000)));
     assertThat(logger.destinations().getFirst()).isNotSameAs(before);
-    assertThat(received.poll(10, TimeUnit.SECONDS)).as("buffered record sent on close").isOne();
+    assertThat(received.poll(10, TimeUnit.SECONDS))
+        .as("buffered record handed over and sent by the replacement")
+        .isOne();
     logOneRequest();
     logger.close();
     assertThat(received.poll(10, TimeUnit.SECONDS)).as("the new destination logs").isOne();
@@ -155,6 +168,154 @@ class ReloadableRequestLoggerTest {
     assertThat(threadAlive("request-log-new")).as("created one is closed").isFalse();
     assertThat(threadAlive("request-log-vl")).as("active one is not closed").isTrue();
     assertThat(logger.destinations()).containsExactlyElementsOf(before);
+  }
+
+  long dropped(String destination) {
+    return (long) metrics.dropped.labelValues(destination).get();
+  }
+
+  /// Sum of the records received, waiting until the expected number arrived
+  int awaitReceived(int expected) throws InterruptedException {
+    int sum = 0;
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+    while (sum < expected && System.nanoTime() < deadline) {
+      Integer records = received.poll(100, TimeUnit.MILLISECONDS);
+      if (records != null) {
+        sum += records;
+      }
+    }
+    // anything arriving late would be a duplicate
+    Integer more = received.poll(100, TimeUnit.MILLISECONDS);
+    return more == null ? sum : sum + more;
+  }
+
+  RequestLogDestinationConfig otlpAt(String name, String endpoint, int maxBufferedBytes) {
+    return RequestLogDestinationConfig.builder()
+        .type("otlp")
+        .name(name)
+        .otlp(
+            OtlpConfig.builder()
+                .endpoint(endpoint)
+                .batchBytes(OtlpConfig.MIN_BATCH_BYTES)
+                .maxBufferedBytes(maxBufferedBytes)
+                .build())
+        .build();
+  }
+
+  String endpoint() {
+    return "http://127.0.0.1:" + server.getAddress().getPort() + "/v1/logs";
+  }
+
+  /// The log server is unavailable while a reload changes the destination: the buffered records
+  /// move to the replacement and arrive once the server is back. The reload does not wait.
+  @Test
+  void backlogIsHandedOverDuringAnOutage() throws Exception {
+    status = 503;
+    logger = RequestLoggerFactory.create(config(otlp("vl", 1)), stdout, metrics);
+    for (int i = 0; i < 50; i++) {
+      logOneRequest();
+    }
+    while (attempts.get() == 0) {
+      Thread.sleep(5);
+    }
+    long start = System.nanoTime();
+    reload(config(otlp("vl", 2)));
+    assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start))
+        .as("the reload does not wait for the log server")
+        .isLessThan(500);
+    status = 200;
+    assertThat(awaitReceived(50)).isEqualTo(50);
+    assertThat(dropped("vl")).isZero();
+  }
+
+  /// A reload fixes the endpoint of an unreachable log server, the backlog arrives at the new one
+  @Test
+  void backlogArrivesAtTheFixedEndpoint() throws Exception {
+    int max = OtlpConfig.DEFAULT_MAX_BUFFERED_BYTES;
+    logger =
+        RequestLoggerFactory.create(
+            config(otlpAt("vl", "http://127.0.0.1:1/v1/logs", max)), stdout, metrics);
+    for (int i = 0; i < 20; i++) {
+      logOneRequest();
+    }
+    reload(config(otlpAt("vl", endpoint(), max)));
+    assertThat(awaitReceived(20)).isEqualTo(20);
+    assertThat(dropped("vl")).isZero();
+  }
+
+  /// Threads keep logging while reloads replace the destination again and again: every record
+  /// arrives exactly once, none is dropped at a switch
+  @Test
+  void noRecordIsLostWhileReloading() throws Exception {
+    logger = RequestLoggerFactory.create(config(otlp("vl", 1)), stdout, metrics);
+    int threads = 4;
+    int perThread = 2_000;
+    List<Thread> workers = new java.util.ArrayList<>();
+    for (int t = 0; t < threads; t++) {
+      Thread worker =
+          new Thread(
+              () -> {
+                for (int i = 0; i < perThread; i++) {
+                  logOneRequest();
+                }
+              });
+      worker.start();
+      workers.add(worker);
+    }
+    int reloads = 0;
+    for (int i = 0; workers.stream().anyMatch(Thread::isAlive); i++) {
+      reload(config(otlp("vl", 1 + i % 2)));
+      reloads++;
+      Thread.sleep(1);
+    }
+    for (Thread worker : workers) {
+      worker.join();
+    }
+    // right after the reloads, replaced destinations may still be handing over
+    logger.close();
+    int got = awaitReceived(threads * perThread);
+    assertThat(dropped("vl")).isZero();
+    assertThat(got).as("every record exactly once").isEqualTo(threads * perThread);
+    assertThat(reloads).as("the destination was replaced often").isGreaterThan(10);
+  }
+
+  /// A replacement with a smaller limit takes over what fits, the oldest surplus is dropped
+  @Test
+  void takeOverRespectsTheLimit() throws Exception {
+    status = 503;
+    int big = OtlpConfig.DEFAULT_MAX_BUFFERED_BYTES;
+    int small = OtlpConfig.MIN_BATCH_BYTES;
+    logger = RequestLoggerFactory.create(config(otlpAt("vl", endpoint(), big)), stdout, metrics);
+    int records = 3 * small / 700;
+    for (int i = 0; i < records; i++) {
+      logOneRequest();
+    }
+    reload(config(otlpAt("vl", endpoint(), small)));
+    status = 200;
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+    int delivered = 0;
+    while (delivered + dropped("vl") < records && System.nanoTime() < deadline) {
+      Integer batch = received.poll(100, TimeUnit.MILLISECONDS);
+      delivered += batch != null ? batch : 0;
+    }
+    assertThat(dropped("vl")).as("surplus dropped").isPositive();
+    assertThat(delivered + dropped("vl")).isEqualTo(records);
+  }
+
+  /// A record logged into the replaced destination after the switch goes to the replacement
+  @Test
+  void lateRecordIsPassedOn() throws Exception {
+    OtlpConfig otlpConfig = OtlpConfig.builder().endpoint(endpoint()).build();
+    OtlpRequestLogger old =
+        new OtlpRequestLogger(new OtlpLogDestination("old", otlpConfig, metrics));
+    OtlpRequestLogger next =
+        new OtlpRequestLogger(new OtlpLogDestination("next", otlpConfig, metrics));
+    old.handOverTo(next, next);
+    old.logRequest(TestRequestLogInfo.of(HttpMethod.GET, 200));
+    next.close();
+    assertThat(awaitReceived(1)).isOne();
+    assertThat(dropped("old")).isZero();
+    assertThat(dropped("next")).isZero();
   }
 
   @Test

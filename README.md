@@ -509,10 +509,12 @@ reloaded, so adding the marker enables live reload. Starting the proxy does not 
 - **What is reloaded:** sites, upstreams, protection, fallback, `unservicedHost`, `listen.hosts`,
   certificates (`listen.ssl`, `snis`, Let's Encrypt), `ipLookup` and `requestLog`. The IP lookup
   databases are only read again if `ipLookup` changed. Upstreams with unchanged configuration are
-  kept. Request log destinations with unchanged name and settings are kept, so an OTLP
-  destination keeps its buffered records; changed and removed ones are closed after sending what
-  they buffered. Records logged into a removed destination while the switch happens are dropped
-  and counted in `sensepitch_request_log_dropped_total`.
+  kept. Request log destinations with unchanged name and settings are kept. A changed OTLP
+  destination hands its buffered records over to its replacement of the same name, also during
+  an outage of the log server, and records logged into it while the switch happens are passed on,
+  so a reload loses nothing. This also works when the change fixes a wrong endpoint. A removed
+  destination is closed: it tries to send what it buffered for 5 seconds, then counts the rest in
+  `sensepitch_request_log_dropped_total`.
 - **Restart needed:** changes of `listen.address`, `listen.httpsPort`, `listen.connection`,
   `metrics`, `ja4` and `traceContext` are logged as a warning and ignored.
 - **Invalid configuration:** the error is logged and the active configuration stays.
@@ -589,6 +591,10 @@ requestLog:
 ````
 
 `type`, `name` and `anonymizeClientIp` apply to every destination, `plainText` to `stdout` only.
+The `name` defaults to the type, but several `otlp` destinations must be named: the name
+identifies a destination across a reload (see Configuration reload), and a positional default
+would shift when a destination is inserted. Renaming a destination counts as removing it and
+adding a new one.
 Everything specific to OTLP is in the `otlp` object, which is rejected on a `stdout` destination.
 
 - **`anonymizeClientIp`:** per destination. The client address is truncated to its network, `/24`

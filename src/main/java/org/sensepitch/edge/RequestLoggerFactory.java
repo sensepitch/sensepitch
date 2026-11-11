@@ -79,9 +79,17 @@ public final class RequestLoggerFactory {
   }
 
   /// Names of the destinations, defaulting to the type, with the index appended for the second
-  /// and further destinations of a type. Also validates the type, the presence of the `otlp`
-  /// settings exactly for `otlp` destinations, and checks names are unique.
+  /// and further `stdout` destinations. Several `otlp` destinations must be named explicitly. Also
+  /// validates the type, the presence of the `otlp` settings exactly for `otlp` destinations, and
+  /// checks names are unique.
   static List<String> names(List<RequestLogDestinationConfig> destinations) {
+    // the name identifies an otlp destination across a reload, a positional default would shift
+    // when a destination is inserted and hand a backlog to the wrong endpoint
+    boolean severalOtlp =
+        destinations.stream()
+                .filter(d -> RequestLogDestinationConfig.TYPE_OTLP.equals(d.type()))
+                .count()
+            > 1;
     Map<String, Integer> typeCount = new HashMap<>();
     Set<String> used = new HashSet<>();
     List<String> names = new ArrayList<>();
@@ -107,6 +115,12 @@ public final class RequestLoggerFactory {
             "requestLog.destinations[" + i + "]: otlp settings on a " + type + " destination");
       }
       String name = destination.name();
+      if (otlp && severalOtlp && (name == null || name.isBlank())) {
+        throw new IllegalArgumentException(
+            "requestLog.destinations["
+                + i
+                + "]: name required, there are several otlp destinations");
+      }
       if (name == null || name.isBlank()) {
         int count = typeCount.merge(type, 1, Integer::sum);
         name = count == 1 ? type : type + (count - 1);
