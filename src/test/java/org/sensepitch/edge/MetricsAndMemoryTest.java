@@ -418,6 +418,10 @@ class MetricsAndMemoryTest {
       return (CounterSnapshot.CounterDataPointSnapshot) datapoint(metricName);
     }
 
+    CounterSnapshot.CounterDataPointSnapshot counter(String metricName, String... labelKeyValues) {
+      return (CounterSnapshot.CounterDataPointSnapshot) datapoint(metricName, labelKeyValues);
+    }
+
     GaugeSnapshot.GaugeDataPointSnapshot gouge(String metricName) {
       return (GaugeSnapshot.GaugeDataPointSnapshot) datapoint(metricName);
     }

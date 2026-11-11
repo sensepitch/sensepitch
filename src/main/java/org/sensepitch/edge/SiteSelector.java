@@ -76,7 +76,8 @@ public class SiteSelector {
               if (protection == null) {
                 protection = config.protection();
               }
-              Supplier<ChannelHandler> protectionSupplier = Protection.handlerSupplier(protection);
+              Supplier<ChannelHandler> protectionSupplier =
+                  Protection.handlerSupplier(protection, ctx.metrics());
               Routing<Suppliers> routing =
                   constructRouting(ctx, site, fallbackSupplier, protectionSupplier);
               if (protectionSupplier == null) {

@@ -12,7 +12,9 @@ import java.util.function.Supplier;
 /// @author Jens Wilke
 public class Protection {
 
-  static Supplier<ChannelHandler> handlerSupplier(ProtectionConfig protection) {
+  /// @param metrics receives the counts of the [Deflector]
+  static Supplier<ChannelHandler> handlerSupplier(
+      ProtectionConfig protection, ProxyMetrics metrics) {
     if (protection == null) {
       return null;
     }
@@ -29,7 +31,7 @@ public class Protection {
     }
     if (protection.deflector() != null) {
       Deflector deflector = new Deflector(protection.deflector());
-      plugins.add(new DeflectorHandler(deflector));
+      plugins.add(new DeflectorHandler(deflector, metrics));
     }
     if (!plugins.isEmpty()) {
       ProtectionPlugin plugin = plugins.size() == 1 ? plugins.get(0) : new ProtectionChain(plugins);

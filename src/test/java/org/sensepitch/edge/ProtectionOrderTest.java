@@ -42,7 +42,7 @@ public class ProtectionOrderTest {
             .cookieGates(
                 List.of(CookieGateConfig.builder().name(COOKIE_NAME).accessUri(ACCESS_URI).build()))
             .build();
-    Supplier<ChannelHandler> supplier = Protection.handlerSupplier(protection);
+    Supplier<ChannelHandler> supplier = Protection.handlerSupplier(protection, new ProxyMetrics());
     assertThat(supplier).isNotNull();
     init(supplier.get());
     DefaultHttpRequest req =

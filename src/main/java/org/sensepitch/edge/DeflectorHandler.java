@@ -9,24 +9,29 @@ import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
+import org.sensepitch.edge.ProxyMetrics.DeflectorOutcome;
 
 /// @author Jens Wilke
 public class DeflectorHandler implements ProtectionPlugin {
 
   private static final ProxyLogger LOG = ProxyLogger.get(DeflectorHandler.class);
 
-  Deflector deflector;
+  private final Deflector deflector;
+  private final ProxyMetrics metrics;
 
-  DeflectorHandler(Deflector deflector) {
+  DeflectorHandler(Deflector deflector, ProxyMetrics metrics) {
     this.deflector = deflector;
+    this.metrics = metrics;
   }
 
   @Override
   public boolean mightIntercept(HttpRequest request, ChannelHandlerContext ctx) {
     if (deflector.checkAdmissionCookie(request)) {
       request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_USER);
+      metrics.countDeflectorRequest(request, DeflectorOutcome.PASSED);
       return false;
     } else if (deflector.needsBypass(ctx, request)) {
+      metrics.countDeflectorRequest(request, DeflectorOutcome.BYPASSED);
       return false;
     } else if (request.uri().startsWith(Deflector.CHALLENGE_STEP_URL)) {
       // this is just for progress reporting and debugging
@@ -48,11 +53,16 @@ public class DeflectorHandler implements ProtectionPlugin {
     } else if (request.method() == HttpMethod.GET
         && request.uri().startsWith(Deflector.CHALLENGE_ANSWER_URL)) {
       request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_USER);
-      deflector.handleChallengeAnswer(ctx, request);
+      if (deflector.handleChallengeAnswer(ctx, request)) {
+        metrics.countDeflectorRequest(request, DeflectorOutcome.ANSWER_ACCEPTED);
+      } else {
+        metrics.countDeflectorRequest(request, DeflectorOutcome.ANSWER_REJECTED);
+      }
     } else {
       // TODO: behaviour of non GET requests?
       request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_DEFLECT);
       deflector.outputChallengeHtml(ctx);
+      metrics.countDeflectorRequest(request, DeflectorOutcome.CHALLENGE_SENT);
     }
     return true;
   }

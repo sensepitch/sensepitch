@@ -198,7 +198,10 @@ public class Deflector {
     ctx.writeAndFlush(response);
   }
 
-  void handleChallengeAnswer(ChannelHandlerContext ctx, HttpRequest req) {
+  /// Sends the admission cookie for a correct answer or status 400.
+  ///
+  /// @return `true` if the answer is correct
+  boolean handleChallengeAnswer(ChannelHandlerContext ctx, HttpRequest req) {
     QueryStringDecoder decoder = new QueryStringDecoder(req.uri());
     Map<String, List<String>> params = decoder.parameters();
     String challenge = firstParameter(params, "challenge");
@@ -223,6 +226,7 @@ public class Deflector {
       response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.BAD_REQUEST);
     }
     ctx.writeAndFlush(response);
+    return t > 0;
   }
 
   /// @return the first value of the parameter, `null` if absent or empty

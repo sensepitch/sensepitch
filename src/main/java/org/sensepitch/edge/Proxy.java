@@ -14,6 +14,7 @@ import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslProvider;
 import io.netty.util.DomainWildcardMappingBuilder;
 import io.netty.util.Mapping;
+import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -45,7 +46,10 @@ public class Proxy implements ProxyContext {
   private final ProxyMetrics metrics = new ProxyMetrics();
   private final ProxyConfig config;
   private final ConnectionConfig connectionConfig;
-  private final MetricsBridge metricsBridge;
+  /// Metrics of this proxy, registered also when the export is disabled
+  private final PrometheusRegistry metricsRegistry = new PrometheusRegistry();
+  /// `null` if the metrics export is disabled
+  private final MetricsServer metricsServer;
   private final AtomicReference<EdgeState> state = new AtomicReference<>();
   /// Delegates to the current state, so the SNI handler picks up reloaded certificates
   private final Mapping<String, SslContext> sniMapping = host -> state.get().sniMapping().map(host);
@@ -80,12 +84,11 @@ public class Proxy implements ProxyContext {
     ja4Config = config.ja4() != null ? config.ja4() : Ja4Config.DEFAULT;
     // added unconditionally, so a client can never spoof the fingerprint headers
     ja4HeaderHandler = new Ja4HeaderHandler(ja4Config);
-    metricsBridge = initializeMetrics();
-    metricsBridge.expose(metrics);
-    trackIngressConnectionsHandler = metricsBridge.expose(new TrackIngressConnectionsHandler());
-    metricsBridge.expose(new NettyAllocatorMetrics());
+    expose(metrics);
+    trackIngressConnectionsHandler = expose(new TrackIngressConnectionsHandler());
+    expose(new NettyAllocatorMetrics());
     if (requestLogOutput instanceof HasMultipleMetrics withMetrics) {
-      metricsBridge.expose(withMetrics);
+      expose(withMetrics);
     }
     state.set(EdgeState.build(this, config, null));
     LOG.info("Certificates loaded:" + Certificates.list(state.get().certificates()));
@@ -96,7 +99,9 @@ public class Proxy implements ProxyContext {
             requestLogConfig.plainText()
                 ? new PlainTextRequestLogger(requestLogOutput)
                 : new JsonRequestLogger(requestLogOutput),
-            metricsBridge.expose(new ExposeRequestCountPerStatusCodeHandler()));
+            expose(new ExposeRequestCountPerStatusCodeHandler()));
+    // last, so a configuration error does not leave a running server behind
+    metricsServer = startMetricsServer();
   }
 
   /// Activates a new configuration. Routing, known hosts, certificates and the IP lookup are
@@ -175,19 +180,31 @@ public class Proxy implements ProxyContext {
     return yaml.dump(proxyConfig);
   }
 
-  MetricsBridge initializeMetrics() {
+  /// Registers the collectors in the [#metricsRegistry()]
+  private <T extends HasMultipleMetrics> T expose(T objectWithMetrics) {
+    objectWithMetrics.registerCollectors(metricsRegistry::register);
+    return objectWithMetrics;
+  }
+
+  /// @return the started server or `null`, if the metrics export is disabled
+  private MetricsServer startMetricsServer() {
     MetricsConfig metricsConfig = config.metrics();
     if (metricsConfig == null) {
       metricsConfig = MetricsConfig.DEFAULT;
+    }
+    if (!metricsConfig.enable()) {
+      return null;
     }
     PrometheusConfig prometheusConfig = metricsConfig.prometheus();
     if (prometheusConfig == null) {
       prometheusConfig = PrometheusConfig.DEFAULT;
     }
-    if (!metricsConfig.enable()) {
-      return new MetricsBridge.NoMetricsExposed();
-    }
-    return new PrometheusMetricsBridge(prometheusConfig);
+    return MetricsServer.start(prometheusConfig, metricsRegistry);
+  }
+
+  /// All metrics of this proxy, also if the export is disabled
+  PrometheusRegistry metricsRegistry() {
+    return metricsRegistry;
   }
 
   static Mapping<String, SslContext> initializeSniMapping(
@@ -318,6 +335,9 @@ public class Proxy implements ProxyContext {
   void shutdown() {
     eventLoopGroup.shutdownGracefully();
     requestLogOutput.close();
+    if (metricsServer != null) {
+      metricsServer.close();
+    }
   }
 
   void addHttpHandlers(ChannelPipeline pipeline) {

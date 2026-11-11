@@ -22,15 +22,18 @@ import io.netty.handler.codec.http.cookie.Cookie;
 import io.netty.handler.codec.http.cookie.DefaultCookie;
 import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
 import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
+import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /// @author Jens Wilke
 public class DeflectorHandlerTest {
 
   private ProtectionHandler handler;
+  private final ProxyMetrics metrics = new ProxyMetrics();
   private Channel channel;
   private boolean passed;
   private Object messageWritten;
@@ -134,6 +137,52 @@ public class DeflectorHandlerTest {
     req.headers().set(HttpHeaderNames.COOKIE, cookieHeader);
     request(req);
     assertThat(passed).isTrue();
+  }
+
+  /// Each outcome is counted once, challenge resources and progress steps are not counted.
+  @Test
+  public void countsOutcomes() throws Exception {
+    DeflectorConfig cfg = getDeflectorConfig();
+    init(cfg);
+    request("/default");
+    String challenge =
+        findCookieValue((HttpResponse) messageWritten, Deflector.CHALLENGE_COOKIE_NAME);
+    request(Deflector.CHALLENGE_RESOURCES_URL + "/script.js");
+    request(Deflector.CHALLENGE_STEP_URL);
+    request(Deflector.CHALLENGE_ANSWER_URL + "?challenge=garbage&nonce=0");
+    request(Deflector.CHALLENGE_ANSWER_URL + "?nonce=1");
+    String nonce = findNonce(challenge, cfg.hashTargetPrefix(), cfg.powMaxIterations());
+    request(Deflector.CHALLENGE_ANSWER_URL + "?challenge=" + challenge + "&nonce=" + nonce);
+    String token = findCookieValue((HttpResponse) messageWritten, Deflector.TOKEN_COOKIE_NAME);
+    DefaultHttpRequest req =
+        new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/default");
+    req.headers().set(HttpHeaderNames.COOKIE, Deflector.TOKEN_COOKIE_NAME + "=" + token);
+    request(req);
+    request("/bypass");
+    request("/default", TWITTER);
+    PrometheusRegistry registry = new PrometheusRegistry();
+    metrics.registerCollectors(registry::register);
+    var snapshots = new MetricsAndMemoryTest.Snapshots(registry.scrape());
+    Map<String, Double> expected =
+        Map.of(
+            "challenge_sent", 1.0,
+            "answer_rejected", 2.0,
+            "answer_accepted", 1.0,
+            "passed", 1.0,
+            "bypassed", 2.0);
+    expected.forEach(
+        (outcome, count) ->
+            assertThat(
+                    snapshots
+                        .counter(
+                            "sensepitch_deflector_requests",
+                            "ingress",
+                            "example.com",
+                            "outcome",
+                            outcome)
+                        .getValue())
+                .as(outcome)
+                .isEqualTo(count));
   }
 
   /// The answer endpoint is reachable by anyone, malformed requests are refused.
@@ -300,7 +349,7 @@ public class DeflectorHandlerTest {
             super.channelRead(ctx, msg);
           }
         };
-    handler = new ProtectionHandler(new DeflectorHandler(new Deflector(cfg)));
+    handler = new ProtectionHandler(new DeflectorHandler(new Deflector(cfg), metrics));
     channel = new EmbeddedChannel(out, handler, in);
   }
 
@@ -319,6 +368,9 @@ public class DeflectorHandlerTest {
     ChannelHandlerContext ctx = channel.pipeline().context(ProtectionHandler.class);
     messageWritten = null;
     passed = false;
+    if (!req.headers().contains(HttpHeaderNames.HOST)) {
+      req.headers().set(HttpHeaderNames.HOST, "example.com");
+    }
     handler.channelRead(ctx, req);
     handler.channelRead(ctx, LastHttpContent.EMPTY_LAST_CONTENT);
   }

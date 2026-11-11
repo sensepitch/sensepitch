@@ -1,11 +1,14 @@
 package org.sensepitch.edge;
 
+import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.HttpRequest;
 import io.prometheus.metrics.core.datapoints.CounterDataPoint;
 import io.prometheus.metrics.core.metrics.Counter;
 import io.prometheus.metrics.model.registry.Collector;
 import io.prometheus.metrics.model.snapshots.CounterSnapshot;
 import io.prometheus.metrics.model.snapshots.GaugeSnapshot;
 import io.prometheus.metrics.model.snapshots.Labels;
+import java.util.Locale;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 
@@ -30,6 +33,41 @@ public class ProxyMetrics implements HasMultipleMetrics {
 
   public final CounterDataPoint ingressReceiveTimeoutKeepAlive =
       ingressReceiveTimeoutCounter.labelValues("keep_alive");
+
+  /// Requests handled by a [Deflector], by ingress and outcome, see [#countDeflectorRequest]
+  public final Counter deflectorRequestCounter =
+      metricSet.add(
+          Counter.builder()
+              .name("sensepitch_deflector_requests")
+              .help("Requests handled by the deflector, by ingress and outcome")
+              .labelNames("ingress", "outcome")
+              .build());
+
+  /// Outcome of a request handled by a [Deflector], the label value is the lower case name
+  public enum DeflectorOutcome {
+    /// Valid admission cookie, request passed on
+    PASSED,
+    /// No admission cookie, but bypass configured or crawler detected, request passed on
+    BYPASSED,
+    /// Challenge page sent
+    CHALLENGE_SENT,
+    /// Correct challenge answer, admission cookie issued
+    ANSWER_ACCEPTED,
+    /// Wrong or incomplete challenge answer
+    ANSWER_REJECTED;
+
+    final String label = name().toLowerCase(Locale.ROOT);
+  }
+
+  /// Counts the request for its ingress, which is the host header, already sanitized by
+  /// [SanitizeHostHandler], so the number of label values is limited to the serviced hosts.
+  public void countDeflectorRequest(HttpRequest request, DeflectorOutcome outcome) {
+    String ingress = request.headers().get(HttpHeaderNames.HOST);
+    if (ingress == null) {
+      ingress = SanitizeHostHandler.MISSING_HOST;
+    }
+    deflectorRequestCounter.labelValues(ingress, outcome.label).inc();
+  }
 
   public final LongAdder ingressRequestsStarted = new LongAdder();
   public final LongAdder ingressRequestsCompleted = new LongAdder();

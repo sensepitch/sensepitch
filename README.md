@@ -148,7 +148,7 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [x] improve default configuration
 - [x] metrics: byte IO count per ingress
 - [ ] Performance test: different Netty allocators, leak detection, -XX:NativeMemoryTracking=summary
-- [ ] Remove MetricsBridge, we exclusively use Prometheus
+- [x] Remove MetricsBridge, we exclusively use Prometheus
 - [ ] bypass config should be in the protection and not in the protection providers => we need a proper API for the protection provider
 - [ ] http to https forward
 - [ ] send 404 for any non / URL for unserviced domain?
@@ -205,7 +205,9 @@ Robust keep alive is a bit different from what the HTTP/1.1 standard defines.
 
 ## Exposed metrics
 
-Metrics are exposed via prometheus. This section picks out metrics that should be monitored.
+Metrics are exposed via prometheus at `http://<host>:9400/metrics`, the port is set with
+`metrics.prometheus.port`, `metrics.enable: false` switches the export off. This section picks out
+metrics that should be monitored.
 
 ### `process_resident_memory_bytes`
 
@@ -271,6 +273,21 @@ Leaked buffers are reported separately. Netty's leak detector runs at level `SIM
 logs a buffer that is garbage collected without having been released; raise it with
 `-Dio.netty.leakDetection.level=advanced` or `paranoid`. Detection is sampled, so a report means a
 real leak while silence proves nothing.
+
+### `sensepitch_deflector_requests_total{ingress="...",outcome="..."}`
+
+Requests handled by the deflector protection, by `ingress` (the requested host, like in the other
+`sensepitch_ingress_*` metrics) and `outcome`:
+
+- `passed`: valid admission cookie, the request goes to the upstream
+- `bypassed`: no admission cookie, but a configured bypass or a detected crawler lets it through
+- `challenge_sent`: the challenge page was sent
+- `answer_accepted`: correct challenge answer, the admission cookie was issued
+- `answer_rejected`: wrong or incomplete answer
+
+A high ratio of `challenge_sent` to `answer_accepted` is normal under bot traffic. Many
+`answer_rejected` hint at clients trying to forge answers. Requests for the challenge's scripts and
+styles are not counted.
 
 ## Put Sensepitch Edge in front of NGINX
 
