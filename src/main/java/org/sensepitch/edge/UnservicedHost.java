@@ -25,7 +25,10 @@ public class UnservicedHost {
   private final Map<String, String> redirectToWWW = new HashMap<>();
   public static final String NOT_FOUND_URI = "/NOT_FOUND";
 
+  /// @throws IllegalArgumentException if a serviced domain is not lower case, without port and
+  ///   trailing dot, see [SanitizeHostHandler#requireNormalizedHost]
   public UnservicedHost(UnservicedHostConfig cfg) {
+    cfg.servicedDomains().forEach(SanitizeHostHandler::requireNormalizedHost);
     this.servicedDomains = Set.copyOf(cfg.servicedDomains());
     this.defaultLocation = cfg.defaultLocation();
     String WWW_PREFIX = "www.";

@@ -5,6 +5,7 @@ import static io.netty.handler.codec.http.HttpMethod.GET;
 import static io.netty.handler.codec.http.HttpResponseStatus.*;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
@@ -122,5 +123,15 @@ class UnservicedHostHandlerTest {
     content = new DefaultLastHttpContent(Unpooled.buffer());
     assertThat(channel.writeInbound(content)).isFalse();
     assertThat(content.refCnt()).isZero();
+  }
+
+  /// A serviced domain is compared with the normalized host, see [SanitizeHostHandler]
+  @Test
+  void servicedDomainMustBeNormalized() {
+    UnservicedHostConfig cfg =
+        UnservicedHostConfig.builder().servicedDomains(Set.of("www.Example.com")).build();
+    assertThatThrownBy(() -> new UnservicedHost(cfg))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("www.Example.com");
   }
 }
