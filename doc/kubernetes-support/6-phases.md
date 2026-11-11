@@ -10,20 +10,21 @@ about eight hours. The ranges add up; parallel work does not reduce total effort
 | 1 | Architecture assessment | Gap analysis (`3-gap-analysis.md`), pin Gateway API version, define snapshot schema | 2–3 days |
 | 2 | Go controller foundation | Kubebuilder in `controller/`, watches, RBAC, leader election, build, image | 2–4 days |
 | 3 | Gateway API controller integration | GatewayClass, Gateway, HTTPRoute, listeners, attachment, EndpointSlices (including selector-less Services for external backends), TLS, ReferenceGrant, status | 10–16 days |
-| 4 | Java configuration alignment | Gateway API records, listener model, matching, precedence, Core filters, weighted backends | 5–9 days |
-| 5 | Configuration distribution | Snapshot protocol, `EdgeState` swap, listener rebinding, acknowledgements, admin endpoint | 4–7 days |
-| 6 | Sensepitch extensions | `SensepitchResponse` filter and `SensepitchPolicy` (see `2-gateway-api-scope.md`): CRDs, controller resolution and status, edge support reusing `ResponseConfig` and `ProtectionConfig` | 4–7 days |
-| 7 | Production parity | Edge bootstrap for token Secret, IP database, metrics; converter from existing `config.yml` to Gateway API resources; parity tests against the production configurations | 3–5 days |
-| 8 | Profile specification | JSON schema, versioning, discovery protocol, extensibility | 2–3 days |
-| 9 | Profile discovery | HTTP discovery, caching, refresh, validation, failure handling, optional profile port, edge-side block of the reserved profile path | 5–8 days |
-| 10 | Security and observability | Trust boundaries, graceful shutdown, status, metrics, logging | 6–10 days |
-| 11 | Integration and conformance testing | Conformance suite in CI, kind-based integration, recovery and regression tests | 8–15 days |
-| 12 | Public distribution | OCI images, Helm chart, CI/CD release, docs, examples | 3–6 days |
-| | **Total** | | **54–93 days** |
+| 4 | Java configuration alignment | Gateway API records, listener model, matching, precedence, Core filters, weighted backends; per-listener bind address, PROXY protocol v1/v2, trusted forwarded headers | 7–13 days |
+| 5 | Configuration distribution | Snapshot protocol per fleet, `EdgeState` swap, listener rebinding, acknowledgements, admin endpoint | 4–7 days |
+| 6 | Provisioner and exposure modes | `SensepitchEdgeParameters` CRD; Deployment/DaemonSet, Service, PDB and bootstrap ConfigMap generation; shared and dedicated fleets, Gateway merging; LoadBalancer, NodePort, HostNetwork, ClusterIP and unmanaged mode; `status.addresses` from the load balancer or node IPs; external-dns example (see `1-architecture.md`) | 6–10 days |
+| 7 | Sensepitch extensions | `SensepitchResponse` filter and `SensepitchPolicy` (see `2-gateway-api-scope.md`): CRDs, controller resolution and status, edge support reusing `ResponseConfig` and `ProtectionConfig` | 4–7 days |
+| 8 | Production parity | Edge bootstrap for token Secret, IP database, metrics; converter from existing `config.yml` to Gateway API resources; parity tests against the production configurations | 3–5 days |
+| 9 | Profile specification | JSON schema, versioning, discovery protocol, extensibility | 2–3 days |
+| 10 | Profile discovery | HTTP discovery, caching, refresh, validation, failure handling, optional profile port, edge-side block of the reserved profile path | 5–8 days |
+| 11 | Security and observability | Trust boundaries, graceful shutdown, status, metrics, logging | 6–10 days |
+| 12 | Integration and conformance testing | Conformance suite in CI, kind-based integration, recovery and regression tests | 8–15 days |
+| 13 | Public distribution | OCI images, Helm chart, CI/CD release, docs, examples | 3–6 days |
+| | **Total** | | **62–107 days** |
 
 ## Milestones
 
-### M1 — Production configurations on Kubernetes (steps 1–7, 30–51 days)
+### M1 — Production configurations on Kubernetes (steps 1–8, 38–65 days)
 
 M1 must run the existing production edge configurations (see "Production configurations
 versus Gateway API" in `3-gap-analysis.md`) on Kubernetes with the same behaviour.
@@ -32,6 +33,9 @@ versus Gateway API" in `3-gap-analysis.md`) on Kubernetes with the same behaviou
 - Java edge using Gateway API-aligned configuration.
 - Dynamic configuration distribution, HTTP and HTTPS routing, certificates from Secrets
   (issued by cert-manager).
+- Edge fleets provisioned by the controller, shared and dedicated, with all exposure modes:
+  LoadBalancer (passthrough or TLS-terminating in front), NodePort, HostNetwork with DNS
+  spreading through external-dns, and unmanaged.
 - EndpointSlice-based backend discovery and weighted forwarding, including backends outside
   the cluster through selector-less Services.
 - `SensepitchResponse` filter: fixed responses (404 with text, maintenance page with a body
@@ -53,7 +57,7 @@ versus Gateway API" in `3-gap-analysis.md`) on Kubernetes with the same behaviou
 - Configuration changes, including switching to the maintenance page, take effect without
   restarting the edge.
 
-### M2 — Application profile discovery (steps 8–9, cumulative 37–62 days)
+### M2 — Application profile discovery (steps 9–10, cumulative 45–76 days)
 
 - Documented profile protocol, JSON schema and validation.
 - Discovery through backend Services, HTTP caching, periodic refresh.
@@ -64,7 +68,7 @@ versus Gateway API" in `3-gap-analysis.md`) on Kubernetes with the same behaviou
 **Acceptance:** an application publishes and updates its profile, and the edge receives
 validated updates without restarting.
 
-### M3 — Public release candidate (steps 10–12, cumulative 54–93 days)
+### M3 — Public release candidate (steps 11–13, cumulative 62–107 days)
 
 - Conformance results, status reporting, error handling, security hardening.
 - Metrics and logging, Helm installation, published images, documentation, automated
@@ -91,15 +95,22 @@ The table groups work by area. To reduce rework, build in this order:
    ```
 
    This validates the controller-to-Java architecture before the complex semantics.
-   Run the conformance suite in CI from here on and track the failing tests.
-6. **Complete HTTPRoute Core.** Matching, precedence, filters, multiple backends, weights,
+   Use a shared fleet behind a LoadBalancer Service here, since it is the quickest
+   working setup.
+6. **Provisioner and exposure.** HostNetwork DaemonSet with node IPs in `status.addresses`
+   and external-dns (the production target), then dedicated fleets, NodePort and unmanaged
+   mode. Dedicated fleets must work before the conformance suite runs, because it creates
+   many Gateways and expects each one to get an address. Run the conformance suite in CI
+   from here on and track the failing tests.
+7. **Complete HTTPRoute Core.** Matching, precedence, filters, multiple backends, weights,
    ReferenceGrant, invalid backends.
-7. **TLS and lifecycle.** HTTPS listeners from Secrets, certificate updates, status,
-   graceful shutdown, recovery behaviour.
-8. **Sensepitch extensions and parity.** `SensepitchResponse`, `SensepitchPolicy`, edge
+8. **TLS and lifecycle.** HTTPS listeners from Secrets, certificate updates, status,
+   graceful shutdown with DNS-aware draining, PROXY protocol and trusted forwarded headers,
+   recovery behaviour.
+9. **Sensepitch extensions and parity.** `SensepitchResponse`, `SensepitchPolicy`, edge
    bootstrap from Kubernetes objects, parity tests. This completes M1.
-9. **Application profiles.** Specification, discovery, integration into snapshots.
-10. **Conformance and release.** Close remaining gaps, harden, publish the first release.
+10. **Application profiles.** Specification, discovery, integration into snapshots.
+11. **Conformance and release.** Close remaining gaps, harden, publish the first release.
 
 ## Rules for each phase
 
@@ -119,3 +130,10 @@ The table groups work by area. To reduce rework, build in this order:
 4. Protection is selected per host in the edge today, while Gateway API attaches policies to
    routes. Several routes for one hostname with different policies must be detected and
    reported as a conflict.
+5. HostNetwork mode: ports 80/443 may already be taken on a node (another ingress, a node
+   service). The provisioner must report this in the Gateway status instead of leaving a
+   crash-looping pod.
+6. DNS spreading: clients keep cached node IPs for the TTL. Draining must wait for it, and
+   a failed node stays in DNS until the controller notices and external-dns syncs.
+7. Shared fleets: listeners from several Gateways on the same port and hostname conflict.
+   Detecting and reporting this has to follow the Gateway API rules for merged Gateways.

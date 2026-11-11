@@ -24,8 +24,14 @@ Gateway and HTTPRoute (conformance profile `GATEWAY-HTTP`).
 - Route attachment via `parentRefs` (including `sectionName` and `port`).
 - `allowedRoutes` (same namespace, all, selector; route kinds).
 - Listener conflict detection (same port/protocol/hostname) with correct conditions.
-- Gateway `status.addresses` from the edge LoadBalancer Service.
-- Shared data plane: all Gateways of the class are served by one edge Deployment.
+- Gateway `status.addresses`: the load balancer address, or the node IPs in HostNetwork
+  mode. `spec.addresses` selects explicit bind addresses or load balancer IPs where the
+  exposure mode supports them.
+- `spec.infrastructure`: `labels` and `annotations` are copied to the generated objects;
+  `parametersRef` points to a `SensepitchEdgeParameters` object.
+- Edge fleets (see `1-architecture.md`): Gateways that share a parameters object with
+  `fleet: Shared` are merged into one fleet, with listeners merged by port. With
+  `fleet: Dedicated`, every Gateway gets its own fleet.
 
 ## HTTPRoute
 
@@ -94,6 +100,10 @@ The production configurations need two things Gateway API cannot express (see
 `3-gap-analysis.md`). Both are in M1. They live in the API group
 `gateway.sensepitch.org/v1alpha1`, are resolved by the controller, and reach the edge as
 existing Java records (`ResponseConfig`, `ProtectionConfig`).
+
+A third resource, `SensepitchEdgeParameters`, configures the edge fleets and how they are
+exposed. It is used by the provisioner only and does not affect routing. It is described
+in `1-architecture.md`, "Edge fleets and exposure".
 
 ### `SensepitchResponse` (HTTPRoute `ExtensionRef` filter)
 

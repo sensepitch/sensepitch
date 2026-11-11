@@ -51,15 +51,19 @@ A snapshot is one JSON document containing everything the data plane needs for r
 - The controller debounces Kubernetes changes (a few hundred milliseconds) before it builds
   a new snapshot version, so a batch of applied objects becomes one version.
 
-- The edge pulls: `GET /v1/snapshot?known=<version>` with long-polling. The controller
-  answers immediately when a newer version exists, otherwise holds the request up to a
-  timeout.
+- Snapshots are built per edge fleet (see `1-architecture.md`). A snapshot contains the
+  listeners and routes of all Gateways served by that fleet.
+- The edge pulls: `GET /v1/snapshot?fleet=<namespace>/<name>&known=<version>` with
+  long-polling. The controller answers immediately when a newer version exists, otherwise
+  holds the request up to a timeout. The provisioner writes the fleet name, the controller
+  URL and the token path into the `controlPlane` section of the generated bootstrap
+  ConfigMap.
 - Acknowledgement: the next request carries `applied=<version>` or
   `rejected=<version>&reason=…`, plus the pod identity.
 - Authentication: a projected ServiceAccount token checked by the controller via
   TokenReview. The controller endpoint is cluster-internal only.
-- The controller sets `Programmed=True` on a Gateway once all ready edge pods have applied a
-  version containing it. A rejected snapshot is reported in Gateway/route status and logged.
+- The controller sets `Programmed=True` on a Gateway once all ready pods of its fleet have
+  applied a version containing it. A rejected snapshot is reported in Gateway/route status and logged.
 - Edge pods need no Kubernetes RBAC.
 
 gRPC streaming can replace long-polling later without changing the snapshot content.
@@ -86,3 +90,6 @@ gRPC streaming can replace long-polling later without changing the snapshot cont
 - Edge restarts while controller is down: not ready until a snapshot arrives. (Optional
   later: persist the last snapshot to an `emptyDir`.)
 - Invalid snapshot: keep the old state, acknowledge with `rejected`.
+- Node drain with DNS spreading (HostNetwork mode): the controller removes the node IP from
+  `status.addresses` as soon as the pod is terminating. The edge reports not ready but keeps
+  serving for the drain time, which must be at least the DNS TTL, and then closes.

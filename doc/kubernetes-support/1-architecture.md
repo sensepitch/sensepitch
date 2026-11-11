@@ -9,7 +9,8 @@
                           │
                           ▼
                    Go Controller ───────────► status (GatewayClass, Gateway, HTTPRoute)
-                          │
+                          │  └── provisioner ──► edge fleets (Deployment / DaemonSet,
+                          │                       Service, PDB, bootstrap ConfigMap)
               ┌───────────┴────────────┐
               │                        │
        Resolve Kubernetes       Discover application
@@ -25,7 +26,7 @@
            (edge pulls it; edge acknowledges it)
                           │
                           ▼
-                  Java / Netty Edge  (shared Deployment + LoadBalancer Service)
+                  Java / Netty Edge  (one or more fleets, see "Edge fleets and exposure")
                           │
                    Gateway listeners
                    HTTPRoute matching
@@ -52,6 +53,15 @@
   Gateway addresses.
 - Only the elected leader writes status. Every replica can compute and serve snapshots.
 
+**Provisioner** (same Go binary, separate reconciler group)
+
+- Create and own the edge workloads for each fleet: Deployment or DaemonSet, Service,
+  ServiceAccount, PodDisruptionBudget, bootstrap ConfigMap (including the `controlPlane`
+  section). Owner references clean them up when the fleet goes away.
+- Write Gateway `status.addresses`: the load balancer address, or the node IPs of the pods
+  in HostNetwork mode.
+- In unmanaged mode, create nothing and only find the edge pods by a label selector.
+
 **Java edge**
 
 - Understand Gateway API routing semantics natively.
@@ -69,7 +79,8 @@
 | Gateway API version | Pin one release (standard channel) and its matching conformance suite |
 | Configuration model | Gateway API-aligned Java records, next to the existing `*Config` records |
 | Configuration transport | Versioned snapshots, pulled by the edge (HTTP long-poll), explicit acknowledgement |
-| Data-plane deployment | One shared edge Deployment per GatewayClass, installed by Helm; dedicated per-Gateway deployments later |
+| Controller vs. operator | One controller-manager with two reconciler groups: Gateway API controller and provisioner. No separate operator binary |
+| Data-plane deployment | Edge fleets provisioned by the controller from `SensepitchEdgeParameters`; shared or dedicated per Gateway; any exposure mode; unmanaged mode as escape hatch |
 | Route evaluation | Java runtime |
 | Kubernetes reference resolution | Go controller |
 | Backend addressing | Pod endpoints from EndpointSlices (not Service DNS), so weights and endpoint changes are exact |
@@ -116,8 +127,78 @@ pages are not part of Gateway API. For the first release:
 - From M2 on, application profiles may add application-owned path lists (bypass,
   no-bypass); the policy stays authoritative.
 
-## Client IP
+## Edge fleets and exposure
 
-The edge reads the client address from the TCP peer and has no PROXY protocol support.
-The Helm chart sets `externalTrafficPolicy: Local` on the edge Service. PROXY protocol
-support is a follow-up for load balancers that need it.
+The provisioner deals with two independent concepts:
+
+- A **fleet** is a set of edge pods that share one snapshot.
+- **Exposure** is how traffic reaches those pods.
+
+Both are configured in the `SensepitchEdgeParameters` resource. It is referenced from
+`GatewayClass.spec.parametersRef` (defaults) and from
+`Gateway.spec.infrastructure.parametersRef` (per Gateway):
+
+```yaml
+apiVersion: gateway.sensepitch.org/v1alpha1
+kind: SensepitchEdgeParameters
+metadata: { name: public }
+spec:
+  fleet: Shared                        # Shared: one fleet per parameters object
+                                       # Dedicated: one fleet per Gateway
+  workload:
+    kind: DaemonSet                    # or Deployment
+    replicas: 2                        # Deployment only
+    nodeSelector: { edge.sensepitch.org/public: "true" }
+    # tolerations, affinity, resources, topology spread
+  exposure:
+    mode: HostNetwork                  # LoadBalancer | NodePort | HostNetwork | ClusterIP | Unmanaged
+    service: { annotations: {}, loadBalancerClass: "", externalTrafficPolicy: Local }
+    hostNetwork: { addresses: from-node }   # or a list of explicit bind IPs
+    addressType: ExternalIP            # which node IP goes into status.addresses
+  downstream:                          # what sits in front of the edge
+    proxyProtocol: none                # none | v1 | v2
+    trustedProxies: []                 # CIDRs allowed to send X-Forwarded-For/-Proto
+```
+
+### The fleet is the selector
+
+- With `fleet: Shared`, every Gateway that references the same parameters object is served
+  by the same pods, so all of them share one IP.
+- With `fleet: Dedicated`, each Gateway gets its own pods. They can be isolated further by
+  `nodeSelector`.
+- In a shared fleet, listeners from different Gateways are merged by port and told apart by
+  SNI and hostname. Conflicts are reported in the listener status (`Conflicted`,
+  `PortUnavailable`), as the Gateway API spec allows for merged Gateways.
+- Routes choose their Gateway with `parentRefs`. Gateways restrict which routes may attach
+  with `allowedRoutes.namespaces.selector`.
+
+### Exposure variants
+
+| Variant | Settings |
+|---|---|
+| Load balancer, L4 passthrough (TLS at the edge) | `mode: LoadBalancer`, `externalTrafficPolicy: Local`, or `proxyProtocol: v2` when the load balancer supports it |
+| Load balancer terminates TLS | `mode: LoadBalancer` or `ClusterIP`, HTTP listeners only, `trustedProxies` or PROXY protocol; the edge takes the client IP and scheme from the forwarded headers |
+| Direct node ingress, DNS spreading | `mode: HostNetwork`, `workload.kind: DaemonSet` on labelled nodes; `status.addresses` lists the node IPs; external-dns (Gateway / HTTPRoute source) publishes A records for all of them |
+| NodePort | `mode: NodePort`, for setups with their own port forwarding |
+| One IP per Gateway | `fleet: Dedicated`, with a load balancer per Gateway, or HostNetwork on separate node pools or explicit bind addresses (`Gateway.spec.addresses`) |
+| One IP for all Gateways | `fleet: Shared` with any exposure mode |
+| Escape hatch | `mode: Unmanaged`: the pods are installed by hand or by Helm; the controller finds them by a label selector and only serves snapshots |
+
+DNS spreading uses the standard path: the controller writes `status.addresses` and
+external-dns reads them. No separate DNS integration is needed. When a node leaves, the
+controller removes its IP from the addresses before the pod drains. The drain time must be
+at least the DNS TTL.
+
+HostNetwork binds ports 80 and 443 on the node, so the provisioner adds the
+`NET_BIND_SERVICE` capability to the generated pod spec.
+
+### Client IP
+
+Today the edge reads the client address from the TCP peer only. Depending on the exposure:
+
+- HostNetwork, or a load balancer with `externalTrafficPolicy: Local`: the TCP peer is the
+  client.
+- A load balancer that supports it: PROXY protocol v1/v2 (Netty `HAProxyMessageDecoder`),
+  enabled per fleet.
+- A load balancer that terminates TLS: `X-Forwarded-For` and `X-Forwarded-Proto`, accepted
+  only from `trustedProxies`.

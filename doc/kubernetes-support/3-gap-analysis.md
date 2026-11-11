@@ -33,7 +33,9 @@ same loader can read JSON snapshots.
 | Upstream connections | No pooling (pool code disabled in `DefaultUpstream`), DNS via Netty `Bootstrap` | Endpoint selection by weight; pooling optional |
 | Health | No health or readiness endpoint | `/healthz`, `/readyz` on an opt-in admin port |
 | Shutdown | No shutdown hook, no draining | SIGTERM: not ready → drain → close → `shutdownGracefully` |
-| Client IP | TCP peer, `X-Forwarded-For` set; no PROXY protocol | Use `externalTrafficPolicy: Local`; PROXY protocol later |
+| Client IP | TCP peer, `X-Forwarded-For` set; no PROXY protocol | PROXY protocol v1/v2 per listener; incoming `X-Forwarded-For` / `-Proto` accepted only from trusted proxy CIDRs (load balancer terminating TLS) |
+| Bind address | One `listen.address` for all listeners | Bind address per listener, so one node can serve several IPs (one IP per Gateway in HostNetwork mode) |
+| Gateway merging | One listen configuration | Listeners from several Gateways merged by port in a shared fleet; hostname and SNI keep them apart |
 | Reserved paths | Only the deflector's `/.sensepitch.challenge.*` paths | Block `/.well-known/sensepitch-edge/*` from external requests (profile exposure) |
 | Response headers | Not sanitized (`FIXME` in `DownstreamHandler`) | Hop-by-hop header handling for conformance |
 

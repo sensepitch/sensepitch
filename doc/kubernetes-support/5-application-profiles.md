@@ -16,7 +16,7 @@ authentication and caching.
 - JSON with an explicit `schemaVersion`.
 - Published JSON schema; unknown major versions are rejected, unknown fields in a known
   version are ignored with a warning.
-- Documented as its own specification (step 8 in `6-phases.md`).
+- Documented as its own specification (step 9 in `6-phases.md`).
 
 ## Discovery
 

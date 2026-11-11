@@ -26,8 +26,11 @@ controller is its control plane.
    gateway.
 4. Let applications publish optional, application-owned gateway configuration ("profiles")
    that the controller discovers internally.
-5. Provide an independently installable controller, a Helm chart, OCI images,
-   documentation and automated releases.
+5. Provide an independently installable controller that also provisions the edge fleets, a
+   Helm chart, OCI images, documentation and automated releases.
+6. Support every common way of exposing the edge: a load balancer with transparent L4
+   forwarding, a load balancer that terminates TLS, direct ingress on the node IPs with DNS
+   spreading, an IP per Gateway, and one IP for all Gateways (see `1-architecture.md`).
 
 ## Design principles
 
