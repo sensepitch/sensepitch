@@ -82,6 +82,51 @@ class TimeoutsTest {
     assertThat(response.headers().toString()).contains("connection: close");
   }
 
+  /// After a response with keep alive the client has the read timeout to send the next request,
+  /// otherwise the connection is closed with 408. This happens for every idle keep-alive
+  /// connection.
+  @Test
+  public void keepAliveIdleTimeout() {
+    sendRequest("/empty-length");
+    rattle();
+    HttpResponse response = ingressChannel.readOutbound();
+    assertThat(response.headers().toString()).contains("keep-alive: timeout=10");
+    ticker.advance(9, SECONDS);
+    rattle();
+    assertThat(ingressChannel.isActive()).isTrue();
+    ticker.advance(1, SECONDS);
+    rattle();
+    assertThat(ingressChannel.isActive()).isFalse();
+    response = ingressChannel.readOutbound();
+    assertThat(response.status().code()).isEqualTo(408);
+    assertThat(response.headers().toString()).contains("connection: close");
+    assertThat(proxyMetrics.ingressReceiveTimeoutKeepAlive.getLongValue()).isEqualTo(1);
+    assertThat(proxyMetrics.ingressReceiveTimeoutFirstRequest.getLongValue()).isEqualTo(0);
+  }
+
+  /// Receiving a part of the request moves the deadline, the timeout is rescheduled instead of
+  /// firing when the original deadline passes.
+  @Test
+  public void receivingExtendsReadTimeout() {
+    ticker.advance(5, SECONDS);
+    rattle();
+    // headers only, the request is not complete, the upstream stays silent
+    ingressChannel.writeInbound(
+        new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/no-response"));
+    ticker.advance(5, SECONDS);
+    rattle();
+    assertThat(ingressChannel.isActive()).isTrue();
+    ticker.advance(4, SECONDS);
+    rattle();
+    assertThat(ingressChannel.isActive()).isTrue();
+    ticker.advance(1, SECONDS);
+    rattle();
+    assertThat(ingressChannel.isActive()).isFalse();
+    HttpResponse response = ingressChannel.readOutbound();
+    assertThat(response.status().code()).isEqualTo(408);
+    assertThat(proxyMetrics.ingressReceiveTimeoutFirstRequest.getLongValue()).isEqualTo(1);
+  }
+
   /// Status 200 but connection will be closed since content size unknown. No keep-alive header is
   /// added.
   @Test

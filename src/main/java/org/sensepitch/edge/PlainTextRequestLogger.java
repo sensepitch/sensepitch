@@ -131,12 +131,15 @@ public class PlainTextRequestLogger implements RequestLogger {
     return df.format(millisDelta / 1000.0);
   }
 
+  /// Escapes a value written in double quotes like Apache does: a backslash as `\\`, a quote as
+  /// `\"`. Escaping the backslash too ensures a value ending with a backslash cannot escape the
+  /// closing quote.
   String sanitize(String s) {
     if (s == null) {
       return "-";
     }
-    if (s.indexOf('"') >= 0) {
-      return s.replace("\"", "\\");
+    if (s.indexOf('"') >= 0 || s.indexOf('\\') >= 0) {
+      return s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
     return s;
   }

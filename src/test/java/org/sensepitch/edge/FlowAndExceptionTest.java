@@ -23,6 +23,7 @@ import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpServerKeepAliveHandler;
+import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.ReferenceCountUtil;
@@ -47,7 +48,11 @@ public class FlowAndExceptionTest {
   /// When set, every write to the upstream channel fails
   boolean failUpstreamWrites;
 
-  /// Upstream channels handed back for reuse
+  /// When set, [MockUpstream] returns a pending connect, completed by the test via
+  /// [#pendingConnect]
+  boolean deferConnect;
+
+  Promise<Channel> pendingConnect;
 
   RequestLogCapture requestLogCapture = new RequestLogCapture();
   RequestLogger requestLog = requestLogCapture.plainText();
@@ -123,6 +128,42 @@ public class FlowAndExceptionTest {
         new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, "/post"));
     ingressChannel.writeInbound(new DefaultLastHttpContent());
     upstreamChannel.pipeline().fireExceptionCaught(new SocketException("Connection reset"));
+  }
+
+  /// A request with body: reading from the client pauses until the upstream is connected, so a
+  /// large upload is not buffered in memory. Content that was already received is forwarded in
+  /// order after the connect.
+  @Test
+  public void requestBodyWaitsForUpstreamConnect() {
+    deferConnect = true;
+    HttpRequest post = new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, "/form");
+    HttpUtil.setContentLength(post, 3);
+    ingressChannel.writeInbound(post);
+    assertThat(ingressChannel.config().isAutoRead()).isFalse();
+    ingressChannel.writeInbound(new DefaultHttpContent(Unpooled.copiedBuffer(new byte[] {1, 2})));
+    ingressChannel.writeInbound(new DefaultLastHttpContent(Unpooled.copiedBuffer(new byte[] {3})));
+    pendingConnect.setSuccess(upstreamChannel(ingressChannel));
+    rattle();
+    assertThat(ingressChannel.config().isAutoRead()).isTrue();
+    assertThat((Object) upstreamChannel.readOutbound()).isSameAs(post);
+    HttpContent first = upstreamChannel.readOutbound();
+    assertThat(first.content().readableBytes()).isEqualTo(2);
+    first.release();
+    LastHttpContent last = upstreamChannel.readOutbound();
+    assertThat(last.content().readableBytes()).isEqualTo(1);
+    last.release();
+    assertThat(post.headers().get("X-Forwarded-Proto")).isEqualTo("https");
+  }
+
+  /// Without a body reading is not paused.
+  @Test
+  public void requestWithoutBodyKeepsReading() {
+    deferConnect = true;
+    ingressChannel.writeInbound(new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/"));
+    assertThat(ingressChannel.config().isAutoRead()).isTrue();
+    pendingConnect.setSuccess(upstreamChannel(ingressChannel));
+    rattle();
+    ingressChannel.finishAndReleaseAll();
   }
 
   /// The response travels from upstream via [ForwardHandler] to the client, hop-by-hop headers are
@@ -324,6 +365,9 @@ public class FlowAndExceptionTest {
       if (connectFailure != null) {
         promise.setFailure(connectFailure);
         return promise;
+      }
+      if (deferConnect) {
+        return pendingConnect = promise;
       }
       Channel upstreamChannel = upstreamChannel(downstreamContext.channel());
       promise.setSuccess(upstreamChannel);

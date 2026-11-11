@@ -11,8 +11,6 @@ import io.netty.handler.codec.http.DefaultHttpRequest;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpVersion;
-import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -44,15 +42,6 @@ public class DefaultBypassCheckTest {
 
   static HttpRequest get(String uri) {
     return new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, uri);
-  }
-
-  static Channel channelFrom(String ip) {
-    return new EmbeddedChannel() {
-      @Override
-      protected SocketAddress remoteAddress0() {
-        return new InetSocketAddress(ip, 4711);
-      }
-    };
   }
 
   @Test
@@ -87,8 +76,8 @@ public class DefaultBypassCheckTest {
   public void remoteAddress() {
     BypassCheck check =
         new DefaultBypassCheck(BypassConfig.builder().remotes(List.of("192.0.2.7")).build());
-    assertTrue(check.allowBypass(channelFrom("192.0.2.7"), get("/")));
-    assertFalse(check.allowBypass(channelFrom("192.0.2.8"), get("/")));
+    assertTrue(check.allowBypass(TestChannels.channelFrom("192.0.2.7"), get("/")));
+    assertFalse(check.allowBypass(TestChannels.channelFrom("192.0.2.8"), get("/")));
   }
 
   /// A DNS problem at startup is logged, the proxy still starts.
@@ -97,7 +86,7 @@ public class DefaultBypassCheckTest {
     BypassCheck check =
         new DefaultBypassCheck(
             BypassConfig.builder().remotes(List.of("does-not-exist.invalid")).build());
-    assertFalse(check.allowBypass(channelFrom("192.0.2.7"), get("/")));
+    assertFalse(check.allowBypass(TestChannels.channelFrom("192.0.2.7"), get("/")));
     assertThat(logs.messages(DefaultBypassCheck.class))
         .anySatisfy(m -> assertThat(m).contains("does-not-exist.invalid"));
   }

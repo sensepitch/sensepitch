@@ -3,6 +3,7 @@ package org.sensepitch.edge;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.netty.util.internal.logging.InternalLoggerFactory;
+import java.io.IOException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
@@ -30,5 +31,18 @@ public class LoggingTest {
   public void julLogger() {
     java.util.logging.Logger.getLogger("jul").warning("warn message to JUL");
     assertThat(logs.messages("jul")).containsExactly("warn message to JUL");
+  }
+
+  /// Connection errors name the remote address, so a misbehaving client or upstream can be found.
+  @Test
+  public void connectionErrorsContainRemoteAddress() {
+    ProxyLogger log = ProxyLogger.get(LoggingTest.class);
+    log.downstreamError(
+        TestChannels.channelFrom("192.0.2.7"), "reset", new IOException("Connection reset"));
+    log.upstreamError(
+        TestChannels.channelFrom("198.51.100.1"), "refused", new IOException("Connection refused"));
+    assertThat(logs.messages(LoggingTest.class))
+        .anySatisfy(m -> assertThat(m).contains("DOWNSTREAM ERROR reset 192.0.2.7"))
+        .anySatisfy(m -> assertThat(m).contains("UPSTREAM ERROR refused 198.51.100.1"));
   }
 }

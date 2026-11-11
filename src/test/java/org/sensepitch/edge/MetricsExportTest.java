@@ -3,17 +3,9 @@ package org.sensepitch.edge;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.sensepitch.edge.CompleteTest.COMMON_CONFIG;
 
-import io.netty.channel.Channel;
 import io.netty.channel.embedded.EmbeddedChannel;
-import io.netty.handler.codec.http.DefaultHttpHeaders;
-import io.netty.handler.codec.http.DefaultHttpRequest;
-import io.netty.handler.codec.http.DefaultHttpResponse;
-import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpMethod;
-import io.netty.handler.codec.http.HttpRequest;
-import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
-import io.netty.handler.codec.http.HttpVersion;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import io.prometheus.metrics.model.snapshots.HistogramSnapshot;
 import java.util.HashMap;
@@ -121,9 +113,9 @@ class MetricsExportTest {
     ExposeRequestCountPerStatusCodeHandler handler = new ExposeRequestCountPerStatusCodeHandler();
     PrometheusRegistry registry = new PrometheusRegistry();
     handler.registerCollectors(registry::register);
-    handler.logRequest(logInfo(HttpMethod.GET, 42));
-    handler.logRequest(logInfo(HttpMethod.GET, 777));
-    handler.logRequest(logInfo(RequestLogInfo.NIL_METHOD, 408));
+    handler.logRequest(TestRequestLogInfo.of(HttpMethod.GET, 42));
+    handler.logRequest(TestRequestLogInfo.of(HttpMethod.GET, 777));
+    handler.logRequest(TestRequestLogInfo.of(RequestLogInfo.NIL_METHOD, 408));
     var snapshots = new MetricsAndMemoryTest.Snapshots(registry.scrape());
     assertThat(histogramCount(snapshots, "example.com", "GET", "99")).isEqualTo(1);
     assertThat(histogramCount(snapshots, "example.com", "GET", "600")).isEqualTo(1);
@@ -158,64 +150,5 @@ class MetricsExportTest {
     return snapshots
         .counter("sensepitch_deflector_requests", "ingress", ingress, "outcome", outcome)
         .getValue();
-  }
-
-  static RequestLogInfo logInfo(HttpMethod method, int status) {
-    HttpRequest request = new DefaultHttpRequest(HttpVersion.HTTP_1_1, method, "/");
-    request.headers().set("host", "example.com");
-    HttpResponse response =
-        new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.valueOf(status));
-    return new FakeLogInfo(request, response);
-  }
-
-  /// Only request and response are needed for the metrics
-  record FakeLogInfo(HttpRequest request, HttpResponse response) implements RequestLogInfo {
-    public Channel channel() {
-      return null;
-    }
-
-    public String requestId() {
-      return "0";
-    }
-
-    public String requestHeaderHost() {
-      return request.headers().get("host");
-    }
-
-    public long contentBytes() {
-      return 0;
-    }
-
-    public long bytesSent() {
-      return 0;
-    }
-
-    public long bytesReceived() {
-      return 0;
-    }
-
-    public long requestStartTimeMillis() {
-      return 0;
-    }
-
-    public Throwable error() {
-      return null;
-    }
-
-    public HttpHeaders trailingHeaders() {
-      return new DefaultHttpHeaders();
-    }
-
-    public long receiveDurationNanos() {
-      return 0;
-    }
-
-    public long responseTimeNanos() {
-      return 0;
-    }
-
-    public long totalDurationNanos() {
-      return 0;
-    }
   }
 }

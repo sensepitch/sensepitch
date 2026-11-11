@@ -2,6 +2,7 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -124,5 +125,61 @@ public class AsyncRequestLogWriterTest {
         .singleElement()
         .asString()
         .contains("Error writing request log");
+  }
+
+  /// A record larger than the output buffer is written directly, so the error comes from the
+  /// write, not from the flush.
+  @Test
+  public void errorWritingLargeRecordIsReported() {
+    OutputStream failing =
+        new OutputStream() {
+          @Override
+          public void write(int b) throws IOException {
+            throw new IOException("broken pipe");
+          }
+
+          @Override
+          public void write(byte[] b, int off, int len) throws IOException {
+            throw new IOException("broken pipe");
+          }
+        };
+    AsyncRequestLogWriter writer = new AsyncRequestLogWriter(failing, 16);
+    writer.writeLine("x".repeat(AsyncRequestLogWriter.BUFFER_SIZE + 1));
+    writer.close();
+    assertThat(logs.messages(AsyncRequestLogWriter.class))
+        .singleElement()
+        .asString()
+        .contains("Error writing request log");
+  }
+
+  /// The writer exposes dropped records and the queue length. In production the writer is the
+  /// request log output, so the proxy registers these, see [Proxy].
+  @Test
+  public void metrics() throws Exception {
+    CountDownLatch release = new CountDownLatch(1);
+    OutputStream blocking =
+        new OutputStream() {
+          @Override
+          public void write(int b) throws IOException {
+            try {
+              release.await();
+            } catch (InterruptedException e) {
+              throw new IOException(e);
+            }
+          }
+        };
+    AsyncRequestLogWriter writer = new AsyncRequestLogWriter(blocking, 2);
+    PrometheusRegistry registry = new PrometheusRegistry();
+    writer.registerCollectors(registry::register);
+    for (int i = 0; i < 10; i++) {
+      writer.writeLine("x".repeat(AsyncRequestLogWriter.BUFFER_SIZE + 1));
+    }
+    var snapshots = new MetricsAndMemoryTest.Snapshots(registry.scrape());
+    assertThat(snapshots.counter("sensepitch_request_log_dropped").getValue())
+        .isEqualTo(writer.droppedCount())
+        .isPositive();
+    assertThat(snapshots.gauge("sensepitch_request_log_queued").getValue()).isBetween(0.0, 2.0);
+    release.countDown();
+    writer.close();
   }
 }
