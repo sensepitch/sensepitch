@@ -235,6 +235,8 @@ public final class RequestLogFieldsWriter {
       RequestLogInfo info, HttpHeaders headers, RequestLogSink sink) {
     sink.string(SensepitchLogFields.CONNECTION_ID, info.connectionId());
     sink.number(SensepitchLogFields.CONNECTION_REQUEST_COUNT, info.connectionRequestCount());
+    sink.optionalString(SensepitchLogFields.UPSTREAM_NAME, info.upstreamName());
+    sink.optionalString(SensepitchLogFields.UPSTREAM_TARGET, info.upstreamTarget());
     sink.optionalString(SensepitchLogFields.IP_TRAITS, headers.get(IpTraitsHandler.TRAITS_HEADER));
     String asn = headers.get(IpTraitsHandler.ASN_HEADER);
     if (asn != null) {

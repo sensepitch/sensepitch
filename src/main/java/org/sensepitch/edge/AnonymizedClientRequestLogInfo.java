@@ -108,6 +108,16 @@ public class AnonymizedClientRequestLogInfo implements RequestLogInfo {
   }
 
   @Override
+  public String upstreamName() {
+    return info.upstreamName();
+  }
+
+  @Override
+  public String upstreamTarget() {
+    return info.upstreamTarget();
+  }
+
+  @Override
   public String tlsProtocol() {
     return info.tlsProtocol();
   }

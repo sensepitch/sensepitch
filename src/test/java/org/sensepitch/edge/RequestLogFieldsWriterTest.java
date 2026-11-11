@@ -214,6 +214,22 @@ class RequestLogFieldsWriterTest {
         .contains("cookie");
   }
 
+  /// The upstream that served the request, absent when the edge answered itself
+  @Test
+  void upstream() {
+    TestRequestLogInfo info =
+        TestRequestLogInfo.of(HttpMethod.GET, 200)
+            .withUpstream("sites.example.com.paths./api/*.upstream", "backend:8080");
+    assertThat(fields(info).fields)
+        .containsEntry("sensepitch.upstream.name", "sites.example.com.paths./api/*.upstream")
+        .containsEntry("sensepitch.upstream.target", "backend:8080");
+    TestRequestLogInfo response =
+        TestRequestLogInfo.of(HttpMethod.GET, 200).withUpstream("sites.example.com.response", null);
+    assertThat(fields(response).fields)
+        .containsEntry("sensepitch.upstream.name", "sites.example.com.response")
+        .doesNotContainKey("sensepitch.upstream.target");
+  }
+
   /// Absent values are left out, there are no placeholders
   @Test
   void absentValuesAreLeftOut() {
@@ -230,6 +246,8 @@ class RequestLogFieldsWriterTest {
             "user_agent.original",
             "geo.country.iso_code",
             "sensepitch.client.asn",
+            "sensepitch.upstream.name",
+            "sensepitch.upstream.target",
             "http.request.header.traceparent");
   }
 

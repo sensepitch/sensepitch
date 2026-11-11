@@ -682,6 +682,7 @@ Attributes without a semantic convention:
 | Name | Content |
 |---|---|
 | `sensepitch.connection.id`, `sensepitch.connection.request_count` | groups the requests of a keep-alive connection |
+| `sensepitch.upstream.name`, `sensepitch.upstream.target` | the upstream that served the request: its name in the configuration, e.g. `upstreams.backend` or `sites.example.com.paths./api/*.upstream`, and its configured `host:port`. A static response has its path as name, e.g. `sites.example.com.response`, and no target. Absent when the edge answered itself, e.g. with a challenge |
 | `sensepitch.client.asn` | autonomous system number of the client address |
 | `sensepitch.ip_traits` | traits of the client address, e.g. `asn=64496, country=DE, crawler=...` |
 | `sensepitch.tls.client.ja4` | JA4 TLS fingerprint, if enabled |

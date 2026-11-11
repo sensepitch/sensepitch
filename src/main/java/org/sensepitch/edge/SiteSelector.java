@@ -24,6 +24,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -130,9 +131,9 @@ public class SiteSelector {
                 fallbackSupplier,
                 protectionSupplier,
                 () -> new DownstreamHandler(upstream, ctx.metrics()));
-    Function<ResponseConfig, Suppliers> responseLeaf =
-        response -> {
-          Upstream upstream = constructResponseUpstream(response);
+    BiFunction<String, ResponseConfig, Suppliers> responseLeaf =
+        (name, response) -> {
+          Upstream upstream = constructResponseUpstream(name, response);
           return new Suppliers(
               () -> NO_FALLBACK,
               protectionSupplier,
@@ -140,7 +141,7 @@ public class SiteSelector {
         };
     Suppliers defaultTarget;
     if (site.response() != null) {
-      defaultTarget = responseLeaf.apply(site.response());
+      defaultTarget = responseLeaf.apply(sitePrefix + ".response", site.response());
     } else if (site.upstream() != null) {
       defaultTarget = leaf.apply(resolveUpstream(sitePrefix + ".upstream", site.upstream()));
     } else if (defaultUpstream != null) {
@@ -183,7 +184,7 @@ public class SiteSelector {
       Suppliers defaultTarget,
       Map<String, PathRouteConfig> paths,
       Function<Upstream, Suppliers> leaf,
-      Function<ResponseConfig, Suppliers> responseLeaf,
+      BiFunction<String, ResponseConfig, Suppliers> responseLeaf,
       List<Routing.CookieOverride<Suppliers>> overrides) {
     Map<String, Suppliers> exact = new HashMap<>();
     PrefixTree<Suppliers> tree = new PrefixTree<>();
@@ -195,7 +196,7 @@ public class SiteSelector {
             }
             Suppliers target =
                 route.response() != null
-                    ? responseLeaf.apply(route.response())
+                    ? responseLeaf.apply(prefix + ".paths." + path + ".response", route.response())
                     : leaf.apply(
                         resolveUpstream(prefix + ".paths." + path + ".upstream", route.upstream()));
             if (path.endsWith("*")) {
@@ -208,7 +209,8 @@ public class SiteSelector {
     return new Routing<>(defaultTarget, exact, tree, overrides);
   }
 
-  private static Upstream constructResponseUpstream(ResponseConfig cfg) {
+  /// @param name name of the response in the configuration, logged as upstream name
+  private static Upstream constructResponseUpstream(String name, ResponseConfig cfg) {
     String location = cfg.location();
     // ResponseConfig already defaults the status of a redirect
     HttpResponseStatus status =
@@ -226,6 +228,11 @@ public class SiteSelector {
         cfg.contentType() != null ? cfg.contentType() : FallbackConfig.DEFAULT_CONTENT_TYPE;
     List<String> cookies = cfg.encodedCookies();
     return new Upstream() {
+      @Override
+      public String name() {
+        return name;
+      }
+
       @Override
       public Future<Channel> connect(ChannelHandlerContext ingressContext) {
         Promise<Channel> promise = ingressContext.executor().newPromise();

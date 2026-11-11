@@ -172,6 +172,10 @@ class ExternalTcpIT {
     assertThat(record.get("tls.protocol.version").asText()).isIn("1.2", "1.3");
     assertThat(record.get("tls.cipher").asText()).startsWith("TLS_");
     assertThat(record.get("http.response.status_code").asInt()).isEqualTo(200);
+    assertThat(record.get("sensepitch.upstream.name").asText())
+        .isEqualTo("sites.upstream.com.upstream");
+    assertThat(record.get("sensepitch.upstream.target").asText())
+        .isEqualTo("127.0.0.1:" + upstream.getAddress().getPort());
   }
 
   /// The record is written when the response is sent, which can be after the client read it

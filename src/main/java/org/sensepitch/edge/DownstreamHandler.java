@@ -51,6 +51,11 @@ public class DownstreamHandler extends ChannelDuplexHandler {
                 HttpResponseStatus.BAD_REQUEST.code(), "another request is unexpected"));
         return;
       }
+      RequestLoggingHandler requestLog = ctx.pipeline().get(RequestLoggingHandler.class);
+      // absent in some test pipelines
+      if (requestLog != null) {
+        requestLog.setUpstream(upstream);
+      }
       upstreamChannelFuture = upstream.connect(ctx);
       augmentHeadersAndForwardRequest(ctx, request);
     } else if (msg instanceof LastHttpContent) {

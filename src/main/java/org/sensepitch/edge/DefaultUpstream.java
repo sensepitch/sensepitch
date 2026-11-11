@@ -21,11 +21,13 @@ import io.netty.util.concurrent.Promise;
 public class DefaultUpstream implements Upstream {
 
   private final String name;
+  private final String target;
   private final Bootstrap bootstrap;
 
   /// @param name identifies the upstream within the configuration, see [UpstreamRegistry]
   public DefaultUpstream(ProxyContext ctx, String name, UpstreamConfig cfg) {
     this.name = name;
+    this.target = cfg.target();
     String[] sa = cfg.target().split(":");
     int port = 80;
     String target = sa[0];
@@ -45,8 +47,14 @@ public class DefaultUpstream implements Upstream {
             .remoteAddress(target, port);
   }
 
+  @Override
   public String name() {
     return name;
+  }
+
+  @Override
+  public String target() {
+    return target;
   }
 
   void addHttpHandler(ChannelPipeline pipeline) {

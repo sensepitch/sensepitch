@@ -31,6 +31,16 @@ public interface RequestLogInfo {
   /// Local port the request was received on, `0` if unknown
   int serverPort();
 
+  /// Name of the upstream selected for the request, see [Upstream#name()]
+  ///
+  /// @return the name, or `null` if no upstream was selected, e.g. the edge answered itself
+  String upstreamName();
+
+  /// Target of the upstream selected for the request, see [Upstream#target()]
+  ///
+  /// @return `host:port`, or `null` if no upstream was selected or it has no target
+  String upstreamTarget();
+
   /// Negotiated TLS protocol as reported by the JDK, e.g. `TLSv1.3`, or `null` without TLS
   String tlsProtocol();
 

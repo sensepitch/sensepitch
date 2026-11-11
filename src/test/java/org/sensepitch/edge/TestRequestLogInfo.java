@@ -22,7 +22,9 @@ record TestRequestLogInfo(
     String tlsProtocol,
     HttpRequest request,
     HttpResponse response,
-    Throwable error)
+    Throwable error,
+    String upstreamName,
+    String upstreamTarget)
     implements RequestLogInfo {
 
   static final String TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736";
@@ -34,13 +36,19 @@ record TestRequestLogInfo(
     request.headers().set(HttpHeaderNames.HOST, "example.com");
     HttpResponse response =
         new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.valueOf(status));
-    return new TestRequestLogInfo(null, null, request, response, null);
+    return new TestRequestLogInfo(null, null, request, response, null, null, null);
   }
 
   TestRequestLogInfo withClientAddress(String ip) {
     try {
       return new TestRequestLogInfo(
-          InetAddress.getByName(ip), tlsProtocol, request, response, error);
+          InetAddress.getByName(ip),
+          tlsProtocol,
+          request,
+          response,
+          error,
+          upstreamName,
+          upstreamTarget);
     } catch (UnknownHostException e) {
       throw new IllegalArgumentException(e);
     }
@@ -48,11 +56,19 @@ record TestRequestLogInfo(
 
   /// With a TLS connection, cipher is always `TLS_AES_128_GCM_SHA256`
   TestRequestLogInfo withTls(String protocol) {
-    return new TestRequestLogInfo(clientAddress, protocol, request, response, error);
+    return new TestRequestLogInfo(
+        clientAddress, protocol, request, response, error, upstreamName, upstreamTarget);
   }
 
   TestRequestLogInfo withError(Throwable error) {
-    return new TestRequestLogInfo(clientAddress, tlsProtocol, request, response, error);
+    return new TestRequestLogInfo(
+        clientAddress, tlsProtocol, request, response, error, upstreamName, upstreamTarget);
+  }
+
+  /// With an upstream that served the request
+  TestRequestLogInfo withUpstream(String name, String target) {
+    return new TestRequestLogInfo(
+        clientAddress, tlsProtocol, request, response, error, name, target);
   }
 
   @Override

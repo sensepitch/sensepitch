@@ -78,6 +78,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   private final boolean trustTraceparent;
 
   private long requestBodyBytes;
+  private Upstream upstream;
   private TraceContext traceContext;
   private String clientTraceparent;
 
@@ -218,6 +219,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     bytesReceivedStart = countByteIoHandler.getBytesReceived();
     bytesSentStart = countByteIoHandler.getBytesSent();
     request = null;
+    upstream = null;
     traceContext = null;
     clientTraceparent = null;
   }
@@ -253,6 +255,11 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     if (requestStartTimeNanos == 0) {
       requestStartTimeNanos = now;
     }
+  }
+
+  /// Called by the [DownstreamHandler] with the upstream selected for the request
+  public void setUpstream(Upstream upstream) {
+    this.upstream = upstream;
   }
 
   public void setException(Throwable throwable) {
@@ -307,6 +314,16 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
       return address.getPort();
     }
     return 0;
+  }
+
+  @Override
+  public String upstreamName() {
+    return upstream != null ? upstream.name() : null;
+  }
+
+  @Override
+  public String upstreamTarget() {
+    return upstream != null ? upstream.target() : null;
   }
 
   @Override

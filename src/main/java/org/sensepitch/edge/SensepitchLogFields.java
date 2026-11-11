@@ -18,6 +18,15 @@ public final class SensepitchLogFields {
   /// Number of requests before this one on the same connection
   public static final String CONNECTION_REQUEST_COUNT = "sensepitch.connection.request_count";
 
+  /// Name of the upstream selected for the request in the configuration, e.g.
+  /// `upstreams.backend` or `sites.example.com.paths./api/*.upstream`, or of the static response,
+  /// e.g. `sites.example.com.response`. Absent when the edge answered itself. OpenTelemetry has no
+  /// attribute for the upstream of a proxy.
+  public static final String UPSTREAM_NAME = "sensepitch.upstream.name";
+
+  /// Configured target of the selected upstream, `host:port`
+  public static final String UPSTREAM_TARGET = "sensepitch.upstream.target";
+
   /// Traits of the client address, e.g. `asn=64496, country=DE, crawler=...`
   public static final String IP_TRAITS = "sensepitch.ip_traits";
 

@@ -101,6 +101,25 @@ class ProxyOptionsTest {
     }
   }
 
+  /// A static response from the configuration is logged with its configuration path as upstream
+  /// name, it has no target. The edge answering itself, here with the challenge of the protection,
+  /// logs no upstream.
+  @Test
+  void upstreamOfStaticResponse() throws Exception {
+    var steps = new CompleteTest.Steps().given_initialized_proxy_with(COMMON_CONFIG);
+    steps.when_requesting("example.com", "/").then_the_response_status_is(HttpResponseStatus.OK);
+    steps.when_requesting("withprotection.com", "/");
+    steps.finish_and_check_for_leaks();
+    var json = new com.fasterxml.jackson.databind.ObjectMapper();
+    var response = json.readTree(steps.requestLog.lines().get(0));
+    assertThat(response.get("sensepitch.upstream.name").asText())
+        .isEqualTo("sites.example.com.response");
+    assertThat(response.has("sensepitch.upstream.target")).isFalse();
+    var challenge = json.readTree(steps.requestLog.lines().get(1));
+    assertThat(challenge.get("server.address").asText()).isEqualTo("withprotection.com");
+    assertThat(challenge.has("sensepitch.upstream.name")).as("answered by the edge").isFalse();
+  }
+
   /// Timeouts from the configuration are announced to the client in the keep-alive header.
   @Test
   void connectionSettings() {
