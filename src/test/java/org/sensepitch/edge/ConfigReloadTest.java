@@ -169,6 +169,22 @@ class ConfigReloadTest {
     assertThat(second.upstreams().lookup("upstream")).isSameAs(defaultUpstream);
   }
 
+  /// The config id identifies the configuration: equal for an unchanged one, different after a
+  /// change
+  @Test
+  void configIdChangesWithTheConfiguration() {
+    String first = steps.proxy.state().configId();
+    assertThat(first).matches("[0-9a-f]{12}");
+    reload(CONFIG);
+    assertThat(steps.proxy.state().configId()).as("unchanged").isEqualTo(first);
+    reload(CONFIG.toBuilder().sites(sites("a.com", response("changed"))).build());
+    assertThat(steps.proxy.state().configId()).isNotEqualTo(first);
+    // computed from the configuration with the map keys injected, as on every node
+    assertThat(EdgeState.configId(steps.proxy.state().config()))
+        .as("same id on another node")
+        .isEqualTo(steps.proxy.state().configId());
+  }
+
   @Test
   void ipLookupOnlyRebuiltWhenChanged() {
     IpTraitsLookup none = steps.proxy.state().ipTraitsLookup();

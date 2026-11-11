@@ -14,21 +14,32 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 
 /// A [RequestLogInfo] for testing request loggers and metrics without a pipeline. Byte counts,
-/// durations and the trace context are fixed values.
+/// durations and the trace context are fixed values. The `with…` methods set a value and return
+/// this instance, each test creates its own via [#of(HttpMethod, int)].
 ///
 /// @author Jens Wilke
-record TestRequestLogInfo(
-    InetAddress clientAddress,
-    String tlsProtocol,
-    HttpRequest request,
-    HttpResponse response,
-    Throwable error,
-    String upstreamName,
-    String upstreamTarget)
-    implements RequestLogInfo {
+final class TestRequestLogInfo implements RequestLogInfo {
 
   static final String TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736";
   static final String SPAN_ID = "00f067aa0ba902b7";
+
+  private final HttpRequest request;
+  private final HttpResponse response;
+  private InetAddress clientAddress;
+  private String tlsProtocol;
+  private Throwable error;
+  private String upstreamName;
+  private String upstreamTarget;
+  private RequestOutcome outcome = RequestOutcome.COMPLETED;
+  private int upstreamStatus;
+  private String route;
+  private String configId;
+  private String protectionOutcome;
+
+  private TestRequestLogInfo(HttpRequest request, HttpResponse response) {
+    this.request = request;
+    this.response = response;
+  }
 
   /// Request for `example.com/` with the given method and response status, no client address
   static TestRequestLogInfo of(HttpMethod method, int status) {
@@ -36,39 +47,115 @@ record TestRequestLogInfo(
     request.headers().set(HttpHeaderNames.HOST, "example.com");
     HttpResponse response =
         new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.valueOf(status));
-    return new TestRequestLogInfo(null, null, request, response, null, null, null);
+    return new TestRequestLogInfo(request, response);
   }
 
   TestRequestLogInfo withClientAddress(String ip) {
     try {
-      return new TestRequestLogInfo(
-          InetAddress.getByName(ip),
-          tlsProtocol,
-          request,
-          response,
-          error,
-          upstreamName,
-          upstreamTarget);
+      clientAddress = InetAddress.getByName(ip);
     } catch (UnknownHostException e) {
       throw new IllegalArgumentException(e);
     }
+    return this;
   }
 
   /// With a TLS connection, cipher is always `TLS_AES_128_GCM_SHA256`
   TestRequestLogInfo withTls(String protocol) {
-    return new TestRequestLogInfo(
-        clientAddress, protocol, request, response, error, upstreamName, upstreamTarget);
+    tlsProtocol = protocol;
+    return this;
   }
 
   TestRequestLogInfo withError(Throwable error) {
-    return new TestRequestLogInfo(
-        clientAddress, tlsProtocol, request, response, error, upstreamName, upstreamTarget);
+    this.error = error;
+    return this;
   }
 
   /// With an upstream that served the request
   TestRequestLogInfo withUpstream(String name, String target) {
-    return new TestRequestLogInfo(
-        clientAddress, tlsProtocol, request, response, error, name, target);
+    upstreamName = name;
+    upstreamTarget = target;
+    return this;
+  }
+
+  TestRequestLogInfo withOutcome(RequestOutcome outcome, int upstreamStatus) {
+    this.outcome = outcome;
+    this.upstreamStatus = upstreamStatus;
+    return this;
+  }
+
+  TestRequestLogInfo withRoute(String route) {
+    this.route = route;
+    return this;
+  }
+
+  TestRequestLogInfo withConfigId(String configId) {
+    this.configId = configId;
+    return this;
+  }
+
+  TestRequestLogInfo withProtectionOutcome(String protectionOutcome) {
+    this.protectionOutcome = protectionOutcome;
+    return this;
+  }
+
+  @Override
+  public HttpRequest request() {
+    return request;
+  }
+
+  @Override
+  public HttpResponse response() {
+    return response;
+  }
+
+  @Override
+  public InetAddress clientAddress() {
+    return clientAddress;
+  }
+
+  @Override
+  public String tlsProtocol() {
+    return tlsProtocol;
+  }
+
+  @Override
+  public Throwable error() {
+    return error;
+  }
+
+  @Override
+  public String upstreamName() {
+    return upstreamName;
+  }
+
+  @Override
+  public String upstreamTarget() {
+    return upstreamTarget;
+  }
+
+  @Override
+  public RequestOutcome outcome() {
+    return outcome;
+  }
+
+  @Override
+  public int upstreamStatus() {
+    return upstreamStatus;
+  }
+
+  @Override
+  public String route() {
+    return route;
+  }
+
+  @Override
+  public String configId() {
+    return configId;
+  }
+
+  @Override
+  public String protectionOutcome() {
+    return protectionOutcome;
   }
 
   @Override

@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import javax.net.ssl.SSLException;
 import org.sensepitch.edge.config.KeyInjector;
 import org.yaml.snakeyaml.DumperOptions;
@@ -62,6 +63,9 @@ public class Proxy implements ProxyContext {
   private final Ja4HeaderHandler ja4HeaderHandler;
   private final RequestLogOutput requestLogOutput;
   private final boolean trustTraceparent;
+
+  /// Id of the active configuration, read by the request logging handler per request
+  private final Supplier<String> configIds = () -> state.get().configId();
 
   /// Proxy writing the request log to standard out, see [AsyncRequestLogWriter]
   public Proxy(ProxyConfig config) {
@@ -356,7 +360,8 @@ public class Proxy implements ProxyContext {
     // logger sits between codec and rest so it sees header modifications
     // from timeout and keep alive below
     // pipeline.addLast(new LoggingHandler(LogLevel.INFO, ByteBufFormat.SIMPLE));
-    pipeline.addLast(new RequestLoggingHandler(metrics, requestLogger, trustTraceparent));
+    pipeline.addLast(
+        new RequestLoggingHandler(metrics, requestLogger, trustTraceparent, configIds));
     pipeline.addLast(new IngressTimeoutHandler(connectionConfig, metrics));
     pipeline.addLast(new HttpServerKeepAliveHandler());
     pipeline.addLast(new IpTraitsHandler(() -> state.get().ipTraitsLookup()));

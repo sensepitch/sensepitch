@@ -11,6 +11,7 @@ import java.util.List;
 public class RequestLogCapture implements RequestLogOutput {
 
   private final List<String> lines = new ArrayList<>();
+  private final List<RequestOutcome> outcomes = new ArrayList<>();
 
   @Override
   public void writeLine(String line) {
@@ -20,9 +21,23 @@ public class RequestLogCapture implements RequestLogOutput {
     }
   }
 
-  /// Request logger writing the plain text format into this capture
+  /// Request logger writing the plain text format into this capture. It also records the outcome
+  /// of each request, which the plain text format does not show, see [#outcomes()].
   public RequestLogger plainText() {
-    return new PlainTextRequestLogger(this);
+    PlainTextRequestLogger text = new PlainTextRequestLogger(this);
+    return info -> {
+      synchronized (lines) {
+        outcomes.add(info.outcome());
+      }
+      text.logRequest(info);
+    };
+  }
+
+  /// Outcomes of the requests logged via [#plainText()] so far
+  public List<RequestOutcome> outcomes() {
+    synchronized (lines) {
+      return List.copyOf(outcomes);
+    }
   }
 
   /// Request log lines written so far

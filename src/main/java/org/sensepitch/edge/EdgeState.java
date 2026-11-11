@@ -3,8 +3,12 @@ package org.sensepitch.edge;
 import io.netty.handler.ssl.SslContext;
 import io.netty.util.Mapping;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -17,6 +21,8 @@ import java.util.Set;
 /// @param certificates description of the loaded certificates by host, for logging changes
 /// @param knownHosts hosts accepted by [SanitizeHostHandler], already filtered
 /// @param upstreams the upstreams in use, handed to the next state to take over unchanged ones
+/// @param configId short hash of the configuration, logged with each request, see
+///   [#configId(ProxyConfig)]
 /// @author Jens Wilke
 record EdgeState(
     ProxyConfig config,
@@ -26,7 +32,25 @@ record EdgeState(
     Set<String> knownHosts,
     UnservicedHost unservicedHost,
     IpTraitsLookup ipTraitsLookup,
-    UpstreamRegistry upstreams) {
+    UpstreamRegistry upstreams,
+    String configId) {
+
+  /// Length of the config id in hex characters, 48 bits, enough to tell configurations apart
+  static final int CONFIG_ID_LENGTH = 12;
+
+  /// Short hash of the configuration: the start of the SHA-256 of its YAML form. The same
+  /// configuration gives the same id on every node with the same edge version.
+  static String configId(ProxyConfig config) {
+    try {
+      byte[] hash =
+          MessageDigest.getInstance("SHA-256")
+              .digest(Proxy.toYaml(config).getBytes(StandardCharsets.UTF_8));
+      return HexFormat.of().formatHex(hash).substring(0, CONFIG_ID_LENGTH);
+    } catch (NoSuchAlgorithmException e) {
+      // every JDK has SHA-256
+      throw new IllegalStateException(e);
+    }
+  }
 
   /// Builds and validates a complete state. Nothing of the previous state is modified or closed,
   /// so on an exception the previous state can stay active.
@@ -68,7 +92,8 @@ record EdgeState(
         SanitizeHostHandler.filterKnownHosts(knownHosts),
         unservicedHost,
         ipTraitsLookup,
-        upstreams);
+        upstreams,
+        configId(config));
   }
 
   private static IpTraitsLookup buildIpTraitsLookup(IpLookupConfig cfg) {

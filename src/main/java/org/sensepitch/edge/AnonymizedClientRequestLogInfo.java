@@ -108,6 +108,31 @@ public class AnonymizedClientRequestLogInfo implements RequestLogInfo {
   }
 
   @Override
+  public RequestOutcome outcome() {
+    return info.outcome();
+  }
+
+  @Override
+  public int upstreamStatus() {
+    return info.upstreamStatus();
+  }
+
+  @Override
+  public String route() {
+    return info.route();
+  }
+
+  @Override
+  public String configId() {
+    return info.configId();
+  }
+
+  @Override
+  public String protectionOutcome() {
+    return info.protectionOutcome();
+  }
+
+  @Override
   public String upstreamName() {
     return info.upstreamName();
   }

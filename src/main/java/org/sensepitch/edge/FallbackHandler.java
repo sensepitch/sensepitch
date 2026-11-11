@@ -97,6 +97,11 @@ public class FallbackHandler extends ChannelOutboundHandlerAdapter {
 
   private void writeFallback(
       ChannelHandlerContext ctx, HttpResponse source, ChannelPromise promise) {
+    RequestLoggingHandler requestLog = RequestLoggingHandler.find(ctx);
+    if (requestLog != null) {
+      requestLog.setOutcome(RequestOutcome.FALLBACK);
+      requestLog.setUpstreamStatus(source.status().code());
+    }
     FullHttpResponse fallback = buildFallback(ctx, source);
     ReferenceCountUtil.release(source);
     ctx.write(fallback, promise);

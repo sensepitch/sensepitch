@@ -58,6 +58,9 @@ public final class RequestLogFieldsWriter {
   private static final String[] LOGGED_HEADER_KEYS =
       LOGGED_HEADERS.stream().map(OtelLogFields::requestHeader).toArray(String[]::new);
 
+  private static final String CONTENT_TYPE_KEY =
+      OtelLogFields.responseHeader(HttpHeaderNames.CONTENT_TYPE.toString());
+
   private static final String TRACEPARENT_KEY =
       OtelLogFields.requestHeader(TraceContext.TRACEPARENT);
 
@@ -110,8 +113,16 @@ public final class RequestLogFieldsWriter {
     sink.body(request.method().name(), request.uri(), status);
     writeClientAndServer(info, headers, sink);
     writeRequest(request, sink);
+    sink.optionalString(OtelLogFields.HTTP_ROUTE, info.route());
     writeTls(info, sink);
     sink.number(OtelLogFields.HTTP_RESPONSE_STATUS_CODE, status);
+    // single valued by its definition, get does not allocate an iterator
+    String contentType = response.headers().get(HttpHeaderNames.CONTENT_TYPE);
+    if (contentType != null) {
+      sink.startArray(CONTENT_TYPE_KEY);
+      sink.arrayValue(contentType);
+      sink.endArray();
+    }
     sink.number(OtelLogFields.HTTP_REQUEST_BODY_SIZE, info.requestBodyBytes());
     sink.number(OtelLogFields.HTTP_RESPONSE_BODY_SIZE, info.contentBytes());
     sink.number(OtelLogFields.HTTP_REQUEST_SIZE, info.bytesReceived());
@@ -233,6 +244,10 @@ public final class RequestLogFieldsWriter {
 
   private static void writeSensepitch(
       RequestLogInfo info, HttpHeaders headers, RequestLogSink sink) {
+    sink.string(SensepitchLogFields.REQUEST_OUTCOME, info.outcome().value());
+    sink.optionalNumber(SensepitchLogFields.UPSTREAM_STATUS, info.upstreamStatus());
+    sink.optionalString(SensepitchLogFields.PROTECTION_OUTCOME, info.protectionOutcome());
+    sink.optionalString(SensepitchLogFields.CONFIG_ID, info.configId());
     sink.string(SensepitchLogFields.CONNECTION_ID, info.connectionId());
     sink.number(SensepitchLogFields.CONNECTION_REQUEST_COUNT, info.connectionRequestCount());
     sink.optionalString(SensepitchLogFields.UPSTREAM_NAME, info.upstreamName());

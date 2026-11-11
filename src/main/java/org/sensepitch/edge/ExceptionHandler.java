@@ -136,6 +136,8 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
       return;
     }
     metrics.ingressErrorCounter.labelValues(phase, "other").inc();
+    // a more specific outcome, e.g. a timeout, was reported before the exception, it wins
+    loggingHandler.setOutcome(RequestOutcome.EDGE_ERROR);
     // send a proper response if possible, log via standard request log
     if (loggingHandler.isRequestReceived() && !loggingHandler.isResponseStarted()) {
       // TODO: timeout?

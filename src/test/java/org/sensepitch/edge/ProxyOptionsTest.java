@@ -115,9 +115,63 @@ class ProxyOptionsTest {
     assertThat(response.get("sensepitch.upstream.name").asText())
         .isEqualTo("sites.example.com.response");
     assertThat(response.has("sensepitch.upstream.target")).isFalse();
+    assertThat(response.get("sensepitch.request.outcome").asText()).isEqualTo("completed");
+    assertThat(response.get("http.route").asText()).as("site default route").isEqualTo("/*");
+    assertThat(response.get("sensepitch.config.id").asText())
+        .isEqualTo(steps.proxy.state().configId())
+        .matches("[0-9a-f]{12}");
+    assertThat(response.get("http.response.header.content-type").get(0).asText())
+        .isEqualTo(FallbackConfig.DEFAULT_CONTENT_TYPE);
     var challenge = json.readTree(steps.requestLog.lines().get(1));
     assertThat(challenge.get("server.address").asText()).isEqualTo("withprotection.com");
     assertThat(challenge.has("sensepitch.upstream.name")).as("answered by the edge").isFalse();
+    assertThat(challenge.get("sensepitch.request.outcome").asText()).isEqualTo("edge_response");
+    assertThat(challenge.get("sensepitch.protection.outcome").asText()).isEqualTo("challenge_sent");
+  }
+
+  /// The matched route is logged as `http.route`: the path pattern of a path route, else the `uri`
+  /// pattern of the site, `/*` if it has none. An unserviced host has no route.
+  @Test
+  void matchedRouteIsLogged() throws Exception {
+    ResponseConfig text = ResponseConfig.builder().text("x").build();
+    ProtectionConfig noProtection = ProtectionConfig.builder().disable(true).build();
+    ProxyConfig config =
+        COMMON_CONFIG.toBuilder()
+            .sites(
+                java.util.Map.of(
+                    "example.com",
+                    SiteConfig.builder()
+                        .response(text)
+                        .protection(noProtection)
+                        .paths(
+                            java.util.Map.of(
+                                "/api/*", PathRouteConfig.builder().response(text).build(),
+                                "/exact", PathRouteConfig.builder().response(text).build()))
+                        .build(),
+                    "shop",
+                    SiteConfig.builder()
+                        .host("shop.com")
+                        .uri("/shop/*")
+                        .response(text)
+                        .protection(noProtection)
+                        .build()))
+            .build();
+    var steps = new CompleteTest.Steps().given_initialized_proxy_with(config);
+    steps.when_requesting("example.com", "/api/users");
+    steps.when_requesting("example.com", "/exact");
+    steps.when_requesting("example.com", "/other");
+    steps.when_requesting("shop.com", "/shop/cart");
+    steps.when_requesting("unserviced-domain.com", "/");
+    steps.finish_and_check_for_leaks();
+    var json = new com.fasterxml.jackson.databind.ObjectMapper();
+    List<String> routes = new java.util.ArrayList<>();
+    for (String line : steps.requestLog.lines()) {
+      var record = json.readTree(line);
+      routes.add(record.has("http.route") ? record.get("http.route").asText() : null);
+    }
+    assertThat(routes).containsExactly("/api/*", "/exact", "/*", "/shop/*", null);
+    var unserviced = json.readTree(steps.requestLog.lines().get(4));
+    assertThat(unserviced.get("sensepitch.request.outcome").asText()).isEqualTo("edge_response");
   }
 
   /// Timeouts from the configuration are announced to the client in the keep-alive header.

@@ -125,19 +125,23 @@ public class SiteSelector {
       Supplier<ChannelHandler> fallbackSupplier,
       Supplier<ChannelHandler> protectionSupplier) {
     String sitePrefix = "sites." + (site.key() != null ? site.key() : site.host());
+    // route of the default target, logged as http.route
+    String siteRoute = site.uri() != null ? site.uri() : "/*";
     Function<Upstream, Suppliers> leaf =
         upstream ->
             new Suppliers(
                 fallbackSupplier,
                 protectionSupplier,
-                () -> new DownstreamHandler(upstream, ctx.metrics()));
+                () -> new DownstreamHandler(upstream, ctx.metrics()),
+                siteRoute);
     BiFunction<String, ResponseConfig, Suppliers> responseLeaf =
         (name, response) -> {
           Upstream upstream = constructResponseUpstream(name, response);
           return new Suppliers(
               () -> NO_FALLBACK,
               protectionSupplier,
-              () -> new DownstreamHandler(upstream, ctx.metrics()));
+              () -> new DownstreamHandler(upstream, ctx.metrics()),
+              siteRoute);
         };
     Suppliers defaultTarget;
     if (site.response() != null) {
@@ -195,10 +199,13 @@ public class SiteSelector {
               throw new IllegalArgumentException("Path requires upstream or response: " + path);
             }
             Suppliers target =
-                route.response() != null
-                    ? responseLeaf.apply(prefix + ".paths." + path + ".response", route.response())
-                    : leaf.apply(
-                        resolveUpstream(prefix + ".paths." + path + ".upstream", route.upstream()));
+                (route.response() != null
+                        ? responseLeaf.apply(
+                            prefix + ".paths." + path + ".response", route.response())
+                        : leaf.apply(
+                            resolveUpstream(
+                                prefix + ".paths." + path + ".upstream", route.upstream())))
+                    .withRoute(path);
             if (path.endsWith("*")) {
               tree.put(path.substring(0, path.length() - 1), target);
             } else {
@@ -326,8 +333,18 @@ public class SiteSelector {
   @ChannelHandler.Sharable
   private static final class NoFallback extends ChannelOutboundHandlerAdapter {}
 
+  /// The handlers of a routing target
+  ///
+  /// @param route the matched route, logged as `http.route`: the path pattern of a path route, or
+  ///   the `uri` pattern of the site for its default target
   record Suppliers(
       Supplier<ChannelHandler> fallbackSupplier,
       Supplier<ChannelHandler> protectionSupplier,
-      Supplier<ChannelHandler> proxySupplier) {}
+      Supplier<ChannelHandler> proxySupplier,
+      String route) {
+
+    Suppliers withRoute(String route) {
+      return new Suppliers(fallbackSupplier, protectionSupplier, proxySupplier, route);
+    }
+  }
 }

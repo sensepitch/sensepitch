@@ -201,7 +201,11 @@ public class Deflector {
   /// Sends the admission cookie for a correct answer or status 400.
   ///
   /// @return `true` if the answer is correct
-  boolean handleChallengeAnswer(ChannelHandlerContext ctx, HttpRequest req) {
+  /// Checks the challenge answer in the request, without responding, see
+  /// [#respondToChallengeAnswer]
+  ///
+  /// @return true, if the answer is correct
+  boolean verifyChallengeAnswer(HttpRequest req) {
     QueryStringDecoder decoder = new QueryStringDecoder(req.uri());
     Map<String, List<String>> params = decoder.parameters();
     String challenge = firstParameter(params, "challenge");
@@ -210,8 +214,14 @@ public class Deflector {
         challenge == null || nonce == null
             ? 0
             : challengeVerification.verifyChallengeResponse(challenge, nonce);
+    return t > 0;
+  }
+
+  /// Responds to a challenge answer: issues the admission cookie if it was correct, see
+  /// [#verifyChallengeAnswer]
+  void respondToChallengeAnswer(ChannelHandlerContext ctx, boolean correct) {
     FullHttpResponse response;
-    if (t > 0) {
+    if (correct) {
       response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
       String cookieValue = tokenGenerator.newAdmission();
       Cookie cookie = new DefaultCookie(TOKEN_COOKIE_NAME, cookieValue);
@@ -226,7 +236,6 @@ public class Deflector {
       response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.BAD_REQUEST);
     }
     ctx.writeAndFlush(response);
-    return t > 0;
   }
 
   /// @return the first value of the parameter, `null` if absent or empty

@@ -132,6 +132,7 @@ public class ExceptionHandlerTest {
     assertThat(response.status().code()).isEqualTo(502);
     assertThat(channel.isOpen()).isFalse();
     assertThat(requestLog.lines()).singleElement().asString().contains("502");
+    assertThat(requestLog.outcomes()).containsExactly(RequestOutcome.EDGE_ERROR);
   }
 
   /// Exception details are for the log, they must not be sent to the client.

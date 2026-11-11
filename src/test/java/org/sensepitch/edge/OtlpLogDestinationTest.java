@@ -561,12 +561,25 @@ class OtlpLogDestinationTest {
         .hasMessageContaining("maxBufferedBytes must be at least batchBytes");
   }
 
+  /// The resource identifies the instance by default, configured attributes override defaults
   @Test
-  void configuredServiceNameReplacesTheDefault() throws Exception {
-    byte[] resource = OtlpLogDestination.encodeResource(Map.of("service.name", "edge-eu"));
-    var parsed = io.opentelemetry.proto.resource.v1.Resource.parseFrom(resource);
-    assertThat(parsed.getAttributesList())
-        .singleElement()
-        .satisfies(kv -> assertThat(kv.getValue().getStringValue()).isEqualTo("edge-eu"));
+  void resourceDefaultsAndOverrides() throws Exception {
+    Map<String, AnyValue> defaults =
+        attributes(
+            io.opentelemetry.proto.resource.v1.Resource.parseFrom(
+                    OtlpLogDestination.encodeResource(null))
+                .getAttributesList());
+    assertThat(defaults.get("service.name").getStringValue()).isEqualTo("sensepitch-edge");
+    assertThat(defaults.get("service.instance.id").getStringValue())
+        .isEqualTo(OtlpLogDestination.instanceId())
+        .isNotBlank();
+    Map<String, AnyValue> configured =
+        attributes(
+            io.opentelemetry.proto.resource.v1.Resource.parseFrom(
+                    OtlpLogDestination.encodeResource(
+                        Map.of("service.name", "edge-eu", "service.instance.id", "edge-1")))
+                .getAttributesList());
+    assertThat(configured.get("service.name").getStringValue()).isEqualTo("edge-eu");
+    assertThat(configured.get("service.instance.id").getStringValue()).isEqualTo("edge-1");
   }
 }

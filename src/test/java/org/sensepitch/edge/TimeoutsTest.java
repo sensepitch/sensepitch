@@ -125,6 +125,8 @@ class TimeoutsTest {
     HttpResponse response = ingressChannel.readOutbound();
     assertThat(response.status().code()).isEqualTo(408);
     assertThat(proxyMetrics.ingressReceiveTimeoutFirstRequest.getLongValue()).isEqualTo(1);
+    // the request headers were received, so the request is logged
+    assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.REQUEST_TIMEOUT);
   }
 
   /// Status 200 but connection will be closed since content size unknown. No keep-alive header is
@@ -178,6 +180,7 @@ class TimeoutsTest {
         .singleElement()
         .asString()
         .contains("GET /no-response HTTP/1.1 504");
+    assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.UPSTREAM_TIMEOUT);
   }
 
   @Test
@@ -224,6 +227,8 @@ class TimeoutsTest {
         .singleElement()
         .asString()
         .contains("DOWNSTREAM ERROR phase=responding");
+    // logged when the connection closes, the timeout was reported first
+    assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.RESPONSE_WRITE_TIMEOUT);
   }
 
   private void sendRequest(String uri) {

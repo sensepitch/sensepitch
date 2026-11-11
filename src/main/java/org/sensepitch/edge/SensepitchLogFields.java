@@ -12,6 +12,20 @@ public final class SensepitchLogFields {
   /// Value of [OtelLogFields#EVENT_NAME] identifying a request log record
   public static final String EVENT_NAME_VALUE = "sensepitch.request";
 
+  /// Why the request ended, see [RequestOutcome]
+  public static final String REQUEST_OUTCOME = "sensepitch.request.outcome";
+
+  /// Status of the upstream response when the edge replaced it with a fallback page
+  public static final String UPSTREAM_STATUS = "sensepitch.upstream.status";
+
+  /// Short hash of the configuration active when the request started, the same on every node
+  /// with the same configuration and edge version
+  public static final String CONFIG_ID = "sensepitch.config.id";
+
+  /// Outcome of the deflector protection, the same values as the label of
+  /// `sensepitch_deflector_requests_total`
+  public static final String PROTECTION_OUTCOME = "sensepitch.protection.outcome";
+
   /// Short id of the connection, groups the requests of a keep-alive connection
   public static final String CONNECTION_ID = "sensepitch.connection.id";
 

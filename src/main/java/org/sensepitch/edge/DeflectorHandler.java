@@ -29,9 +29,11 @@ public class DeflectorHandler implements ProtectionPlugin {
     if (deflector.checkAdmissionCookie(request)) {
       request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_USER);
       metrics.countDeflectorRequest(request, DeflectorOutcome.PASSED);
+      report(ctx, DeflectorOutcome.PASSED);
       return false;
     } else if (deflector.needsBypass(ctx, request)) {
       metrics.countDeflectorRequest(request, DeflectorOutcome.BYPASSED);
+      report(ctx, DeflectorOutcome.BYPASSED);
       return false;
     } else if (request.uri().startsWith(Deflector.CHALLENGE_STEP_URL)) {
       // this is just for progress reporting and debugging
@@ -53,17 +55,27 @@ public class DeflectorHandler implements ProtectionPlugin {
     } else if (request.method() == HttpMethod.GET
         && request.uri().startsWith(Deflector.CHALLENGE_ANSWER_URL)) {
       request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_USER);
-      if (deflector.handleChallengeAnswer(ctx, request)) {
-        metrics.countDeflectorRequest(request, DeflectorOutcome.ANSWER_ACCEPTED);
-      } else {
-        metrics.countDeflectorRequest(request, DeflectorOutcome.ANSWER_REJECTED);
-      }
+      // reported before responding, the request is logged when the response is written
+      boolean correct = deflector.verifyChallengeAnswer(request);
+      DeflectorOutcome outcome =
+          correct ? DeflectorOutcome.ANSWER_ACCEPTED : DeflectorOutcome.ANSWER_REJECTED;
+      metrics.countDeflectorRequest(request, outcome);
+      report(ctx, outcome);
+      deflector.respondToChallengeAnswer(ctx, correct);
     } else {
       // TODO: behaviour of non GET requests?
       request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_DEFLECT);
-      deflector.outputChallengeHtml(ctx);
       metrics.countDeflectorRequest(request, DeflectorOutcome.CHALLENGE_SENT);
+      report(ctx, DeflectorOutcome.CHALLENGE_SENT);
+      deflector.outputChallengeHtml(ctx);
     }
     return true;
+  }
+
+  private static void report(ChannelHandlerContext ctx, DeflectorOutcome outcome) {
+    RequestLoggingHandler requestLog = RequestLoggingHandler.find(ctx);
+    if (requestLog != null) {
+      requestLog.setProtectionOutcome(outcome);
+    }
   }
 }

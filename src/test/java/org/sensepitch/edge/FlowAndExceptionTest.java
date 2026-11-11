@@ -326,6 +326,8 @@ public class FlowAndExceptionTest {
     assertThat(response.status().code()).isEqualTo(502);
     assertThat(ingressChannel.isOpen()).isFalse();
     assertThat(requestLogCapture.lines()).anySatisfy(l -> assertThat(l).contains("502"));
+    assertThat(requestLogCapture.outcomes())
+        .containsExactly(RequestOutcome.UPSTREAM_CONNECT_FAILED);
   }
 
   @Test
@@ -337,6 +339,7 @@ public class FlowAndExceptionTest {
     assertThat(response.status().code()).isEqualTo(502);
     assertThat(response.status().reasonPhrase()).isEqualTo("Upstream write problem");
     assertThat(ingressChannel.isOpen()).isFalse();
+    assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.UPSTREAM_WRITE_FAILED);
   }
 
   /// An exception on the upstream connection while waiting for the response ends the ingress

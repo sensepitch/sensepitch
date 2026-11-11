@@ -214,6 +214,35 @@ class RequestLogFieldsWriterTest {
         .contains("cookie");
   }
 
+  /// Fields for operations: why the request ended, the route, the configuration and the
+  /// protection
+  @Test
+  void operationalFields() {
+    TestRequestLogInfo info =
+        TestRequestLogInfo.of(HttpMethod.GET, 503)
+            .withOutcome(RequestOutcome.FALLBACK, 503)
+            .withRoute("/api/*")
+            .withConfigId("0123456789ab")
+            .withProtectionOutcome("passed");
+    info.response()
+        .headers()
+        .set(io.netty.handler.codec.http.HttpHeaderNames.CONTENT_TYPE, "text/html");
+    assertThat(fields(info).fields)
+        .containsEntry("sensepitch.request.outcome", "fallback")
+        .containsEntry("sensepitch.upstream.status", 503L)
+        .containsEntry("http.route", "/api/*")
+        .containsEntry("sensepitch.config.id", "0123456789ab")
+        .containsEntry("sensepitch.protection.outcome", "passed")
+        .containsEntry("http.response.header.content-type", List.of("text/html"));
+  }
+
+  /// The outcome is always present, it is never absent like optional fields
+  @Test
+  void outcomeIsAlwaysPresent() {
+    assertThat(fields(TestRequestLogInfo.of(HttpMethod.GET, 200)).fields)
+        .containsEntry("sensepitch.request.outcome", "completed");
+  }
+
   /// The upstream that served the request, absent when the edge answered itself
   @Test
   void upstream() {
@@ -248,6 +277,11 @@ class RequestLogFieldsWriterTest {
             "sensepitch.client.asn",
             "sensepitch.upstream.name",
             "sensepitch.upstream.target",
+            "sensepitch.upstream.status",
+            "http.route",
+            "sensepitch.config.id",
+            "sensepitch.protection.outcome",
+            "http.response.header.content-type",
             "http.request.header.traceparent");
   }
 

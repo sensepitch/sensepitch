@@ -57,6 +57,11 @@ public class ProxyMetrics implements HasMultipleMetrics {
     ANSWER_REJECTED;
 
     final String label = name().toLowerCase(Locale.ROOT);
+
+    /// Label value and logged value, the lower case name
+    public String value() {
+      return label;
+    }
   }
 
   /// Counts the request for its ingress, which is the host header, already sanitized by

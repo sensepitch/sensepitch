@@ -58,6 +58,9 @@ public final class OtelLogFields {
   /// The request method, if `http.request.method` is `_OTHER`
   public static final String HTTP_REQUEST_METHOD_ORIGINAL = "http.request.method_original";
 
+  /// The matched route, the path pattern of the routing, e.g. `/api/*`
+  public static final String HTTP_ROUTE = "http.route";
+
   public static final String URL_PATH = "url.path";
   public static final String URL_QUERY = "url.query";
   public static final String URL_SCHEME = "url.scheme";
@@ -99,4 +102,23 @@ public final class OtelLogFields {
   public static String requestHeader(String headerName) {
     return HTTP_REQUEST_HEADER_PREFIX + headerName;
   }
+
+  /// Prefix of a response header attribute, followed by the lowercase header name, the value is a
+  /// string array
+  public static final String HTTP_RESPONSE_HEADER_PREFIX = "http.response.header.";
+
+  /// Attribute name of a response header
+  public static String responseHeader(String headerName) {
+    return HTTP_RESPONSE_HEADER_PREFIX + headerName;
+  }
+
+  // resource attributes, describe the producer of the records in the OTLP export
+
+  public static final String SERVICE_NAME = "service.name";
+
+  /// Identifies the edge instance within a fleet
+  public static final String SERVICE_INSTANCE_ID = "service.instance.id";
+
+  /// Version of the edge
+  public static final String SERVICE_VERSION = "service.version";
 }

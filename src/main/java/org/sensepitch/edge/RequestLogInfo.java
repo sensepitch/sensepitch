@@ -41,6 +41,30 @@ public interface RequestLogInfo {
   /// @return `host:port`, or `null` if no upstream was selected or it has no target
   String upstreamTarget();
 
+  /// Why the request ended, never `null`
+  RequestOutcome outcome();
+
+  /// Status of the upstream response when the edge replaced it with a fallback page, `0`
+  /// otherwise, see [RequestOutcome#FALLBACK]
+  int upstreamStatus();
+
+  /// The matched route: the path pattern of the routing, e.g. `/api/*`, or the `uri` pattern of
+  /// the site for its default route, see [SiteSelector]
+  ///
+  /// @return the route, or `null` if no site matched
+  String route();
+
+  /// Short hash of the configuration active when the request started, see [EdgeState#configId()]
+  ///
+  /// @return the id, or `null` if not known, e.g. in tests
+  String configId();
+
+  /// Outcome of the deflector protection, the label values of
+  /// `sensepitch_deflector_requests_total`, e.g. `challenge_sent`
+  ///
+  /// @return the outcome, or `null` if no deflector handled the request
+  String protectionOutcome();
+
   /// Negotiated TLS protocol as reported by the JDK, e.g. `TLSv1.3`, or `null` without TLS
   String tlsProtocol();
 

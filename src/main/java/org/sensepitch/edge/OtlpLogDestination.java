@@ -12,6 +12,7 @@ import static org.sensepitch.edge.OtlpEncoding.stringAttribute;
 
 import io.prometheus.metrics.core.datapoints.CounterDataPoint;
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -195,16 +196,42 @@ public class OtlpLogDestination implements RequestLogMetrics.QueueSource, AutoCl
     sender.start();
   }
 
-  /// Encoded `Resource` message, with `service.name` unless configured otherwise
+  /// Encoded `Resource` message. By default with `service.name`, `service.instance.id` (the host
+  /// name) and `service.version` (the edge version, if known); configured attributes override
+  /// them.
   static byte[] encodeResource(Map<String, String> configured) {
     Map<String, String> attributes = new LinkedHashMap<>();
-    attributes.put("service.name", DEFAULT_SERVICE_NAME);
+    attributes.put(OtelLogFields.SERVICE_NAME, DEFAULT_SERVICE_NAME);
+    String instance = instanceId();
+    if (instance != null) {
+      attributes.put(OtelLogFields.SERVICE_INSTANCE_ID, instance);
+    }
+    String version = OtlpLogDestination.class.getPackage().getImplementationVersion();
+    if (version != null) {
+      attributes.put(OtelLogFields.SERVICE_VERSION, version);
+    }
     if (configured != null) {
       attributes.putAll(configured);
     }
     ProtobufWriter resource = new ProtobufWriter();
     attributes.forEach((key, value) -> stringAttribute(resource, RESOURCE_ATTRIBUTES, key, value));
     return resource.toByteArray();
+  }
+
+  /// Identifies this edge instance: the `HOSTNAME` environment variable, which is the pod name in
+  /// Kubernetes, else the local host name
+  ///
+  /// @return the id, or `null` if none can be determined
+  static String instanceId() {
+    String hostname = System.getenv("HOSTNAME");
+    if (hostname != null && !hostname.isBlank()) {
+      return hostname;
+    }
+    try {
+      return InetAddress.getLocalHost().getHostName();
+    } catch (IOException e) {
+      return null;
+    }
   }
 
   /// Creates and registers the logger of the calling thread, see [OtlpRequestLogger]

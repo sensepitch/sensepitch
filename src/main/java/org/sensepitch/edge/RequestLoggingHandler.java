@@ -18,6 +18,7 @@ import io.netty.handler.ssl.SslHandler;
 import io.netty.util.concurrent.Ticker;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.function.Supplier;
 import javax.net.ssl.SSLSession;
 
 /// Listens to incoming and outgoing http messages and collects all relevant information during
@@ -77,8 +78,16 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   private final ProxyMetrics metrics;
   private final boolean trustTraceparent;
 
+  /// Supplies the id of the active configuration, `null` in tests
+  private final Supplier<String> configIds;
+
   private long requestBodyBytes;
   private Upstream upstream;
+  private RequestOutcome outcome;
+  private int upstreamStatus;
+  private String route;
+  private String configId;
+  private ProxyMetrics.DeflectorOutcome protectionOutcome;
   private TraceContext traceContext;
   private String clientTraceparent;
 
@@ -97,9 +106,19 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   ///   [TraceContextConfig#trustTraceparent()]
   public RequestLoggingHandler(
       ProxyMetrics metrics, RequestLogger logger, boolean trustTraceparent) {
+    this(metrics, logger, trustTraceparent, null);
+  }
+
+  /// @param configIds supplies the id of the active configuration, read when a request starts
+  public RequestLoggingHandler(
+      ProxyMetrics metrics,
+      RequestLogger logger,
+      boolean trustTraceparent,
+      Supplier<String> configIds) {
     this.logger = logger;
     this.metrics = metrics;
     this.trustTraceparent = trustTraceparent;
+    this.configIds = configIds;
   }
 
   @Override
@@ -127,6 +146,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
       requestStartTimeNanos = ticker.nanoTime();
       response = null;
       requestBodyBytes = 0;
+      configId = configIds != null ? configIds.get() : null;
       assignTraceContext(request);
     }
     // count before passing on, the content is released further down the pipeline
@@ -220,6 +240,11 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     bytesSentStart = countByteIoHandler.getBytesSent();
     request = null;
     upstream = null;
+    outcome = null;
+    upstreamStatus = 0;
+    route = null;
+    configId = null;
+    protectionOutcome = null;
     traceContext = null;
     clientTraceparent = null;
   }
@@ -257,9 +282,58 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     }
   }
 
+  /// The request logging handler of the pipeline
+  ///
+  /// @return the handler, or `null` if the pipeline has none, e.g. in tests
+  static RequestLoggingHandler find(ChannelHandlerContext ctx) {
+    return ctx.pipeline().get(RequestLoggingHandler.class);
+  }
+
+  /// Reports why the request ends to the request logging handler of the pipeline, if any. Must be
+  /// called before the response is written, the request may be logged when the write completes.
+  static void reportOutcome(ChannelHandlerContext ctx, RequestOutcome outcome) {
+    RequestLoggingHandler handler = find(ctx);
+    if (handler != null) {
+      handler.setOutcome(outcome);
+    }
+  }
+
+  // The setters below ignore reports while no request is in progress, so a late report, e.g. after
+  // the response was written and the request logged, cannot leak into the next request.
+
+  /// Reports why the request ends, the first report of a request wins
+  public void setOutcome(RequestOutcome outcome) {
+    if (request != null && this.outcome == null) {
+      this.outcome = outcome;
+    }
+  }
+
+  /// Called by the [FallbackHandler] with the status of the replaced upstream response
+  public void setUpstreamStatus(int status) {
+    if (request != null) {
+      this.upstreamStatus = status;
+    }
+  }
+
+  /// Called by the [SiteSelectorHandler] with the matched route
+  public void setRoute(String route) {
+    if (request != null) {
+      this.route = route;
+    }
+  }
+
+  /// Called by the [DeflectorHandler] with its outcome
+  public void setProtectionOutcome(ProxyMetrics.DeflectorOutcome outcome) {
+    if (request != null) {
+      this.protectionOutcome = outcome;
+    }
+  }
+
   /// Called by the [DownstreamHandler] with the upstream selected for the request
   public void setUpstream(Upstream upstream) {
-    this.upstream = upstream;
+    if (request != null) {
+      this.upstream = upstream;
+    }
   }
 
   public void setException(Throwable throwable) {
@@ -277,6 +351,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
       metrics.ingressRequestsAborted.increment();
       contentBytes = 0;
       response = ABORTED_RESPONSE;
+      setOutcome(RequestOutcome.CLIENT_ABORTED);
       log(ctx);
     }
     super.channelInactive(ctx);
@@ -314,6 +389,34 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
       return address.getPort();
     }
     return 0;
+  }
+
+  @Override
+  public RequestOutcome outcome() {
+    if (outcome != null) {
+      return outcome;
+    }
+    return upstream != null ? RequestOutcome.COMPLETED : RequestOutcome.EDGE_RESPONSE;
+  }
+
+  @Override
+  public int upstreamStatus() {
+    return upstreamStatus;
+  }
+
+  @Override
+  public String route() {
+    return route;
+  }
+
+  @Override
+  public String configId() {
+    return configId;
+  }
+
+  @Override
+  public String protectionOutcome() {
+    return protectionOutcome != null ? protectionOutcome.value() : null;
   }
 
   @Override

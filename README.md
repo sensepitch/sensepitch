@@ -575,7 +575,8 @@ requestLog:
         endpoint: http://victorialogs:9428/insert/opentelemetry/v1/logs
         headers:
           VL-Stream-Fields: service.name,server.address
-        resourceAttributes:       # service.name defaults to sensepitch-edge
+        resourceAttributes:       # defaults: service.name sensepitch-edge,
+                                  # service.instance.id host name, service.version
           deployment.environment: prod
         timeoutMillis: 10000      # defaults shown
         flushIntervalMillis: 1000
@@ -666,9 +667,11 @@ Attributes, semantic convention names:
 | `server.address`, `server.port` | requested host (sanitized `Host` header) and local port |
 | `http.request.method` | method, `_OTHER` for unknown methods, then `http.request.method_original` holds it |
 | `url.scheme`, `url.path`, `url.query` | `https` with TLS; the request target split at `?` |
+| `http.route` | the matched route: the path pattern of a path route, e.g. `/api/*`, else the `uri` pattern of the site, `/*` if it has none. Absent if no site matched |
 | `network.protocol.name`, `network.protocol.version`, `network.transport` | `http`, `1.1`, `tcp` |
 | `tls.protocol.name`, `tls.protocol.version`, `tls.cipher` | e.g. `tls`, `1.3`, `TLS_AES_128_GCM_SHA256` |
 | `http.response.status_code` | status code |
+| `http.response.header.content-type` | response content type, string array |
 | `http.request.body.size`, `http.response.body.size` | body bytes |
 | `http.request.size`, `http.response.size` | bytes including headers |
 | `user_agent.original` | `User-Agent` header |
@@ -682,6 +685,10 @@ Attributes without a semantic convention:
 | Name | Content |
 |---|---|
 | `sensepitch.connection.id`, `sensepitch.connection.request_count` | groups the requests of a keep-alive connection |
+| `sensepitch.request.outcome` | why the request ended, always present, see below |
+| `sensepitch.upstream.status` | status of the upstream response when the edge replaced it with a fallback page |
+| `sensepitch.config.id` | short hash of the configuration active when the request started. The same configuration has the same id on every node with the same edge version, a reload with changes gives a new id |
+| `sensepitch.protection.outcome` | deflector outcome: `passed`, `bypassed`, `challenge_sent`, `answer_accepted`, `answer_rejected`, the label values of `sensepitch_deflector_requests_total` |
 | `sensepitch.upstream.name`, `sensepitch.upstream.target` | the upstream that served the request: its name in the configuration, e.g. `upstreams.backend` or `sites.example.com.paths./api/*.upstream`, and its configured `host:port`. A static response has its path as name, e.g. `sites.example.com.response`, and no target. Absent when the edge answered itself, e.g. with a challenge |
 | `sensepitch.client.asn` | autonomous system number of the client address |
 | `sensepitch.ip_traits` | traits of the client address, e.g. `asn=64496, country=DE, crawler=...` |
@@ -691,6 +698,28 @@ Attributes without a semantic convention:
 | `sensepitch.request.cookie_present` | whether a cookie header was sent, not its content |
 | `sensepitch.request.header_names` | names of the request headers, in order |
 | `sensepitch.duration.receive_ns`, `…response_ns`, `…total_ns` | durations, see `RequestLogInfo` |
+
+The OTLP export also identifies the edge: the resource has `service.instance.id`, the
+`HOSTNAME` environment variable (the pod name in Kubernetes) or else the host name, and
+`service.version`, the edge version. `otlp.resourceAttributes` overrides both.
+
+### Request outcome
+
+`sensepitch.request.outcome` tells why a request ended. The values are few, so it suits dashboards
+to see at a glance whether the edge, the upstream or the client is involved:
+
+| Value | Meaning |
+|---|---|
+| `completed` | the upstream or a static response route answered, the response was sent |
+| `edge_response` | no upstream was selected, the edge answered itself: challenge, unserviced host, no site matched |
+| `fallback` | the upstream answered 500 or 503 and the fallback page was sent instead, see `sensepitch.upstream.status` |
+| `upstream_connect_failed` | the connection to the upstream failed (502) |
+| `upstream_write_failed` | forwarding the request to the upstream failed (502) |
+| `upstream_timeout` | the upstream did not respond within the response timeout (504) |
+| `request_timeout` | the client did not complete the request in time (408) |
+| `response_write_timeout` | the client did not take the response in time |
+| `client_aborted` | the connection closed before the response was complete (499) |
+| `edge_error` | another error, answered with 502 |
 
 ### Migrating from the previous JSON format
 

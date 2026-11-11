@@ -51,8 +51,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
                 HttpResponseStatus.BAD_REQUEST.code(), "another request is unexpected"));
         return;
       }
-      RequestLoggingHandler requestLog = ctx.pipeline().get(RequestLoggingHandler.class);
-      // absent in some test pipelines
+      RequestLoggingHandler requestLog = RequestLoggingHandler.find(ctx);
       if (requestLog != null) {
         requestLog.setUpstream(upstream);
       }
@@ -100,6 +99,8 @@ public class DownstreamHandler extends ChannelDuplexHandler {
                                 ctx.pipeline()
                                     .get(RequestLoggingHandler.class)
                                     .setException(f.cause());
+                                RequestLoggingHandler.reportOutcome(
+                                    ctx, RequestOutcome.UPSTREAM_WRITE_FAILED);
                                 completeWithError(
                                     ctx, HttpResponseStatus.valueOf(502, "Upstream write problem"));
                               });
@@ -112,6 +113,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       Throwable cause = future.cause();
       DEBUG.error(ctx.channel(), "unknown upstream connection problem", future.cause());
       ctx.pipeline().get(RequestLoggingHandler.class).setException(cause);
+      RequestLoggingHandler.reportOutcome(ctx, RequestOutcome.UPSTREAM_CONNECT_FAILED);
       completeWithError(ctx, HttpResponseStatus.valueOf(502, "Upstream connection problem"));
     }
   }
