@@ -76,6 +76,50 @@ class ConfigReloadTest {
     steps.when_requesting("a.com", "/").then_expect_content("A");
   }
 
+  /// A changed request log takes effect for the following requests, without a restart warning
+  @Test
+  void requestLogIsReloaded() {
+    steps.when_requesting("a.com", "/");
+    assertThat(
+            reload(
+                CONFIG.toBuilder()
+                    .requestLog(RequestLogConfig.builder().plainText(true).build())
+                    .build()))
+        .isTrue();
+    steps.when_requesting("a.com", "/");
+    assertThat(reload(CONFIG)).isTrue();
+    steps.when_requesting("a.com", "/");
+    assertThat(steps.requestLog.lines()).hasSize(3);
+    assertThat(steps.requestLog.lines().get(0)).startsWith("{");
+    assertThat(steps.requestLog.lines().get(1)).startsWith("RQ0 ");
+    assertThat(steps.requestLog.lines().get(2)).startsWith("{");
+    assertThat(logs.messages(Proxy.class))
+        .noneSatisfy(m -> assertThat(m).contains("'requestLog' needs a restart"));
+  }
+
+  /// An invalid request log rejects the reload, it would otherwise prevent the next start. The
+  /// active request log continues.
+  @Test
+  void invalidRequestLogRejectsReload() {
+    ProxyConfig broken =
+        CONFIG.toBuilder()
+            .requestLog(
+                RequestLogConfig.builder()
+                    .destinations(
+                        List.of(
+                            RequestLogDestinationConfig.builder()
+                                .type("otlp")
+                                .otlp(OtlpConfig.builder().build())
+                                .build()))
+                    .build())
+            .build();
+    ReloadResult result = steps.proxy.reload(broken);
+    assertThat(result.applied()).isFalse();
+    assertThat(result.message()).contains("endpoint missing");
+    steps.when_requesting("a.com", "/");
+    assertThat(steps.requestLog.lines()).singleElement().asString().startsWith("{");
+  }
+
   @Test
   void keepAliveConnectionUsesNewConfigOnNextRequest() {
     steps.when_requesting("a.com", "/").then_expect_content("A");

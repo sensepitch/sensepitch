@@ -3,10 +3,15 @@ package org.sensepitch.edge;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.sun.net.httpserver.HttpServer;
 import io.netty.handler.codec.http.HttpMethod;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
+import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /// Configuration of the request log destinations
@@ -16,6 +21,28 @@ class RequestLoggerFactoryTest {
 
   final RequestLogCapture stdout = new RequestLogCapture();
   final RequestLogMetrics metrics = new RequestLogMetrics();
+
+  /// Accepts the records of OTLP destinations, so closing a destination does not wait for an
+  /// unavailable log server
+  HttpServer logServer;
+
+  @BeforeEach
+  void startLogServer() throws IOException {
+    logServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    logServer.createContext(
+        "/v1/logs",
+        exchange -> {
+          exchange.getRequestBody().readAllBytes();
+          exchange.sendResponseHeaders(204, -1);
+          exchange.close();
+        });
+    logServer.start();
+  }
+
+  @AfterEach
+  void stopLogServer() {
+    logServer.stop(0);
+  }
 
   RequestLogger build(RequestLogConfig config) {
     return RequestLoggerFactory.create(config, stdout, metrics);
@@ -39,11 +66,14 @@ class RequestLoggerFactoryTest {
         .build();
   }
 
-  static RequestLogDestinationConfig otlp(String name) {
+  RequestLogDestinationConfig otlp(String name) {
     return RequestLogDestinationConfig.builder()
         .type("otlp")
         .name(name)
-        .otlp(OtlpConfig.builder().endpoint("http://127.0.0.1:1/v1/logs").build())
+        .otlp(
+            OtlpConfig.builder()
+                .endpoint("http://127.0.0.1:" + logServer.getAddress().getPort() + "/v1/logs")
+                .build())
         .build();
   }
 
@@ -55,7 +85,10 @@ class RequestLoggerFactoryTest {
   @Test
   void defaultIsJsonOnStandardOut() {
     try (RequestLogger logger = build(null)) {
-      assertThat(logger).isInstanceOf(JsonRequestLogger.class);
+      assertThat(((ReloadableRequestLogger) logger).destinations())
+          .singleElement()
+          .extracting(ReloadableRequestLogger.Destination::logger)
+          .isInstanceOf(JsonRequestLogger.class);
       logOneRequest(logger);
     }
     assertThat(queuedDestinations()).isEmpty();
@@ -79,12 +112,13 @@ class RequestLoggerFactoryTest {
                 .destinations(List.of(stdout(false, false), stdout(true, true), otlp(null)))
                 .build())) {
       assertThat(threadNames()).contains("request-log-otlp");
+      assertThat(queuedDestinations()).containsExactly("otlp");
       logOneRequest(logger);
     }
     assertThat(threadNames())
         .as("closing the logger stops the destination")
         .doesNotContain("request-log-otlp");
-    assertThat(queuedDestinations()).containsExactly("otlp");
+    assertThat(queuedDestinations()).as("a closed destination has no gauge").isEmpty();
     assertThat(stdout.lines()).hasSize(2);
     assertThat(stdout.lines().get(0)).contains("\"client.address\":\"192.0.2.7\"");
     assertThat(stdout.lines().get(1)).startsWith("RQ0 0 example.com 192.0.2.0 ");

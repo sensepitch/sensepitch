@@ -19,6 +19,7 @@ public final class RequestLoggerFactory {
   private RequestLoggerFactory() {}
 
   /// Validates the configuration and creates a logger passing each request to all destinations.
+  /// The logger can be reconfigured on a configuration reload, see [ReloadableRequestLogger].
   /// Closing the logger stops the sender threads of `otlp` destinations, the standard out output
   /// is not closed, it belongs to the caller.
   ///
@@ -27,51 +28,54 @@ public final class RequestLoggerFactory {
   /// @param metrics metrics shared by all destinations, those of the standard out writer if it has
   ///   them, so all destinations register under the same metric names
   /// @throws IllegalArgumentException if the configuration is invalid
-  public static RequestLogger create(
+  public static ReloadableRequestLogger create(
       RequestLogConfig config, RequestLogOutput stdout, RequestLogMetrics metrics) {
+    return new ReloadableRequestLogger(config, stdout, metrics);
+  }
+
+  /// The configured destinations, or one standard out destination in the format selected by
+  /// [RequestLogConfig#plainText()] if none are configured
+  ///
+  /// @param config request log configuration, `null` for the defaults
+  /// @throws IllegalArgumentException if the destinations are configured but empty
+  static List<RequestLogDestinationConfig> destinations(RequestLogConfig config) {
     if (config == null) {
       config = RequestLogConfig.DEFAULT;
     }
     List<RequestLogDestinationConfig> destinations = config.destinations();
     if (destinations == null) {
-      destinations =
-          List.of(
-              RequestLogDestinationConfig.builder()
-                  .type(RequestLogDestinationConfig.TYPE_STDOUT)
-                  .plainText(config.plainText())
-                  .build());
-    } else if (destinations.isEmpty()) {
+      return List.of(
+          RequestLogDestinationConfig.builder()
+              .type(RequestLogDestinationConfig.TYPE_STDOUT)
+              .plainText(config.plainText())
+              .build());
+    }
+    if (destinations.isEmpty()) {
       throw new IllegalArgumentException(
           "requestLog.destinations is empty, remove it to log to standard out");
     }
-    List<String> names = names(destinations);
-    List<RequestLogger> loggers = new ArrayList<>();
-    try {
-      for (int i = 0; i < destinations.size(); i++) {
-        RequestLogDestinationConfig destination = destinations.get(i);
-        RequestLogger logger =
-            switch (destination.type()) {
-              case RequestLogDestinationConfig.TYPE_STDOUT ->
-                  destination.plainText()
-                      ? new PlainTextRequestLogger(stdout)
-                      : new JsonRequestLogger(stdout);
-              case RequestLogDestinationConfig.TYPE_OTLP ->
-                  new OtlpRequestLogger(
-                      new OtlpLogDestination(names.get(i), destination.otlp(), metrics));
-              default -> throw new IllegalStateException("type validated before");
-            };
-        loggers.add(
-            destination.anonymizeClientIp() ? new AnonymizingRequestLogger(logger) : logger);
-      }
-    } catch (RuntimeException e) {
-      // stop the destinations created before, no thread is left behind
-      loggers.forEach(RequestLogger::close);
-      throw e;
-    }
-    if (loggers.size() == 1) {
-      return loggers.getFirst();
-    }
-    return new DistributingRequestLogger(loggers.toArray(RequestLogger[]::new));
+    return destinations;
+  }
+
+  /// Creates the logger of one destination, the configuration is validated by [#names(List)]
+  ///
+  /// @throws IllegalArgumentException if the `otlp` settings are invalid
+  static RequestLogger createDestination(
+      String name,
+      RequestLogDestinationConfig destination,
+      RequestLogOutput stdout,
+      RequestLogMetrics metrics) {
+    RequestLogger logger =
+        switch (destination.type()) {
+          case RequestLogDestinationConfig.TYPE_STDOUT ->
+              destination.plainText()
+                  ? new PlainTextRequestLogger(stdout)
+                  : new JsonRequestLogger(stdout);
+          case RequestLogDestinationConfig.TYPE_OTLP ->
+              new OtlpRequestLogger(new OtlpLogDestination(name, destination.otlp(), metrics));
+          default -> throw new IllegalStateException("type validated before");
+        };
+    return destination.anonymizeClientIp() ? new AnonymizingRequestLogger(logger) : logger;
   }
 
   /// Names of the destinations, defaulting to the type, with the index appended for the second

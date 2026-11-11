@@ -360,6 +360,8 @@ public class OtlpLogDestination implements RequestLogMetrics.QueueSource, AutoCl
       shutdown();
     } finally {
       client.shutdownNow();
+      // e.g. removed by a configuration reload, the gauges stop reporting it
+      metrics.remove(this);
     }
   }
 

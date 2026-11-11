@@ -507,10 +507,14 @@ reloaded, so adding the marker enables live reload. Starting the proxy does not 
   reloads an unchanged file, which picks up renewed certificate files, e.g. after a Let's
   Encrypt renewal.
 - **What is reloaded:** sites, upstreams, protection, fallback, `unservicedHost`, `listen.hosts`,
-  certificates (`listen.ssl`, `snis`, Let's Encrypt) and `ipLookup`. The IP lookup databases are
-  only read again if `ipLookup` changed. Upstreams with unchanged configuration are kept.
+  certificates (`listen.ssl`, `snis`, Let's Encrypt), `ipLookup` and `requestLog`. The IP lookup
+  databases are only read again if `ipLookup` changed. Upstreams with unchanged configuration are
+  kept. Request log destinations with unchanged name and settings are kept, so an OTLP
+  destination keeps its buffered records; changed and removed ones are closed after sending what
+  they buffered. Records logged into a removed destination while the switch happens are dropped
+  and counted in `sensepitch_request_log_dropped_total`.
 - **Restart needed:** changes of `listen.address`, `listen.httpsPort`, `listen.connection`,
-  `metrics`, `ja4`, `requestLog` and `traceContext` are logged as a warning and ignored.
+  `metrics`, `ja4` and `traceContext` are logged as a warning and ignored.
 - **Invalid configuration:** the error is logged and the active configuration stays.
 - **Log:** a reload logs the configuration changes as a diff, and added, changed or removed
   certificates with subject, serial and expiry.

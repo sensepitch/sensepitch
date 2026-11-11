@@ -88,6 +88,12 @@ public class RequestLogMetrics implements HasMultipleMetrics {
     dropped.labelValues(writer.destination());
   }
 
+  /// Stops reporting the queue of a destination that was closed, e.g. removed by a configuration
+  /// reload. Its counters keep their values.
+  void remove(QueueSource writer) {
+    writers.remove(writer);
+  }
+
   @Override
   public void registerCollectors(Consumer<Collector> consumer) {
     consumer.accept(dropped);

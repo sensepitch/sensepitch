@@ -57,6 +57,9 @@ public class Proxy implements ProxyContext {
   private final EventLoopGroup eventLoopGroup;
   /// Request log destinations plus the metrics per status code, closed on shutdown
   private final RequestLogger requestLogger;
+
+  /// The request log destinations, replaced on a configuration reload
+  private final ReloadableRequestLogger requestLogDestinations;
   private final SanitizeHostHandler sanitizeHostHandler =
       new SanitizeHostHandler(() -> state.get().knownHosts());
   private final Ja4Config ja4Config;
@@ -102,18 +105,19 @@ public class Proxy implements ProxyContext {
         requestLogOutput instanceof AsyncRequestLogWriter writer
             ? writer.metrics()
             : new RequestLogMetrics();
-    RequestLogger destinations =
+    requestLogDestinations =
         RequestLoggerFactory.create(config.requestLog(), requestLogOutput, requestLogMetrics);
     expose(requestLogMetrics);
     requestLogger =
         new DistributingRequestLogger(
-            destinations, expose(new ExposeRequestCountPerStatusCodeHandler()));
+            requestLogDestinations, expose(new ExposeRequestCountPerStatusCodeHandler()));
     // last, so a configuration error does not leave a running server behind
     metricsServer = startMetricsServer();
   }
 
-  /// Activates a new configuration. Routing, known hosts, certificates and the IP lookup are
-  /// replaced; unchanged upstreams and an unchanged IP lookup are kept. Changes of settings that
+  /// Activates a new configuration. Routing, known hosts, certificates, the IP lookup and the
+  /// request log destinations are replaced; unchanged upstreams, an unchanged IP lookup and
+  /// unchanged request log destinations are kept. Changes of settings that
   /// need a restart are logged as a warning and ignored. Requests on keep-alive connections use
   /// the new configuration from their next request on.
   ///
@@ -122,16 +126,20 @@ public class Proxy implements ProxyContext {
   public synchronized ReloadResult reload(ProxyConfig newConfig) {
     EdgeState current = state.get();
     EdgeState next;
+    ReloadableRequestLogger.Prepared requestLog;
     try {
       newConfig = KeyInjector.injectAllMapKeys(newConfig);
       warnAboutRestartOnlyChanges(newConfig);
       next = EdgeState.build(this, newConfig, current);
+      // last, nothing can fail after it, so the destinations it created are always applied
+      requestLog = requestLogDestinations.prepare(newConfig.requestLog());
     } catch (RuntimeException e) {
       LOG.error("Configuration rejected, keeping the active configuration: " + e, e);
       return ReloadResult.rejected("Configuration rejected: " + e.getMessage());
     }
     state.set(next);
     current.closeReplacedBy(next);
+    requestLog.apply();
     String diff = ConfigDiff.diff(toYaml(current.config()), toYaml(next.config()));
     if (diff.isEmpty()) {
       LOG.info("Configuration reloaded, no changes");
@@ -158,7 +166,6 @@ public class Proxy implements ProxyContext {
     warnIfChanged("listen.connection", was.connection(), now.connection());
     warnIfChanged("metrics", config.metrics(), cfg.metrics());
     warnIfChanged("ja4", config.ja4(), cfg.ja4());
-    warnIfChanged("requestLog", config.requestLog(), cfg.requestLog());
     warnIfChanged("traceContext", config.traceContext(), cfg.traceContext());
     warnIfChanged("admin", config.admin(), cfg.admin());
   }
