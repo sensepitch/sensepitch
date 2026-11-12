@@ -32,6 +32,13 @@ DURATION=${DURATION:-10s}
 RATE=${RATE:-5000}
 URL=https://localhost:$PORT/
 
+for cmd in java vegeta openssl wget; do
+  if ! command -v $cmd > /dev/null; then
+    echo "$cmd not found in PATH" >&2
+    exit 1
+  fi
+done
+
 if [ ! -f "$JAR" ]; then
   echo "build first: ./mvnw package -DskipTests" >&2
   exit 1
