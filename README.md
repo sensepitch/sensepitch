@@ -565,8 +565,7 @@ the JSON lines on standard out and for the OTLP export alike.
 By default the request log goes to standard out, one JSON object per line:
 
 ````json
-{"timestamp":"2026-11-11T10:00:00.123Z","observed_timestamp":"2026-11-11T10:00:00.130Z",
- "event.name":"sensepitch.request","severity_text":"INFO","severity_number":9,
+{"timestamp":"2026-11-11T10:00:00.123Z","event.name":"sensepitch.request",
  "trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","span_id":"00f067aa0ba902b7",
  "client.address":"192.0.2.7","client.port":51234,"server.address":"example.com",
  "server.port":443,"http.request.method":"GET","url.path":"/search","url.query":"q=edge", ...}
@@ -674,9 +673,9 @@ Record level fields are top level keys in JSON and the fields of the log data mo
 | JSON key | OTLP | Content |
 |---|---|---|
 | `timestamp` | `time_unix_nano` | start of the request |
-| `observed_timestamp` | `observed_time_unix_nano` | when the record was produced, after the response was sent |
+| — | `observed_time_unix_nano` | when the record was produced, after the response was sent |
 | `event.name` | `event_name` | `sensepitch.request`, identifies request log records |
-| `severity_text`, `severity_number` | same | `INFO` (9), `WARN` (13) for server errors and failed requests |
+| — | `severity_text`, `severity_number` | `INFO` (9), `WARN` (13) for server errors and failed requests |
 | `trace_id`, `span_id` | same, plus `flags` | trace context of the request, the span id is the request id |
 | — | `body` | summary, e.g. `GET /search?q=edge 200` |
 

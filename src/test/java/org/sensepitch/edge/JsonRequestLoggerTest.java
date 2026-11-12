@@ -31,18 +31,10 @@ class JsonRequestLoggerTest {
     List<String> keys = new ArrayList<>();
     record.fieldNames().forEachRemaining(keys::add);
     assertThat(keys)
-        .startsWith(
-            "timestamp",
-            "observed_timestamp",
-            "event.name",
-            "severity_text",
-            "severity_number",
-            "trace_id",
-            "span_id");
+        .startsWith("timestamp", "event.name", "trace_id", "span_id")
+        .doesNotContain("observed_timestamp", "severity_text", "severity_number");
     assertThat(record.get("timestamp").asText()).isEqualTo("1970-01-01T00:00:00.000Z");
     assertThat(record.get("event.name").asText()).isEqualTo(SensepitchLogFields.EVENT_NAME_VALUE);
-    assertThat(record.get("severity_text").asText()).isEqualTo("INFO");
-    assertThat(record.get("severity_number").asInt()).isEqualTo(9);
     assertThat(record.get("trace_id").asText()).isEqualTo(TestRequestLogInfo.TRACE_ID);
     assertThat(record.get("span_id").asText()).isEqualTo(TestRequestLogInfo.SPAN_ID);
     assertThat(record.has("body")).as("body is OTLP only").isFalse();
@@ -76,9 +68,8 @@ class JsonRequestLoggerTest {
   }
 
   @Test
-  void serverErrorIsWarning() throws Exception {
+  void serverErrorHasErrorType() throws Exception {
     JsonNode record = log(TestRequestLogInfo.of(HttpMethod.GET, 504));
-    assertThat(record.get("severity_text").asText()).isEqualTo("WARN");
     assertThat(record.get("error.type").asText()).isEqualTo("504");
   }
 }

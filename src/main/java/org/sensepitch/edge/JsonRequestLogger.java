@@ -15,9 +15,13 @@ import java.time.format.DateTimeFormatter;
 /// The keys are the names defined in [OtelLogFields] and [SensepitchLogFields], see
 /// [RequestLogFieldsWriter], written
 /// flat with dots, e.g. `"http.request.method":"GET"`, so they match the attributes of the OTLP
-/// export one to one. The record level fields come first: `timestamp`, `observed_timestamp`,
-/// `event.name`, `severity_text`, `severity_number`, `trace_id` and `span_id`. A log collector
-/// recognises the records by `event.name` with the value [SensepitchLogFields#EVENT_NAME_VALUE].
+/// export one to one. The record level fields come first: `timestamp`, `event.name`, `trace_id`
+/// and `span_id`. A log collector recognises the records by `event.name` with the value
+/// [SensepitchLogFields#EVENT_NAME_VALUE].
+///
+/// The observed timestamp and the severity of the OTLP record are left out, they are redundant:
+/// the observed timestamp is about `timestamp` plus `sensepitch.duration.total_ns`, and the
+/// severity follows from `http.response.status_code` and `error.type`.
 ///
 /// The record is rendered into a buffer and written with a single
 /// [RequestLogOutput#writeLine(String)] call, so records of concurrent event loops cannot
@@ -72,10 +76,7 @@ public class JsonRequestLogger implements RequestLogger {
         String traceFlags) {
       try {
         json.writeStringField(OtelLogFields.TIMESTAMP, timestamp(timeMillis));
-        json.writeStringField(OtelLogFields.OBSERVED_TIMESTAMP, timestamp(observedTimeMillis));
         json.writeStringField(OtelLogFields.EVENT_NAME, SensepitchLogFields.EVENT_NAME_VALUE);
-        json.writeStringField(OtelLogFields.SEVERITY_TEXT, severity.name());
-        json.writeNumberField(OtelLogFields.SEVERITY_NUMBER, severity.number());
         if (traceId != null) {
           json.writeStringField(OtelLogFields.TRACE_ID, traceId);
         }
