@@ -418,4 +418,36 @@ class RequestLogFieldsWriterTest {
             Map.entry("present.address", "192.0.2.7"),
             Map.entry("positive", 443L));
   }
+
+  /// The sampled headers keeps order, casing and repeated headers, and leaves out secrets and
+  /// the headers the edge adds
+  @Test
+  void sampleHeaders() {
+    TestRequestLogInfo info = TestRequestLogInfo.of(HttpMethod.GET, 200);
+    info.request().headers().add("User-Agent", "curl/8");
+    info.request().headers().add("Cookie", "sid=secret");
+    info.request().headers().add("Accept", "text/html");
+    info.request().headers().add("Accept", "*/*");
+    info.request().headers().add("Authorization", "Bearer secret");
+    info.request().headers().add("Proxy-Authorization", "Basic secret");
+    info.request().headers().add(TraceContext.TRACEPARENT, "00-x-y-01");
+    info.request().headers().add("X-Forwarded-For", "192.0.2.7");
+    info.request().headers().add("X-Forwarded-Proto", "https");
+    info.request().headers().add(IpTraitsHandler.COUNTRY_HEADER, "DE");
+    info.request().headers().add(Ja4HeaderHandler.JA4_RAW_HEADER, "raw");
+    info.request().headers().add(Deflector.ADMISSION_TOKEN_HEADER, "token");
+    info.request().headers().add(BypassCheck.HEADER, "uri");
+    info.request().headers().add("X-Custom", "1");
+    RecordingSink sink = new RecordingSink();
+    RequestLogFieldsWriter.write(info, sink, 1);
+    assertThat(sink.fields.get("sensepitch.request.sample_headers"))
+        .isEqualTo(
+            List.of(
+                "host: example.com",
+                "User-Agent: curl/8",
+                "Accept: text/html",
+                "Accept: */*",
+                "X-Custom: 1"));
+    assertThat(fields(info).fields).doesNotContainKey("sensepitch.request.sample_headers");
+  }
 }

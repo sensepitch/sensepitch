@@ -70,9 +70,11 @@ public final class RequestLoggerFactory {
           case RequestLogDestinationConfig.TYPE_STDOUT ->
               destination.plainText()
                   ? new PlainTextRequestLogger(stdout)
-                  : new JsonRequestLogger(stdout);
+                  : new JsonRequestLogger(stdout, destination.sampleHeadersInterval());
           case RequestLogDestinationConfig.TYPE_OTLP ->
-              new OtlpRequestLogger(new OtlpLogDestination(name, destination.otlp(), metrics));
+              new OtlpRequestLogger(
+                  new OtlpLogDestination(
+                      name, destination.otlp(), metrics, destination.sampleHeadersInterval()));
           default -> throw new IllegalStateException("type validated before");
         };
     return destination.anonymizeClientIp() ? new AnonymizingRequestLogger(logger) : logger;
@@ -80,8 +82,8 @@ public final class RequestLoggerFactory {
 
   /// Names of the destinations, defaulting to the type, with the index appended for the second
   /// and further `stdout` destinations. Several `otlp` destinations must be named explicitly. Also
-  /// validates the type, the presence of the `otlp` settings exactly for `otlp` destinations, and
-  /// checks names are unique.
+  /// validates the type, the presence of the `otlp` settings exactly for `otlp` destinations, that
+  /// `sampleHeadersInterval` is not negative, and checks names are unique.
   static List<String> names(List<RequestLogDestinationConfig> destinations) {
     // the name identifies an otlp destination across a reload, a positional default would shift
     // when a destination is inserted and hand a backlog to the wrong endpoint
@@ -113,6 +115,10 @@ public final class RequestLoggerFactory {
       if (!otlp && destination.otlp() != null) {
         throw new IllegalArgumentException(
             "requestLog.destinations[" + i + "]: otlp settings on a " + type + " destination");
+      }
+      if (destination.sampleHeadersInterval() < 0) {
+        throw new IllegalArgumentException(
+            "requestLog.destinations[" + i + "]: sampleHeadersInterval must not be negative");
       }
       String name = destination.name();
       if (otlp && severalOtlp && (name == null || name.isBlank())) {

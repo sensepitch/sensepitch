@@ -264,6 +264,25 @@ class OtlpLogDestinationTest {
     assertThat(record.getSeverityNumberValue()).isEqualTo(13);
   }
 
+  /// The sampled headers is encoded as a string array attribute
+  @Test
+  void sampleHeaders() throws Exception {
+    TestRequestLogInfo info = TestRequestLogInfo.of(HttpMethod.GET, 200);
+    info.request().headers().add("Accept", "*/*");
+    ProtobufWriter out = new ProtobufWriter(1024);
+    new OtlpRequestLogSink(1).encode(out, info);
+    LogRecord record = LogRecord.parseFrom(out.toByteArray());
+    AnyValue sampled =
+        attributes(record.getAttributesList()).get("sensepitch.request.sample_headers");
+    assertThat(sampled.getArrayValue().getValuesList())
+        .extracting(AnyValue::getStringValue)
+        .containsExactly("host: example.com", "Accept: */*");
+    destination =
+        new OtlpLogDestination(
+            "otlp", config().flushIntervalMillis(60_000).build(), new RequestLogMetrics(), 27);
+    assertThat(destination.sampleHeadersInterval()).isEqualTo(27);
+  }
+
   /// Records of a thread are buffered and sent together
   @Test
   void recordsOfAThreadAreSentTogether() throws Exception {

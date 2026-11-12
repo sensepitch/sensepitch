@@ -21,7 +21,7 @@ final class OtlpThreadLogger {
 
   private final OtlpLogDestination destination;
   private final Thread owner;
-  private final OtlpRequestLogSink sink = new OtlpRequestLogSink();
+  private final OtlpRequestLogSink sink;
   private final int batchBytes;
 
   /// `null` after [#retire()], or if no batch was available
@@ -33,6 +33,7 @@ final class OtlpThreadLogger {
     this.destination = destination;
     this.owner = owner;
     this.batchBytes = destination.batchBytes();
+    this.sink = new OtlpRequestLogSink(destination.sampleHeadersInterval());
     this.active = first;
   }
 

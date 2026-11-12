@@ -38,17 +38,28 @@ final class OtlpRequestLogSink implements RequestLogSink {
   /// Reused for text composed from parts: the body and IP addresses
   private final StringBuilder text = new StringBuilder(256);
 
+  private final int sampleHeadersInterval;
+
   private ProtobufWriter out;
   private int arrayKeyValue;
   private int arrayAny;
   private int arrayValues;
+
+  OtlpRequestLogSink() {
+    this(0);
+  }
+
+  /// @param sampleHeadersInterval see [RequestLogDestinationConfig#sampleHeadersInterval()]
+  OtlpRequestLogSink(int sampleHeadersInterval) {
+    this.sampleHeadersInterval = sampleHeadersInterval;
+  }
 
   /// Writes the fields of the `LogRecord` message of the request, the caller writes the
   /// enclosing message
   void encode(ProtobufWriter out, RequestLogInfo info) {
     this.out = out;
     try {
-      RequestLogFieldsWriter.write(info, this);
+      RequestLogFieldsWriter.write(info, this, sampleHeadersInterval);
     } finally {
       this.out = null;
     }

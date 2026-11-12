@@ -103,6 +103,32 @@ class RequestLoggerFactoryTest {
     assertThat(stdout.lines()).singleElement().asString().startsWith("RQ0 ");
   }
 
+  /// The interval of a destination reaches its logger, `1` samples every request
+  @Test
+  void sampleHeadersInterval() {
+    RequestLogDestinationConfig sampling =
+        stdout(false, false).toBuilder().sampleHeadersInterval(1).build();
+    try (RequestLogger logger =
+        build(
+            RequestLogConfig.builder()
+                .destinations(List.of(stdout(false, false), sampling))
+                .build())) {
+      logOneRequest(logger);
+    }
+    assertThat(stdout.lines()).hasSize(2);
+    assertThat(stdout.lines().get(0)).doesNotContain("sensepitch.request.sample_headers");
+    assertThat(stdout.lines().get(1)).contains("\"sensepitch.request.sample_headers\":[\"");
+  }
+
+  @Test
+  void negativeSampleHeadersIntervalIsRejected() {
+    RequestLogDestinationConfig negative =
+        stdout(false, false).toBuilder().sampleHeadersInterval(-1).build();
+    assertThatThrownBy(() -> RequestLoggerFactory.names(List.of(negative)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("requestLog.destinations[0]: sampleHeadersInterval must not be negative");
+  }
+
   /// Every destination gets the request, each with its own format and anonymization
   @Test
   void multipleDestinations() {

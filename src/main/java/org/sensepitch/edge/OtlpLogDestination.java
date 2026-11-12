@@ -83,6 +83,7 @@ public class OtlpLogDestination implements RequestLogMetrics.QueueSource, AutoCl
   private final Map<String, String> headers;
   private final Duration timeout;
   private final int batchBytes;
+  private final int sampleHeadersInterval;
   private final long maxBufferedBytes;
   private final long flushIntervalNanos;
   private final long initialRetryDelayMillis;
@@ -136,13 +137,20 @@ public class OtlpLogDestination implements RequestLogMetrics.QueueSource, AutoCl
   }
 
   public OtlpLogDestination(String name, OtlpConfig config, RequestLogMetrics metrics) {
+    this(name, config, metrics, 0);
+  }
+
+  /// @param sampleHeadersInterval see [RequestLogDestinationConfig#sampleHeadersInterval()]
+  public OtlpLogDestination(
+      String name, OtlpConfig config, RequestLogMetrics metrics, int sampleHeadersInterval) {
     this(
         name,
         config,
         metrics,
         INITIAL_RETRY_DELAY_MILLIS,
         MAX_RETRY_DELAY_MILLIS,
-        CLOSE_TIMEOUT_MILLIS);
+        CLOSE_TIMEOUT_MILLIS,
+        sampleHeadersInterval);
   }
 
   /// With other delays, for tests
@@ -153,6 +161,18 @@ public class OtlpLogDestination implements RequestLogMetrics.QueueSource, AutoCl
       long initialRetryDelayMillis,
       long maxRetryDelayMillis,
       long closeTimeoutMillis) {
+    this(
+        name, config, metrics, initialRetryDelayMillis, maxRetryDelayMillis, closeTimeoutMillis, 0);
+  }
+
+  private OtlpLogDestination(
+      String name,
+      OtlpConfig config,
+      RequestLogMetrics metrics,
+      long initialRetryDelayMillis,
+      long maxRetryDelayMillis,
+      long closeTimeoutMillis,
+      int sampleHeadersInterval) {
     if (config.endpoint() == null || config.endpoint().isBlank()) {
       throw new IllegalArgumentException("Request log destination " + name + ": endpoint missing");
     }
@@ -177,6 +197,7 @@ public class OtlpLogDestination implements RequestLogMetrics.QueueSource, AutoCl
     headers = config.headers() != null ? Map.copyOf(config.headers()) : Map.of();
     timeout = Duration.ofMillis(config.effectiveTimeoutMillis());
     batchBytes = config.effectiveBatchBytes();
+    this.sampleHeadersInterval = sampleHeadersInterval;
     maxBufferedBytes = config.effectiveMaxBufferedBytes();
     flushIntervalNanos = TimeUnit.MILLISECONDS.toNanos(config.effectiveFlushIntervalMillis());
     this.initialRetryDelayMillis = initialRetryDelayMillis;
@@ -313,6 +334,11 @@ public class OtlpLogDestination implements RequestLogMetrics.QueueSource, AutoCl
 
   int batchBytes() {
     return batchBytes;
+  }
+
+  /// See [RequestLogDestinationConfig#sampleHeadersInterval()]
+  int sampleHeadersInterval() {
+    return sampleHeadersInterval;
   }
 
   boolean isClosed() {

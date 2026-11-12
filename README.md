@@ -613,6 +613,12 @@ Everything specific to OTLP is in the `otlp` object, which is rejected on a `std
 - **`anonymizeClientIp`:** per destination. The client address is truncated to its network, `/24`
   for IPv4 (`192.0.2.7` becomes `192.0.2.0`) and `/48` for IPv6, and the client port is left out.
   The country and ASN are still derived from the full address.
+- **`sampleHeadersInterval`:** per destination, `0` (off) by default. If positive, about one in
+  this many requests, picked at random, also logs its request headers as
+  `sensepitch.request.sample_headers`, `Name: value` in the order received with the original
+  casing, to study what identifies a client. `Cookie`, `Authorization`, `Proxy-Authorization`,
+  `traceparent` and the headers the edge adds itself (`X-Forwarded-*`, `X-Sensepitch-*`,
+  admission token, flavor, bypass) are left out. The plain text format ignores it.
 - **Batching:** each event loop encodes its records into a buffer of its own, so logging a request
   allocates nothing and needs no shared queue. A buffer is handed to the sender when it reaches
   `otlp.batchBytes` or after `otlp.flushIntervalMillis`, and the event loop continues with an

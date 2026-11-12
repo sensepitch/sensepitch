@@ -62,6 +62,11 @@ public final class SensepitchLogFields {
   /// Names of the request headers in order, they identify a client without personal data
   public static final String REQUEST_HEADER_NAMES = "sensepitch.request.header_names";
 
+  /// Request headers of a sample of requests, `Name: value` in the order received, for studying
+  /// client fingerprints. Secrets and headers the edge adds are left out, see
+  /// [RequestLogDestinationConfig#sampleHeadersInterval()]
+  public static final String REQUEST_SAMPLE_HEADERS = "sensepitch.request.sample_headers";
+
   /// Durations in nanoseconds, OpenTelemetry defines durations as metrics only, see
   /// [RequestLogInfo#receiveDurationNanos()]
   public static final String DURATION_RECEIVE_NS = "sensepitch.duration.receive_ns";

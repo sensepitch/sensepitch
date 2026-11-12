@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
+import java.util.concurrent.ThreadLocalRandom;
 
 /// Writes the fields of a request into a [RequestLogSink], the single mapping of a request to the
 /// request log fields. It is used for both output formats, with a different sink implementation
@@ -54,6 +56,34 @@ public final class RequestLogFieldsWriter {
           SEC_CH_UA_MOBILE,
           SIGNATURE_AGENT);
 
+  /// Request headers left out of the sampled headers, see
+  /// [#write(RequestLogInfo, RequestLogSink, int)]: secrets and values that change per request,
+  /// and the headers the edge adds itself, which tell nothing about the client. `X-Forwarded-For`
+  /// would also leak the client address past [RequestLogDestinationConfig#anonymizeClientIp()].
+  /// Case insensitive.
+  static final Set<String> SAMPLE_HEADERS_EXCLUDED = sampleHeadersExcluded();
+
+  private static Set<String> sampleHeadersExcluded() {
+    Set<String> names = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+    names.addAll(
+        List.of(
+            HttpHeaderNames.COOKIE.toString(),
+            HttpHeaderNames.AUTHORIZATION.toString(),
+            HttpHeaderNames.PROXY_AUTHORIZATION.toString(),
+            TraceContext.TRACEPARENT,
+            "X-Forwarded-For",
+            "X-Forwarded-Proto",
+            IpTraitsHandler.TRAITS_HEADER,
+            IpTraitsHandler.COUNTRY_HEADER,
+            IpTraitsHandler.ASN_HEADER,
+            Ja4HeaderHandler.JA4_HEADER,
+            Ja4HeaderHandler.JA4_RAW_HEADER,
+            Deflector.ADMISSION_TOKEN_HEADER,
+            Deflector.TRAFFIC_FLAVOR_HEADER,
+            BypassCheck.HEADER));
+    return names;
+  }
+
   /// Keys of [#LOGGED_HEADERS], computed once
   private static final String[] LOGGED_HEADER_KEYS =
       LOGGED_HEADERS.stream().map(OtelLogFields::requestHeader).toArray(String[]::new);
@@ -97,9 +127,18 @@ public final class RequestLogFieldsWriter {
     }
   }
 
+  /// Emits all fields of the request into the sink, without sampled headers
+  public static void write(RequestLogInfo info, RequestLogSink sink) {
+    write(info, sink, 0);
+  }
+
   /// Emits all fields of the request into the sink. The order is for reading a JSON line: what was
   /// requested, the result and its cost, who asked, how it was routed, then the details.
-  public static void write(RequestLogInfo info, RequestLogSink sink) {
+  ///
+  /// @param sampleHeadersInterval if positive, about one in this many requests, picked at random,
+  ///   also gets [SensepitchLogFields#REQUEST_SAMPLE_HEADERS], see
+  ///   [RequestLogDestinationConfig#sampleHeadersInterval()]
+  public static void write(RequestLogInfo info, RequestLogSink sink, int sampleHeadersInterval) {
     HttpRequest request = info.request();
     HttpResponse response = info.response();
     HttpHeaders headers = request.headers();
@@ -139,7 +178,7 @@ public final class RequestLogFieldsWriter {
       sink.arrayValue(info.clientTraceparent());
       sink.endArray();
     }
-    writeDetails(info, headers, sink);
+    writeDetails(info, headers, sink, sampleHeadersInterval);
   }
 
   /// The client, its user agent and the logged request headers
@@ -268,7 +307,8 @@ public final class RequestLogFieldsWriter {
   }
 
   /// The remaining Sensepitch fields: connection, fingerprints, header names, partial durations
-  private static void writeDetails(RequestLogInfo info, HttpHeaders headers, RequestLogSink sink) {
+  private static void writeDetails(
+      RequestLogInfo info, HttpHeaders headers, RequestLogSink sink, int sampleHeadersInterval) {
     sink.string(SensepitchLogFields.CONNECTION_ID, info.connectionId());
     sink.number(SensepitchLogFields.CONNECTION_REQUEST_COUNT, info.connectionRequestCount());
     sink.optionalString(SensepitchLogFields.IP_TRAITS, headers.get(IpTraitsHandler.TRAITS_HEADER));
@@ -284,7 +324,26 @@ public final class RequestLogFieldsWriter {
       sink.arrayValue(entries.next().getKey());
     }
     sink.endArray();
+    if (sampleHeadersInterval > 0
+        && ThreadLocalRandom.current().nextInt(sampleHeadersInterval) == 0) {
+      writeSampleHeaders(headers, sink);
+    }
     sink.number(SensepitchLogFields.DURATION_RECEIVE_NS, info.receiveDurationNanos());
     sink.number(SensepitchLogFields.DURATION_RESPONSE_NS, info.responseTimeNanos());
+  }
+
+  /// All request headers as `Name: value` in the order received, except
+  /// [#SAMPLE_HEADERS_EXCLUDED]. Allocates, but only for the sampled requests.
+  private static void writeSampleHeaders(HttpHeaders headers, RequestLogSink sink) {
+    sink.startArray(SensepitchLogFields.REQUEST_SAMPLE_HEADERS);
+    Iterator<Map.Entry<CharSequence, CharSequence>> entries = headers.iteratorCharSequence();
+    while (entries.hasNext()) {
+      Map.Entry<CharSequence, CharSequence> entry = entries.next();
+      String name = entry.getKey().toString();
+      if (!SAMPLE_HEADERS_EXCLUDED.contains(name)) {
+        sink.arrayValue(name + ": " + entry.getValue());
+      }
+    }
+    sink.endArray();
   }
 }
