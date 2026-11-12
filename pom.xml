@@ -301,6 +301,8 @@
             <java.util.logging.manager>org.apache.logging.log4j.jul.LogManager</java.util.logging.manager>
             <!-- see surefire -->
             <net.bytebuddy.nexus.disabled>true</net.bytebuddy.nexus.disabled>
+            <!-- the fat JAR built by shade in the package phase, launched by ShadedJarIT -->
+            <shadedJar>${project.build.directory}/${project.build.finalName}-with-dependencies.jar</shadedJar>
           </systemPropertyVariables>
         </configuration>
         <executions>
@@ -557,6 +559,14 @@
                   <!-- read via Package.getImplementationVersion(), sent as service.version -->
                   <manifestEntries>
                     <Implementation-Version>${project.version}</Implementation-Version>
+                    <!-- same as the command line flag documented in the README. tcnative and netty
+                         need native access, without it java -jar prints:
+                         WARNING: A restricted method in java.lang.System has been called
+                         WARNING: java.lang.System::loadLibrary has been called by io.netty.util.internal.NativeLibraryUtil
+                           in an unnamed module (file:.../sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar)
+                         WARNING: Use enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+                         WARNING: Restricted methods will be blocked in a future release unless native access is enabled -->
+                    <Enable-Native-Access>ALL-UNNAMED</Enable-Native-Access>
                   </manifestEntries>
                 </transformer>
                 <!-- Merge ServiceLoader registrations instead of keeping only one jar's file,

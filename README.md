@@ -50,7 +50,8 @@ For testing we use OpenJDK 24 and switch to ZGC for minimal pause times:
 On Java 25, `--enable-native-access=ALL-UNNAMED` lets Netty 4.2.17 use the foreign linker to call
 libc's `malloc` and `free` directly. These allocations bypass both JVM direct buffer accounting and
 native memory tracking. Use Netty's allocator metrics and process RSS to monitor them, see
-[Exposed metrics](#exposed-metrics).
+[Exposed metrics](#exposed-metrics). The shaded JAR sets `Enable-Native-Access: ALL-UNNAMED` in its
+manifest, so `java -jar` enables native access also without the flag.
 
 For load testing we use vegeta:
 
