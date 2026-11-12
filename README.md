@@ -193,6 +193,12 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
   (stuck at 1.36.1: Spotless cannot load 1.37+, 2.x changes the lambda layout). Impact: one-time
   reformat of about 40 files / 930 lines, lambda bodies hug the call (`.forEach(t -> {`) and indent
   less. Done in its own commit, `formatJavadoc` stays off so the `///` comments remain untouched.
+- [ ] Serenity: use it properly or remove it. No `@Step` is recorded (4.3.4 and 5.4.2, also not with
+  `@Steps` injection), so it produces no useful report. Its cost: `SerenityTestExecutionListener`
+  runs for every test, needs the byte-buddy agent (`-javaagent` copy step) and
+  `net.bytebuddy.nexus.disabled` to avoid a `sun.misc.Unsafe` warning, 5.x writes ~1000 report
+  files (4 MB) to `target/serenity-reports`, and `./mvnw clean verify` takes ~38 s instead of
+  ~29.5 s without it (+30 %). Removing it touches 7 test classes (`@ExtendWith`, ~21 `@Step`).
 
 ## Resources
 
