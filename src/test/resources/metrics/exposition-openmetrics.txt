@@ -1,0 +1,178 @@
+# Content-Type: application/openmetrics-text; version=1.0.0; charset=utf-8
+# TYPE sensepitch_deflector_requests counter
+# HELP sensepitch_deflector_requests Requests handled by the deflector, by ingress and outcome
+sensepitch_deflector_requests_total{ingress="example.com",outcome="challenge_sent"} 2.0
+sensepitch_deflector_requests_total{ingress="example.com",outcome="passed"} 1.0
+# TYPE sensepitch_edge_server_live gauge
+# HELP sensepitch_edge_server_live Always 1, might be 0 in the future when the server is not accepting connections, e.g. warming up
+sensepitch_edge_server_live 1.0
+# TYPE sensepitch_ingress_connections_active gauge
+# HELP sensepitch_ingress_connections_active Number of currently active connections (opened - closed)
+sensepitch_ingress_connections_active 1.0
+# TYPE sensepitch_ingress_connections_closed counter
+# HELP sensepitch_ingress_connections_closed Connections closed
+sensepitch_ingress_connections_closed_total 1.0
+# TYPE sensepitch_ingress_connections_opened counter
+# HELP sensepitch_ingress_connections_opened Connections opened
+sensepitch_ingress_connections_opened_total 2.0
+# TYPE sensepitch_ingress_receive_timeout counter
+sensepitch_ingress_receive_timeout_total{phase="first_request"} 0.0
+sensepitch_ingress_receive_timeout_total{phase="keep_alive"} 2.0
+# TYPE sensepitch_ingress_request_duration_seconds histogram
+# UNIT sensepitch_ingress_request_duration_seconds seconds
+# HELP sensepitch_ingress_request_duration_seconds HTTP total duration of the request from established connection to response received
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="0.002"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="0.004"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="0.008"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="0.016"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="0.032"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="0.064"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="0.128"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="0.256"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="0.512"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="1.024"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="2.048"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="4.096"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="8.192"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="16.384"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="+Inf"} 1
+sensepitch_ingress_request_duration_seconds_count{ingress="example.com",method="GET",status_code="200"} 1
+sensepitch_ingress_request_duration_seconds_sum{ingress="example.com",method="GET",status_code="200"} 3.0E-6
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="0.002"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="0.004"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="0.008"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="0.016"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="0.032"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="0.064"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="0.128"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="0.256"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="0.512"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="1.024"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="2.048"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="4.096"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="8.192"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="16.384"} 1
+sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="+Inf"} 1
+sensepitch_ingress_request_duration_seconds_count{ingress="example.com",method="POST",status_code="404"} 1
+sensepitch_ingress_request_duration_seconds_sum{ingress="example.com",method="POST",status_code="404"} 3.0E-6
+# TYPE sensepitch_ingress_request_errors counter
+sensepitch_ingress_request_errors_total{phase="upstream",type="connect"} 1.0
+# TYPE sensepitch_ingress_request_flavor_count counter
+sensepitch_ingress_request_flavor_count_total{country="DE",flavor="human"} 1.0
+sensepitch_ingress_request_flavor_count_total{country="unknown",flavor="unknown"} 1.0
+# TYPE sensepitch_ingress_request_size_bytes histogram
+# UNIT sensepitch_ingress_request_size_bytes bytes
+# HELP sensepitch_ingress_request_size_bytes Bytes of HTTP request traffic received
+sensepitch_ingress_request_size_bytes_bucket{ingress="example.com",le="64.0"} 2
+sensepitch_ingress_request_size_bytes_bucket{ingress="example.com",le="128.0"} 2
+sensepitch_ingress_request_size_bytes_bucket{ingress="example.com",le="256.0"} 2
+sensepitch_ingress_request_size_bytes_bucket{ingress="example.com",le="512.0"} 2
+sensepitch_ingress_request_size_bytes_bucket{ingress="example.com",le="1024.0"} 2
+sensepitch_ingress_request_size_bytes_bucket{ingress="example.com",le="2048.0"} 2
+sensepitch_ingress_request_size_bytes_bucket{ingress="example.com",le="4096.0"} 2
+sensepitch_ingress_request_size_bytes_bucket{ingress="example.com",le="8192.0"} 2
+sensepitch_ingress_request_size_bytes_bucket{ingress="example.com",le="16384.0"} 2
+sensepitch_ingress_request_size_bytes_bucket{ingress="example.com",le="32768.0"} 2
+sensepitch_ingress_request_size_bytes_bucket{ingress="example.com",le="65536.0"} 2
+sensepitch_ingress_request_size_bytes_bucket{ingress="example.com",le="131072.0"} 2
+sensepitch_ingress_request_size_bytes_bucket{ingress="example.com",le="262144.0"} 2
+sensepitch_ingress_request_size_bytes_bucket{ingress="example.com",le="524288.0"} 2
+sensepitch_ingress_request_size_bytes_bucket{ingress="example.com",le="+Inf"} 2
+sensepitch_ingress_request_size_bytes_count{ingress="example.com"} 2
+sensepitch_ingress_request_size_bytes_sum{ingress="example.com"} 100.0
+# TYPE sensepitch_ingress_requests_aborted counter
+# HELP sensepitch_ingress_requests_aborted The response could not be sent to the client, e.g. when the connection is reset
+sensepitch_ingress_requests_aborted_total 1.0
+# TYPE sensepitch_ingress_requests_completed counter
+# HELP sensepitch_ingress_requests_completed Increments once the response was received by the client
+sensepitch_ingress_requests_completed_total 3.0
+# TYPE sensepitch_ingress_requests_in_flight gauge
+# HELP sensepitch_ingress_requests_in_flight Number of requests currently in flight
+sensepitch_ingress_requests_in_flight 1.0
+# TYPE sensepitch_ingress_requests_started counter
+# HELP sensepitch_ingress_requests_started Increments as soon as an HTTP header from a client is received
+sensepitch_ingress_requests_started_total 5.0
+# TYPE sensepitch_ingress_response_duration_seconds histogram
+# UNIT sensepitch_ingress_response_duration_seconds seconds
+# HELP sensepitch_ingress_response_duration_seconds HTTP request response duration in seconds, from request received to first byte of response, not effected by client connectivity
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="0.002"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="0.004"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="0.008"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="0.016"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="0.032"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="0.064"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="0.128"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="0.256"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="0.512"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="1.024"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="2.048"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="4.096"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="8.192"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="16.384"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="+Inf"} 1
+sensepitch_ingress_response_duration_seconds_count{ingress="example.com",method="GET",status_code="200"} 1
+sensepitch_ingress_response_duration_seconds_sum{ingress="example.com",method="GET",status_code="200"} 2.0E-6
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="0.002"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="0.004"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="0.008"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="0.016"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="0.032"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="0.064"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="0.128"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="0.256"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="0.512"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="1.024"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="2.048"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="4.096"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="8.192"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="16.384"} 1
+sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="POST",status_code="404",le="+Inf"} 1
+sensepitch_ingress_response_duration_seconds_count{ingress="example.com",method="POST",status_code="404"} 1
+sensepitch_ingress_response_duration_seconds_sum{ingress="example.com",method="POST",status_code="404"} 2.0E-6
+# TYPE sensepitch_ingress_response_size_bytes histogram
+# UNIT sensepitch_ingress_response_size_bytes bytes
+# HELP sensepitch_ingress_response_size_bytes Bytes of HTTP response traffic sent
+sensepitch_ingress_response_size_bytes_bucket{ingress="example.com",le="256.0"} 2
+sensepitch_ingress_response_size_bytes_bucket{ingress="example.com",le="512.0"} 2
+sensepitch_ingress_response_size_bytes_bucket{ingress="example.com",le="1024.0"} 2
+sensepitch_ingress_response_size_bytes_bucket{ingress="example.com",le="2048.0"} 2
+sensepitch_ingress_response_size_bytes_bucket{ingress="example.com",le="4096.0"} 2
+sensepitch_ingress_response_size_bytes_bucket{ingress="example.com",le="8192.0"} 2
+sensepitch_ingress_response_size_bytes_bucket{ingress="example.com",le="16384.0"} 2
+sensepitch_ingress_response_size_bytes_bucket{ingress="example.com",le="32768.0"} 2
+sensepitch_ingress_response_size_bytes_bucket{ingress="example.com",le="65536.0"} 2
+sensepitch_ingress_response_size_bytes_bucket{ingress="example.com",le="131072.0"} 2
+sensepitch_ingress_response_size_bytes_bucket{ingress="example.com",le="262144.0"} 2
+sensepitch_ingress_response_size_bytes_bucket{ingress="example.com",le="524288.0"} 2
+sensepitch_ingress_response_size_bytes_bucket{ingress="example.com",le="1048576.0"} 2
+sensepitch_ingress_response_size_bytes_bucket{ingress="example.com",le="2097152.0"} 2
+sensepitch_ingress_response_size_bytes_bucket{ingress="example.com",le="+Inf"} 2
+sensepitch_ingress_response_size_bytes_count{ingress="example.com"} 2
+sensepitch_ingress_response_size_bytes_sum{ingress="example.com"} 200.0
+# TYPE sensepitch_netty_allocator_used_memory_bytes gauge
+# UNIT sensepitch_netty_allocator_used_memory_bytes bytes
+# HELP sensepitch_netty_allocator_used_memory_bytes Memory used by the netty byte buffer allocators
+sensepitch_netty_allocator_used_memory_bytes{allocator="default",type="direct"} <bytes>
+sensepitch_netty_allocator_used_memory_bytes{allocator="default",type="heap"} <bytes>
+sensepitch_netty_allocator_used_memory_bytes{allocator="pooled",type="direct"} <bytes>
+sensepitch_netty_allocator_used_memory_bytes{allocator="pooled",type="heap"} <bytes>
+sensepitch_netty_allocator_used_memory_bytes{allocator="unpooled",type="direct"} <bytes>
+sensepitch_netty_allocator_used_memory_bytes{allocator="unpooled",type="heap"} <bytes>
+# TYPE sensepitch_request_log_buffered_bytes gauge
+# HELP sensepitch_request_log_buffered_bytes Bytes of request log records waiting to be sent, e.g. during an outage
+sensepitch_request_log_buffered_bytes{destination="otlp"} 4096.0
+# TYPE sensepitch_request_log_dropped counter
+# HELP sensepitch_request_log_dropped Request log records dropped because the destination could not keep up
+sensepitch_request_log_dropped_total{destination="otlp"} 2.0
+sensepitch_request_log_dropped_total{destination="stdout"} 0.0
+# TYPE sensepitch_request_log_export_failed counter
+# HELP sensepitch_request_log_export_failed Batches of request log records given up, because retrying cannot succeed
+sensepitch_request_log_export_failed_total{destination="otlp"} 1.0
+# TYPE sensepitch_request_log_export_retries counter
+# HELP sensepitch_request_log_export_retries Failed attempts to send a batch of request log records that are retried
+sensepitch_request_log_export_retries_total{destination="otlp"} 1.0
+# TYPE sensepitch_request_log_queued gauge
+# HELP sensepitch_request_log_queued Request log records waiting to be written
+sensepitch_request_log_queued{destination="otlp"} 3.0
+sensepitch_request_log_queued{destination="stdout"} 7.0
+# EOF
