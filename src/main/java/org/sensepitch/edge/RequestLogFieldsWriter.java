@@ -173,9 +173,8 @@ public final class RequestLogFieldsWriter {
       sink.string(OtelLogFields.URL_PATH, uri);
     } else {
       sink.string(OtelLogFields.URL_PATH, uri, 0, query);
-      if (query + 1 < uri.length()) {
-        sink.string(OtelLogFields.URL_QUERY, uri, query + 1, uri.length());
-      }
+      // Empty for a bare `?`, so `/a?` stays distinguishable from `/a`, which has no query
+      sink.string(OtelLogFields.URL_QUERY, uri, query + 1, uri.length());
     }
     HttpVersion version = request.protocolVersion();
     if (version == HttpVersion.HTTP_1_1) {

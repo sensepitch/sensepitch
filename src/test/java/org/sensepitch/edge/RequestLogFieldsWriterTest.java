@@ -286,9 +286,17 @@ class RequestLogFieldsWriterTest {
   }
 
   @Test
-  void emptyQueryIsLeftOut() {
+  void emptyQueryIsKept() {
     TestRequestLogInfo info = TestRequestLogInfo.of(HttpMethod.GET, 200);
     info.request().setUri("/path?");
+    Map<String, Object> fields = fields(info).fields;
+    assertThat(fields).containsEntry("url.path", "/path").containsEntry("url.query", "");
+  }
+
+  @Test
+  void noQueryIsLeftOut() {
+    TestRequestLogInfo info = TestRequestLogInfo.of(HttpMethod.GET, 200);
+    info.request().setUri("/path");
     Map<String, Object> fields = fields(info).fields;
     assertThat(fields).containsEntry("url.path", "/path").doesNotContainKey("url.query");
   }
