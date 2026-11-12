@@ -45,7 +45,7 @@ The test is run on the developers' notebook with load generator, proxy and targe
 
 For testing we use OpenJDK 24 and switch to ZGC for minimal pause times:
 
-    java -XX:+UseZGC --enable-native-access=ALL-UNNAMED -jar target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar
+    java -XX:+UseZGC --enable-native-access=ALL-UNNAMED -jar target/sensepitch-edge-*-with-dependencies.jar
 
 On Java 25, `--enable-native-access=ALL-UNNAMED` lets Netty 4.2.17 use the foreign linker to call
 libc's `malloc` and `free` directly. These allocations bypass both JVM direct buffer accounting and

@@ -45,8 +45,8 @@ export ${!SENSEPITCH_@}
 
 PROXY_URL=https://localhost:$SENSEPITCH_EDGE_LISTEN_HTTPS_PORT
 
-# java -jar ../target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar > sensepitch-edge.log 2>&1 &
-java -XX:+UseZGC --enable-native-access=ALL-UNNAMED -jar ../target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar > sensepitch-edge.log 2>&1 &
+# java -jar ../target/sensepitch-edge-*-with-dependencies.jar > sensepitch-edge.log 2>&1 &
+java -XX:+UseZGC --enable-native-access=ALL-UNNAMED -jar ../target/sensepitch-edge-*-with-dependencies.jar > sensepitch-edge.log 2>&1 &
 
 
 wget --no-check-certificate $PROXY_URL/10kb.img

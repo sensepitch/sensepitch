@@ -18,12 +18,13 @@
 #
 # The proxy is configured from ja4-benchmark.yaml rather than from the environment, see run().
 #
-# Requires: vegeta, openssl, a built ../target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar
+# Requires: vegeta, openssl, a built ../target/sensepitch-edge-*-with-dependencies.jar
 
 set -e
 cd "$(dirname "$0")"
 
-JAR=../target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar
+# newest fat JAR, whatever the project version
+JAR=$(ls -t ../target/sensepitch-edge-*-with-dependencies.jar 2>/dev/null | head -n 1)
 TEMPLATE=ja4-benchmark.yaml
 PORT=${PORT:-17444}
 DURATION=${DURATION:-10s}

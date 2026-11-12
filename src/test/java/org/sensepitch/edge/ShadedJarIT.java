@@ -106,6 +106,17 @@ class ShadedJarIT {
     assertThat(binaryType(header)).isEqualTo(format + " " + cpu);
   }
 
+  /// A snapshot build gets a unique version, e.g. `0.2-20261112.153045-dbe0c1a`, a release build
+  /// keeps the plain version.
+  @Test
+  void manifestHasUniqueVersion() throws IOException {
+    String version;
+    try (JarFile file = new JarFile(jar.toFile())) {
+      version = file.getManifest().getMainAttributes().getValue("Implementation-Version");
+    }
+    assertThat(version).matches("\\d+(\\.\\d+)*(-\\d{8}\\.\\d{6}-[0-9a-f]{7})?");
+  }
+
   /// Object file format and CPU of a native library, derived from its first bytes.
   static String binaryType(byte[] header) {
     ByteBuffer buf = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN);

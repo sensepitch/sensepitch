@@ -8,7 +8,7 @@
 - `pom.xml` is the Maven build definition; `mvnw`/`mvnw.cmd` are the recommended entry points.
 
 ## Build, Test, and Development Commands
-- `./mvnw clean package` builds the project and produces a shaded JAR at `target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar`.
+- `./mvnw clean package` builds the project and produces a shaded JAR at `target/sensepitch-edge-*-with-dependencies.jar`.
 - `./mvnw test` runs the JUnit/Serenity test suite via Surefire.
 - `./mvnw spotless:check` verifies formatting; `./mvnw spotless:apply` auto-formats Java sources.
 - `./mvnw verify` runs the whole gate: tests, `spotless:check`, the Javadoc build, and the JaCoCo
@@ -21,7 +21,7 @@
 - VS Code and Eclipse (m2e) compile into `target-ide/` (the `m2e` profile in `pom.xml`), so their
   background builds never overwrite the classes of a Maven build in `target/`.
 - Run locally after packaging:
-  `java -jar target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar`
+  `java -jar target/sensepitch-edge-*-with-dependencies.jar`
 
 ## Coding Style & Naming Conventions
 - Java 25 is the target (`maven.compiler.release` set to 25).
