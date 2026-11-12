@@ -154,9 +154,8 @@ public class Proxy implements ProxyContext {
       LOG.info("Configuration reloaded, changes:\n" + diff);
     }
     String certificateChanges = Certificates.changes(current.certificates(), next.certificates());
-    if (certificateChanges.isEmpty()) {
-      LOG.info("Certificates reloaded, no changes");
-    } else {
+    // unchanged certificates are the common case, the configuration line above covers the reload
+    if (!certificateChanges.isEmpty()) {
       LOG.info("Certificates reloaded, changes:" + certificateChanges);
     }
     return ReloadResult.APPLIED;

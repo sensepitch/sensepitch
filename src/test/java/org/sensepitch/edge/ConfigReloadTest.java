@@ -306,7 +306,9 @@ class ConfigReloadTest {
                     && !m.contains("default:"));
     logs.clear();
     reload(withSni);
-    assertThat(logs.messages(Proxy.class)).contains("Certificates reloaded, no changes");
+    assertThat(logs.messages(Proxy.class))
+        .contains("Configuration reloaded, no changes")
+        .noneMatch(m -> m.startsWith("Certificates reloaded"));
   }
 
   @Test
