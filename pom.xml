@@ -429,8 +429,10 @@
         </dependencies>
         <executions>
           <execution>
-            <!-- javadoc:javadoc forks generate-sources, so this runs on demand too -->
-            <phase>generate-sources</phase>
+            <!-- only the javadoc check below reads the output, so run it in verify (declared
+                 before the javadoc plugin, so it runs first) and not in every compile/test,
+                 where it cost ~3s. Standalone: ./mvnw lombok:delombok javadoc:javadoc -->
+            <phase>verify</phase>
             <goals>
               <goal>delombok</goal>
             </goals>
@@ -450,7 +452,7 @@
         <executions>
           <execution>
             <!-- make the doc build part of the normal check phase; no-fork because
-                 delombok already ran in generate-sources of this same build -->
+                 delombok already ran earlier in the verify phase of this same build -->
             <id>check-javadoc</id>
             <phase>verify</phase>
             <goals>

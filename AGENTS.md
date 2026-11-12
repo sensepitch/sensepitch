@@ -14,7 +14,10 @@
 - `./mvnw verify` runs the whole gate: tests, `spotless:check`, the Javadoc build, and the JaCoCo
   coverage floor (`jacoco-check` in `pom.xml`, unit and integration tests combined). Raise the floor
   when coverage improves.
-- `./mvnw javadoc:javadoc` renders the API docs into `target/reports/apidocs` and fails on doc errors.
+- `./mvnw lombok:delombok javadoc:javadoc` renders the API docs into `target/reports/apidocs` and
+  fails on doc errors. Delombok is bound to `verify`, so standalone javadoc needs it named explicitly.
+- `.mvn/jvm.config` runs Maven's own JVM with `-XX:TieredStopAtLevel=1` (C1 only): Maven, javac and
+  delombok are short-lived, and skipping C2 saves 3-4 s per build. The forked test JVM is unaffected.
 - VS Code and Eclipse (m2e) compile into `target-ide/` (the `m2e` profile in `pom.xml`), so their
   background builds never overwrite the classes of a Maven build in `target/`.
 - Run locally after packaging:
