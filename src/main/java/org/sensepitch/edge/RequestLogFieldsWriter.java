@@ -43,15 +43,15 @@ public final class RequestLogFieldsWriter {
   static final String SEC_CH_UA_MOBILE = "sec-ch-ua-mobile";
   static final String SIGNATURE_AGENT = "signature-agent";
 
-  /// Request headers logged as `http.request.header.<name>`. Client hints and the language
-  /// preference identify the browser, the values contain no personal data.
+  /// Request headers logged as `http.request.header.<name>`, in this order. Client hints and the
+  /// language preference identify the browser, the values contain no personal data.
   static final List<String> LOGGED_HEADERS =
       List.of(
+          HttpHeaderNames.REFERER.toString(),
           HttpHeaderNames.ACCEPT_LANGUAGE.toString(),
           SEC_CH_UA,
           SEC_CH_UA_PLATFORM,
           SEC_CH_UA_MOBILE,
-          HttpHeaderNames.REFERER.toString(),
           SIGNATURE_AGENT);
 
   /// Keys of [#LOGGED_HEADERS], computed once
@@ -97,7 +97,8 @@ public final class RequestLogFieldsWriter {
     }
   }
 
-  /// Emits all fields of the request into the sink
+  /// Emits all fields of the request into the sink. The order is for reading a JSON line: what was
+  /// requested, the result and its cost, who asked, how it was routed, then the details.
   public static void write(RequestLogInfo info, RequestLogSink sink) {
     HttpRequest request = info.request();
     HttpResponse response = info.response();
@@ -111,11 +112,18 @@ public final class RequestLogFieldsWriter {
         info.spanId(),
         info.traceFlags());
     sink.body(request.method().name(), request.uri(), status);
-    writeClientAndServer(info, headers, sink);
-    writeRequest(request, sink);
-    sink.optionalString(OtelLogFields.HTTP_ROUTE, info.route());
-    writeTls(info, sink);
+    writeRequestLine(request, headers, sink);
     sink.number(OtelLogFields.HTTP_RESPONSE_STATUS_CODE, status);
+    sink.string(SensepitchLogFields.REQUEST_OUTCOME, info.outcome().value());
+    writeError(info, status, sink);
+    sink.number(SensepitchLogFields.DURATION_TOTAL_NS, info.totalDurationNanos());
+    sink.number(OtelLogFields.HTTP_RESPONSE_BODY_SIZE, info.contentBytes());
+    writeClient(info, headers, sink);
+    writeRouting(info, sink);
+    sink.optionalNumber(OtelLogFields.CLIENT_PORT, info.clientPort());
+    sink.optionalNumber(OtelLogFields.SERVER_PORT, info.serverPort());
+    writeTls(info, sink);
+    writeProtocol(request, sink);
     // single valued by its definition, get does not allocate an iterator
     String contentType = response.headers().get(HttpHeaderNames.CONTENT_TYPE);
     if (contentType != null) {
@@ -124,9 +132,29 @@ public final class RequestLogFieldsWriter {
       sink.endArray();
     }
     sink.number(OtelLogFields.HTTP_REQUEST_BODY_SIZE, info.requestBodyBytes());
-    sink.number(OtelLogFields.HTTP_RESPONSE_BODY_SIZE, info.contentBytes());
     sink.number(OtelLogFields.HTTP_REQUEST_SIZE, info.bytesReceived());
     sink.number(OtelLogFields.HTTP_RESPONSE_SIZE, info.bytesSent());
+    if (info.clientTraceparent() != null) {
+      sink.startArray(TRACEPARENT_KEY);
+      sink.arrayValue(info.clientTraceparent());
+      sink.endArray();
+    }
+    writeDetails(info, headers, sink);
+  }
+
+  /// The client, its user agent and the logged request headers
+  private static void writeClient(RequestLogInfo info, HttpHeaders headers, RequestLogSink sink) {
+    sink.optionalAddress(OtelLogFields.CLIENT_ADDRESS, info.clientAddress());
+    sink.optionalString(
+        OtelLogFields.GEO_COUNTRY_ISO_CODE, headers.get(IpTraitsHandler.COUNTRY_HEADER));
+    String asn = headers.get(IpTraitsHandler.ASN_HEADER);
+    if (asn != null) {
+      try {
+        sink.number(SensepitchLogFields.CLIENT_ASN, Long.parseLong(asn.trim()));
+      } catch (NumberFormatException e) {
+        sink.string(SensepitchLogFields.CLIENT_ASN, asn);
+      }
+    }
     sink.optionalString(OtelLogFields.USER_AGENT_ORIGINAL, headers.get(HttpHeaderNames.USER_AGENT));
     for (int i = 0; i < LOGGED_HEADER_KEYS.length; i++) {
       String name = LOGGED_HEADERS.get(i);
@@ -140,26 +168,21 @@ public final class RequestLogFieldsWriter {
         sink.endArray();
       }
     }
-    if (info.clientTraceparent() != null) {
-      sink.startArray(TRACEPARENT_KEY);
-      sink.arrayValue(info.clientTraceparent());
-      sink.endArray();
-    }
-    writeError(info, response, sink);
-    writeSensepitch(info, headers, sink);
   }
 
-  private static void writeClientAndServer(
-      RequestLogInfo info, HttpHeaders headers, RequestLogSink sink) {
-    sink.optionalAddress(OtelLogFields.CLIENT_ADDRESS, info.clientAddress());
-    sink.optionalNumber(OtelLogFields.CLIENT_PORT, info.clientPort());
-    sink.optionalString(OtelLogFields.SERVER_ADDRESS, headers.get(HttpHeaderNames.HOST));
-    sink.optionalNumber(OtelLogFields.SERVER_PORT, info.serverPort());
-    sink.optionalString(
-        OtelLogFields.GEO_COUNTRY_ISO_CODE, headers.get(IpTraitsHandler.COUNTRY_HEADER));
+  /// Which upstream served the request and how the protection decided
+  private static void writeRouting(RequestLogInfo info, RequestLogSink sink) {
+    sink.optionalString(OtelLogFields.HTTP_ROUTE, info.route());
+    sink.optionalString(SensepitchLogFields.UPSTREAM_NAME, info.upstreamName());
+    sink.optionalString(SensepitchLogFields.UPSTREAM_TARGET, info.upstreamTarget());
+    sink.optionalNumber(SensepitchLogFields.UPSTREAM_STATUS, info.upstreamStatus());
+    sink.optionalString(SensepitchLogFields.PROTECTION_OUTCOME, info.protectionOutcome());
+    sink.optionalString(SensepitchLogFields.CONFIG_ID, info.configId());
   }
 
-  private static void writeRequest(HttpRequest request, RequestLogSink sink) {
+  /// Method, host, path and query, like the request line of an access log
+  private static void writeRequestLine(
+      HttpRequest request, HttpHeaders headers, RequestLogSink sink) {
     String method = request.method().name();
     if (KNOWN_METHODS.contains(method)) {
       sink.string(OtelLogFields.HTTP_REQUEST_METHOD, method);
@@ -167,6 +190,7 @@ public final class RequestLogFieldsWriter {
       sink.string(OtelLogFields.HTTP_REQUEST_METHOD, OTHER_METHOD);
       sink.string(OtelLogFields.HTTP_REQUEST_METHOD_ORIGINAL, method);
     }
+    sink.optionalString(OtelLogFields.SERVER_ADDRESS, headers.get(HttpHeaderNames.HOST));
     String uri = request.uri();
     int query = uri.indexOf('?');
     if (query < 0) {
@@ -176,6 +200,9 @@ public final class RequestLogFieldsWriter {
       // Empty for a bare `?`, so `/a?` stays distinguishable from `/a`, which has no query
       sink.string(OtelLogFields.URL_QUERY, uri, query + 1, uri.length());
     }
+  }
+
+  private static void writeProtocol(HttpRequest request, RequestLogSink sink) {
     HttpVersion version = request.protocolVersion();
     if (version == HttpVersion.HTTP_1_1) {
       sink.string(OtelLogFields.NETWORK_PROTOCOL_NAME, "http");
@@ -227,9 +254,8 @@ public final class RequestLogFieldsWriter {
   /// `error.type` is the exception class or, for a server error without exception, the status
   /// code, as the conventions for HTTP servers demand. The exception is described with the
   /// `exception.*` attributes of the conventions for exceptions in logs.
-  private static void writeError(RequestLogInfo info, HttpResponse response, RequestLogSink sink) {
+  private static void writeError(RequestLogInfo info, int status, RequestLogSink sink) {
     Throwable error = info.error();
-    int status = response.status().code();
     if (error != null) {
       sink.string(OtelLogFields.ERROR_TYPE, error.getClass().getName());
       sink.string(OtelLogFields.EXCEPTION_TYPE, error.getClass().getName());
@@ -241,25 +267,11 @@ public final class RequestLogFieldsWriter {
     }
   }
 
-  private static void writeSensepitch(
-      RequestLogInfo info, HttpHeaders headers, RequestLogSink sink) {
-    sink.string(SensepitchLogFields.REQUEST_OUTCOME, info.outcome().value());
-    sink.optionalNumber(SensepitchLogFields.UPSTREAM_STATUS, info.upstreamStatus());
-    sink.optionalString(SensepitchLogFields.PROTECTION_OUTCOME, info.protectionOutcome());
-    sink.optionalString(SensepitchLogFields.CONFIG_ID, info.configId());
+  /// The remaining Sensepitch fields: connection, fingerprints, header names, partial durations
+  private static void writeDetails(RequestLogInfo info, HttpHeaders headers, RequestLogSink sink) {
     sink.string(SensepitchLogFields.CONNECTION_ID, info.connectionId());
     sink.number(SensepitchLogFields.CONNECTION_REQUEST_COUNT, info.connectionRequestCount());
-    sink.optionalString(SensepitchLogFields.UPSTREAM_NAME, info.upstreamName());
-    sink.optionalString(SensepitchLogFields.UPSTREAM_TARGET, info.upstreamTarget());
     sink.optionalString(SensepitchLogFields.IP_TRAITS, headers.get(IpTraitsHandler.TRAITS_HEADER));
-    String asn = headers.get(IpTraitsHandler.ASN_HEADER);
-    if (asn != null) {
-      try {
-        sink.number(SensepitchLogFields.CLIENT_ASN, Long.parseLong(asn.trim()));
-      } catch (NumberFormatException e) {
-        sink.string(SensepitchLogFields.CLIENT_ASN, asn);
-      }
-    }
     sink.optionalString(
         SensepitchLogFields.TLS_CLIENT_JA4, headers.get(Ja4HeaderHandler.JA4_HEADER));
     sink.optionalString(
@@ -274,6 +286,5 @@ public final class RequestLogFieldsWriter {
     sink.endArray();
     sink.number(SensepitchLogFields.DURATION_RECEIVE_NS, info.receiveDurationNanos());
     sink.number(SensepitchLogFields.DURATION_RESPONSE_NS, info.responseTimeNanos());
-    sink.number(SensepitchLogFields.DURATION_TOTAL_NS, info.totalDurationNanos());
   }
 }

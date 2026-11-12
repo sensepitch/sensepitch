@@ -26,12 +26,24 @@ class JsonRequestLoggerTest {
   }
 
   @Test
-  void recordLevelFieldsComeFirst() throws Exception {
-    JsonNode record = log(TestRequestLogInfo.of(HttpMethod.GET, 200));
+  void readableFieldOrder() throws Exception {
+    TestRequestLogInfo info = TestRequestLogInfo.of(HttpMethod.GET, 200);
+    info.request().setUri("/search?q=edge");
+    JsonNode record = log(info);
     List<String> keys = new ArrayList<>();
     record.fieldNames().forEachRemaining(keys::add);
     assertThat(keys)
-        .startsWith("timestamp", "event.name", "trace_id", "span_id")
+        .startsWith(
+            "timestamp",
+            "http.request.method",
+            "server.address",
+            "url.path",
+            "url.query",
+            "http.response.status_code",
+            "sensepitch.request.outcome",
+            "sensepitch.duration.total_ns",
+            "http.response.body.size")
+        .endsWith("event.name", "trace_id", "span_id")
         .doesNotContain("observed_timestamp", "severity_text", "severity_number");
     assertThat(record.get("timestamp").asText()).isEqualTo("1970-01-01T00:00:00.000Z");
     assertThat(record.get("event.name").asText()).isEqualTo(SensepitchLogFields.EVENT_NAME_VALUE);

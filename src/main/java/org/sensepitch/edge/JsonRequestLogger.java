@@ -15,8 +15,10 @@ import java.time.format.DateTimeFormatter;
 /// The keys are the names defined in [OtelLogFields] and [SensepitchLogFields], see
 /// [RequestLogFieldsWriter], written
 /// flat with dots, e.g. `"http.request.method":"GET"`, so they match the attributes of the OTLP
-/// export one to one. The record level fields come first: `timestamp`, `event.name`, `trace_id`
-/// and `span_id`. A log collector recognises the records by `event.name` with the value
+/// export one to one. For reading, `timestamp` comes first, then the fields in the order of
+/// [RequestLogFieldsWriter#write(RequestLogInfo, RequestLogSink)]: request line, status, outcome,
+/// duration, client, routing and details. `event.name`, `trace_id` and `span_id` come last. A
+/// log collector recognises the records by `event.name` with the value
 /// [SensepitchLogFields#EVENT_NAME_VALUE].
 ///
 /// The observed timestamp and the severity of the OTLP record are left out, they are redundant:
@@ -47,7 +49,9 @@ public class JsonRequestLogger implements RequestLogger {
     StringWriter buffer = new StringWriter(1024);
     try (JsonGenerator json = jsonFactory.createGenerator(buffer)) {
       json.writeStartObject();
-      RequestLogFieldsWriter.write(info, new Sink(json));
+      Sink sink = new Sink(json);
+      RequestLogFieldsWriter.write(info, sink);
+      sink.writeTrailer();
       json.writeEndObject();
     } catch (IOException | UncheckedIOException e) {
       // a StringWriter does not do I/O, so this cannot happen in practice
@@ -64,8 +68,17 @@ public class JsonRequestLogger implements RequestLogger {
   /// Writes the fields as flat JSON properties. The sink interface does not declare
   /// [IOException], so it is passed on unchecked. Rendering text allocates anyway, so values are
   /// converted to strings where convenient.
-  private record Sink(JsonGenerator json) implements RequestLogSink {
+  private static final class Sink implements RequestLogSink {
 
+    private final JsonGenerator json;
+    private String traceId;
+    private String spanId;
+
+    Sink(JsonGenerator json) {
+      this.json = json;
+    }
+
+    /// Only the timestamp goes first, the identifiers are written last by [#writeTrailer()]
     @Override
     public void record(
         long timeMillis,
@@ -74,17 +87,23 @@ public class JsonRequestLogger implements RequestLogger {
         String traceId,
         String spanId,
         String traceFlags) {
+      this.traceId = traceId;
+      this.spanId = spanId;
       try {
         json.writeStringField(OtelLogFields.TIMESTAMP, timestamp(timeMillis));
-        json.writeStringField(OtelLogFields.EVENT_NAME, SensepitchLogFields.EVENT_NAME_VALUE);
-        if (traceId != null) {
-          json.writeStringField(OtelLogFields.TRACE_ID, traceId);
-        }
-        if (spanId != null) {
-          json.writeStringField(OtelLogFields.SPAN_ID, spanId);
-        }
       } catch (IOException e) {
         throw new UncheckedIOException(e);
+      }
+    }
+
+    /// Event name and trace context, at the end of the line, since they are for machines
+    void writeTrailer() throws IOException {
+      json.writeStringField(OtelLogFields.EVENT_NAME, SensepitchLogFields.EVENT_NAME_VALUE);
+      if (traceId != null) {
+        json.writeStringField(OtelLogFields.TRACE_ID, traceId);
+      }
+      if (spanId != null) {
+        json.writeStringField(OtelLogFields.SPAN_ID, spanId);
       }
     }
 

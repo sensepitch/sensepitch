@@ -565,10 +565,13 @@ the JSON lines on standard out and for the OTLP export alike.
 By default the request log goes to standard out, one JSON object per line:
 
 ````json
-{"timestamp":"2026-11-11T10:00:00.123Z","event.name":"sensepitch.request",
- "trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","span_id":"00f067aa0ba902b7",
- "client.address":"192.0.2.7","client.port":51234,"server.address":"example.com",
- "server.port":443,"http.request.method":"GET","url.path":"/search","url.query":"q=edge", ...}
+{"timestamp":"2026-11-11T10:00:00.123Z","http.request.method":"GET",
+ "server.address":"example.com","url.path":"/search","url.query":"q=edge",
+ "http.response.status_code":200,"sensepitch.request.outcome":"completed",
+ "sensepitch.duration.total_ns":5321000,"http.response.body.size":5120,
+ "client.address":"192.0.2.7","user_agent.original":"Mozilla/5.0 ...", ...,
+ "event.name":"sensepitch.request","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736",
+ "span_id":"00f067aa0ba902b7"}
 ````
 
 `requestLog.plainText: true` switches standard out to the legacy single line format, useful for
