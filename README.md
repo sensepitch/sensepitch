@@ -189,6 +189,10 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [ ] upstream health
 - [ ] warmup
 - [ ] limit body size for incoming requests? NGINX has 1M as default / client_max_body_size / status 413
+- [ ] google-java-format 2, https://github.com/google/google-java-format/releases#release-v2.0.0
+  (stuck at 1.36.1: Spotless cannot load 1.37+, 2.x changes the lambda layout). Impact: one-time
+  reformat of about 40 files / 930 lines, lambda bodies hug the call (`.forEach(t -> {`) and indent
+  less. Done in its own commit, `formatJavadoc` stays off so the `///` comments remain untouched.
 
 ## Resources
 

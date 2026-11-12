@@ -29,6 +29,7 @@ public record TraceContext(String traceId, String spanId, String flags) {
 
   private static final int TRACE_ID_LENGTH = 32;
   private static final int SPAN_ID_LENGTH = 16;
+
   /// Length of a version `00` header: `vv-<trace id>-<span id>-ff`
   private static final int HEADER_LENGTH = 2 + 1 + TRACE_ID_LENGTH + 1 + SPAN_ID_LENGTH + 1 + 2;
 

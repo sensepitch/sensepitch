@@ -40,6 +40,7 @@ public class SiteSelector {
   private final UpstreamRegistry upstreams;
   private final Map<String, Upstream> namedUpstreams = new HashMap<>();
   private final Upstream defaultUpstream;
+
   /// Sites by host and uri prefix, a site serving the whole host has the empty prefix
   private final Map<String, PrefixTree<Routing<Suppliers>>> sitesByHost = new HashMap<>();
 

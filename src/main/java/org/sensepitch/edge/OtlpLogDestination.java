@@ -116,6 +116,7 @@ public class OtlpLogDestination implements RequestLogMetrics.QueueSource, AutoCl
   /// Handovers of replaced destinations into this one that have not arrived yet, closing waits
   /// for them, see [#takeOver(List)]
   private final AtomicInteger incoming = new AtomicInteger();
+
   private final AtomicBoolean failureReported = new AtomicBoolean();
 
   // guarded by this, ArrayDeque does not allocate per element

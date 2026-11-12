@@ -16,7 +16,7 @@
     <junit.version>5.14.4</junit.version>
     <assertj.version>3.27.7</assertj.version>
     <lombok.version>1.18.44</lombok.version>
-    <jacoco.version>0.8.13</jacoco.version>
+    <jacoco.version>0.8.16</jacoco.version>
     <serenity.version>4.3.4</serenity.version>
     <bytebuddy.version>1.18.17</bytebuddy.version>
     <log4j.version>2.26.1</log4j.version>
@@ -235,7 +235,7 @@
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-surefire-plugin</artifactId>
-          <version>3.5.3</version>
+          <version>3.6.1</version>
         </plugin>
       </plugins>
     </pluginManagement>
@@ -247,7 +247,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-dependency-plugin</artifactId>
-        <version>3.6.1</version>
+        <version>3.11.0</version>
         <executions>
           <execution>
             <id>copy-bytebuddy-agent</id>
@@ -282,7 +282,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-failsafe-plugin</artifactId>
-        <version>3.5.6</version>
+        <version>3.6.1</version>
         <configuration>
           <!-- failsafe does not inherit the surefire configuration, so repeat the agent here -->
           <!-- jacoco agent as in surefire, both append to target/jacoco.exec, so the report includes the ITs -->
@@ -355,7 +355,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.8.1</version>
+        <version>3.16.0</version>
         <configuration>
           <annotationProcessorPaths>
             <path>
@@ -432,7 +432,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-javadoc-plugin</artifactId>
-        <version>3.11.2</version>
+        <version>3.12.0</version>
         <executions>
           <execution>
             <!-- make the doc build part of the normal check phase; no-fork because
@@ -461,7 +461,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-shade-plugin</artifactId>
-        <version>3.6.0</version>
+        <version>3.6.2</version>
         <!-- run shade in the package phase -->
         <executions>
           <execution>
@@ -523,12 +523,15 @@
       <plugin>
         <groupId>com.diffplug.spotless</groupId>
         <artifactId>spotless-maven-plugin</artifactId>
-        <version>2.44.0</version>
+        <version>3.11.0</version>
         <configuration>
           <java>
             <googleJavaFormat>
-              <version>1.28.0</version>
+              <!-- 1.37+ cannot be loaded by Spotless (Style.valueOf), 2.x changes the lambda layout -->
+              <version>1.36.1</version>
               <style>GOOGLE</style>
+              <!-- leave doc comments alone, google-java-format would reflow the Markdown /// comments -->
+              <formatJavadoc>false</formatJavadoc>
             </googleJavaFormat>
           </java>
         </configuration>

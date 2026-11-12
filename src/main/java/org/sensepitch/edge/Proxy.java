@@ -47,19 +47,26 @@ public class Proxy implements ProxyContext {
   private final ProxyMetrics metrics = new ProxyMetrics();
   private final ProxyConfig config;
   private final ConnectionConfig connectionConfig;
+
   /// Metrics of this proxy, registered also when the export is disabled
   private final PrometheusRegistry metricsRegistry = new PrometheusRegistry();
+
   /// `null` if the metrics export is disabled
   private final MetricsServer metricsServer;
+
   private final AtomicReference<EdgeState> state = new AtomicReference<>();
+
   /// Delegates to the current state, so the SNI handler picks up reloaded certificates
   private final Mapping<String, SslContext> sniMapping = host -> state.get().sniMapping().map(host);
+
   private final EventLoopGroup eventLoopGroup;
+
   /// Request log destinations plus the metrics per status code, closed on shutdown
   private final RequestLogger requestLogger;
 
   /// The request log destinations, replaced on a configuration reload
   private final ReloadableRequestLogger requestLogDestinations;
+
   private final SanitizeHostHandler sanitizeHostHandler =
       new SanitizeHostHandler(() -> state.get().knownHosts());
   private final Ja4Config ja4Config;

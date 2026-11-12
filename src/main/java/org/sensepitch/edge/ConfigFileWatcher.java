@@ -39,6 +39,7 @@ public class ConfigFileWatcher {
   private final Path file;
   private Function<String, ReloadResult> reloadAction;
   private byte[] lastHash;
+
   /// Hash of the last content rejected as incomplete, to log it only once
   private byte[] incompleteHash;
 
