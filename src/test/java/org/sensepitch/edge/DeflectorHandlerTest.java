@@ -118,7 +118,12 @@ public class DeflectorHandlerTest {
     String challenge = findCookieValue(challengeResponse, Deflector.CHALLENGE_COOKIE_NAME);
     assertThat(challenge).isNotNull();
     String nonce = findNonce(challenge, cfg.hashTargetPrefix(), cfg.powMaxIterations());
-    request(Deflector.CHALLENGE_ANSWER_URL + "?challenge=" + challenge + "&nonce=" + nonce);
+    DefaultHttpRequest answer =
+        new DefaultHttpRequest(
+            HttpVersion.HTTP_1_1,
+            HttpMethod.GET,
+            Deflector.CHALLENGE_ANSWER_URL + "?challenge=" + challenge + "&nonce=" + nonce);
+    request(answer);
     assertThat(passed).isFalse();
     assertThat(messageWritten)
         .isNotNull()
@@ -130,6 +135,9 @@ public class DeflectorHandlerTest {
     HttpResponse answerResponse = (HttpResponse) messageWritten;
     String token = findCookieValue(answerResponse, Deflector.TOKEN_COOKIE_NAME);
     assertThat(token).isNotNull();
+    assertThat(answer.headers().get(Deflector.ADMISSION_TOKEN_HEADER))
+        .as("issued token is logged")
+        .isEqualTo(token);
     DefaultHttpRequest req =
         new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/default");
     String cookieHeader =

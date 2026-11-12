@@ -182,6 +182,8 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [ ] Admission performance: skip validation for keep-alive connections
 - [ ] Admission performance: deliver a challenge via cookie and serve static HTML
 - [ ] improve bypass matching (maybe ASN, geo)
+- [ ] rename the headers the edge adds from `X-Sensepitch-*` to a short `Sp-*` prefix, like
+  Cloudflare's `Cf-*` (e.g. `Sp-Admission-Bypass`); upstreams reading them must follow
 - [ ] downstream http2 support
 - [ ] Expiry of granted admissions
 - [ ] abnormal admission usage detection of admission
@@ -722,8 +724,8 @@ Attributes without a semantic convention:
 | `sensepitch.client.asn` | autonomous system number of the client address |
 | `sensepitch.ip_traits` | traits of the client address, e.g. `asn=64496, country=DE, crawler=...` |
 | `sensepitch.tls.client.ja4` | JA4 TLS fingerprint, if enabled |
-| `sensepitch.admission_token` | admission token of the protection |
-| `sensepitch.bypass` | reason the protection was bypassed |
+| `sensepitch.protection.admission_token` | admission token of the protection: of a valid admission cookie, or the token issued for an accepted challenge answer |
+| `sensepitch.protection.bypass` | reason the protection was bypassed: `config-ip-match`, `config-uri-match` (a configured `bypass.remotes` or `bypass.uris`), `crawler-agent-match`, `crawler-fragment-agent-match`, `crawler-ip-match` |
 | `sensepitch.request.cookie_present` | whether a cookie header was sent, not its content |
 | `sensepitch.request.header_names` | names of the request headers, in order |
 | `sensepitch.duration.receive_ns`, `…response_ns`, `…total_ns` | durations, see `RequestLogInfo` |
@@ -766,10 +768,14 @@ on `event.name: sensepitch.request` instead:
 | `receive_nanos`, `response_nanos`, `total_nanos` | `sensepitch.duration.*_ns` |
 | `headers.*` | `http.request.header.*`, string arrays |
 | `user_agent`, `referer`, `signature_agent` | `user_agent.original`, `http.request.header.referer`, `http.request.header.signature-agent` |
-| `cookie`, `header_names`, `ip_traits`, `admission_token`, `bypass` | `sensepitch.request.cookie_present`, `sensepitch.request.header_names`, `sensepitch.ip_traits`, `sensepitch.admission_token`, `sensepitch.bypass` |
+| `cookie`, `header_names`, `ip_traits`, `admission_token`, `bypass` | `sensepitch.request.cookie_present`, `sensepitch.request.header_names`, `sensepitch.ip_traits`, `sensepitch.protection.admission_token`, `sensepitch.protection.bypass` |
 | `error` | `error.type`, `exception.type`, `exception.message` |
 
 Upstreams now receive the edge's `traceparent` header on every request, see Trace context.
+
+Later, `sensepitch.admission_token` and `sensepitch.bypass` moved next to
+`sensepitch.protection.outcome`: they are now `sensepitch.protection.admission_token` and
+`sensepitch.protection.bypass`.
 
 ## Diagnostic logging
 

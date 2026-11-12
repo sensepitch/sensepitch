@@ -26,9 +26,10 @@ public class DefaultBypassCheck implements BypassCheck {
                 if (uri.startsWith("*")) {
                   throw new UnsupportedOperationException("URI suffix not supported: " + uri);
                 } else if (uri.endsWith("*")) {
-                  uriPrefixList.put(uri.substring(0, uri.length() - 1), BypassCheck.DO_BYPASS);
+                  uriPrefixList.put(
+                      uri.substring(0, uri.length() - 1), BypassCheck.CONFIG_URI_MATCH_BYPASS);
                 } else {
-                  uriMatch.put(uri, BypassCheck.DO_BYPASS);
+                  uriMatch.put(uri, BypassCheck.CONFIG_URI_MATCH_BYPASS);
                 }
               });
     }
@@ -36,7 +37,7 @@ public class DefaultBypassCheck implements BypassCheck {
       for (String remote : cfg.remotes()) {
         try {
           InetAddress addr = InetAddress.getByName(remote);
-          remoteAddressMap.put(addr.getHostAddress(), BypassCheck.DO_BYPASS);
+          remoteAddressMap.put(addr.getHostAddress(), BypassCheck.CONFIG_IP_MATCH_BYPASS);
         } catch (UnknownHostException e) {
           // only report error, if there is a temporary DNS problem when we start,
           // we still want to start

@@ -25,13 +25,13 @@ public class DetectCrawler implements BypassCheck {
 
   static final BypassCheck AGENT_MATCH_BYPASS =
       (ctx, request) -> {
-        BypassCheck.setBypassReason(request, "crawler-agent-match");
+        BypassCheck.setBypassReason(request, REASON_CRAWLER_AGENT_MATCH);
         return true;
       };
 
   static final BypassCheck FRAGMENT_AGENT_MATCH_BYPASS =
       (ctx, request) -> {
-        BypassCheck.setBypassReason(request, "crawler-fragment-agent-match");
+        BypassCheck.setBypassReason(request, REASON_CRAWLER_FRAGMENT_AGENT_MATCH);
         return true;
       };
 
@@ -96,7 +96,7 @@ public class DetectCrawler implements BypassCheck {
     }
     String ipLabels = IpTraitsHandler.extract(request);
     if (ipLabels != null && ipLabels.contains("crawler")) {
-      BypassCheck.setBypassReason(request, "crawler-ip-match");
+      BypassCheck.setBypassReason(request, REASON_CRAWLER_IP_MATCH);
       request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_CRAWLER);
       return true;
     }

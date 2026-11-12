@@ -50,6 +50,7 @@ public class ProtectionBypassTest {
     request(req);
     assertThat(passed).isTrue();
     assertThat(messageWritten).isNull();
+    assertThat(req.headers().get(BypassCheck.HEADER)).isEqualTo("config-uri-match");
   }
 
   @Test
@@ -68,6 +69,7 @@ public class ProtectionBypassTest {
     request(req);
     assertThat(passed).isTrue();
     assertThat(messageWritten).isNull();
+    assertThat(req.headers().get(BypassCheck.HEADER)).isEqualTo("config-ip-match");
   }
 
   /// Every configured prefix counts, also when a longer prefix sorts in between.

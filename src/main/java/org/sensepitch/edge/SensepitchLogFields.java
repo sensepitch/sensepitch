@@ -50,11 +50,13 @@ public final class SensepitchLogFields {
   /// JA4 TLS fingerprint, the conventions only define JA3
   public static final String TLS_CLIENT_JA4 = "sensepitch.tls.client.ja4";
 
-  /// Admission token of the protection
-  public static final String ADMISSION_TOKEN = "sensepitch.admission_token";
+  /// Admission token of the protection: the token of a valid admission cookie, or the token issued
+  /// for an accepted challenge answer
+  public static final String ADMISSION_TOKEN = "sensepitch.protection.admission_token";
 
-  /// Reason the protection was bypassed
-  public static final String BYPASS = "sensepitch.bypass";
+  /// Reason the protection was bypassed, set by [BypassCheck#setBypassReason], e.g.
+  /// [BypassCheck#REASON_CONFIG_URI_MATCH]
+  public static final String BYPASS = "sensepitch.protection.bypass";
 
   /// Whether a cookie header was sent, its content is not logged
   public static final String REQUEST_COOKIE_PRESENT = "sensepitch.request.cookie_present";

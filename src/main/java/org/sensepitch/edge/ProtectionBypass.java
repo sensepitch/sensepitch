@@ -47,13 +47,15 @@ public class ProtectionBypass {
     if (ctx.channel().remoteAddress() instanceof InetSocketAddress addr) {
       String remoteHost = addr.getAddress().getHostAddress();
       if (remoteAddressMap.containsKey(remoteHost)) {
+        BypassCheck.setBypassReason(request, BypassCheck.REASON_CONFIG_IP_MATCH);
         return true;
       }
     }
     String uri = request.uri();
-    if (uriMatch.containsKey(uri)) {
+    if (uriMatch.containsKey(uri) || uriPrefixList.lookup(uri) != null) {
+      BypassCheck.setBypassReason(request, BypassCheck.REASON_CONFIG_URI_MATCH);
       return true;
     }
-    return uriPrefixList.lookup(uri) != null;
+    return false;
   }
 }

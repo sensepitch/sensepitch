@@ -48,7 +48,9 @@ public class DefaultBypassCheckTest {
   public void exactUri() {
     BypassCheck check = new DefaultBypassCheck(BypassConfig.builder().uris(List.of("/x")).build());
     Channel channel = new EmbeddedChannel();
-    assertTrue(check.allowBypass(channel, get("/x")));
+    HttpRequest request = get("/x");
+    assertTrue(check.allowBypass(channel, request));
+    assertThat(request.headers().get(BypassCheck.HEADER)).isEqualTo("config-uri-match");
     assertFalse(check.allowBypass(channel, get("/x/")));
     assertFalse(check.allowBypass(channel, get("/")));
   }
@@ -60,9 +62,13 @@ public class DefaultBypassCheckTest {
         new DefaultBypassCheck(BypassConfig.builder().uris(List.of("/a*", "/ab*")).build());
     Channel channel = new EmbeddedChannel();
     for (String uri : List.of("/a", "/ab", "/abc", "/ac", "/azzz")) {
-      assertTrue(check.allowBypass(channel, get(uri)), "Bypass: " + uri);
+      HttpRequest request = get(uri);
+      assertTrue(check.allowBypass(channel, request), "Bypass: " + uri);
+      assertThat(request.headers().get(BypassCheck.HEADER)).isEqualTo("config-uri-match");
     }
-    assertFalse(check.allowBypass(channel, get("/b")));
+    HttpRequest noBypass = get("/b");
+    assertFalse(check.allowBypass(channel, noBypass));
+    assertThat(noBypass.headers().contains(BypassCheck.HEADER)).isFalse();
     assertFalse(check.allowBypass(channel, get("/")));
   }
 
@@ -76,7 +82,9 @@ public class DefaultBypassCheckTest {
   public void remoteAddress() {
     BypassCheck check =
         new DefaultBypassCheck(BypassConfig.builder().remotes(List.of("192.0.2.7")).build());
-    assertTrue(check.allowBypass(TestChannels.channelFrom("192.0.2.7"), get("/")));
+    HttpRequest request = get("/");
+    assertTrue(check.allowBypass(TestChannels.channelFrom("192.0.2.7"), request));
+    assertThat(request.headers().get(BypassCheck.HEADER)).isEqualTo("config-ip-match");
     assertFalse(check.allowBypass(TestChannels.channelFrom("192.0.2.8"), get("/")));
   }
 

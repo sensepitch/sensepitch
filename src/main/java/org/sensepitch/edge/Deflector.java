@@ -38,7 +38,7 @@ public class Deflector {
   public static final String CHALLENGE_COOKIE_NAME = "sensepitch-ch";
   private static final ResourceFiles challengeFiles = new ResourceFiles("challenge/files/");
 
-  /// Request header containing the validated admission token
+  /// Request header containing the validated or newly issued admission token
   public static String ADMISSION_TOKEN_HEADER = "sensepitch-token";
 
   public static String TRAFFIC_FLAVOR_HEADER = "sensepitch-flavor";
@@ -218,12 +218,14 @@ public class Deflector {
   }
 
   /// Responds to a challenge answer: issues the admission cookie if it was correct, see
-  /// [#verifyChallengeAnswer]
-  void respondToChallengeAnswer(ChannelHandlerContext ctx, boolean correct) {
+  /// [#verifyChallengeAnswer]. The issued token is also set as [#ADMISSION_TOKEN_HEADER] on the
+  /// request, so the request log has it.
+  void respondToChallengeAnswer(ChannelHandlerContext ctx, HttpRequest request, boolean correct) {
     FullHttpResponse response;
     if (correct) {
       response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
       String cookieValue = tokenGenerator.newAdmission();
+      request.headers().set(ADMISSION_TOKEN_HEADER, cookieValue);
       Cookie cookie = new DefaultCookie(TOKEN_COOKIE_NAME, cookieValue);
       // since its not a session, its ok to expose
       // cookie.setHttpOnly(true);
