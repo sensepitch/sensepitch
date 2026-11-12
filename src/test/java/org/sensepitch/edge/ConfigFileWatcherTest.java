@@ -93,8 +93,10 @@ class ConfigFileWatcherTest {
     Files.writeString(file, complete("a: 1\n"));
     ConfigFileWatcher watcher = watcher(file);
     watcher.start(this::load);
-    // like a file that is written in place and read in the middle
-    Files.writeString(file, "a: 2\n");
+    // content like a file that is written in place and read in the middle. Replaced atomically:
+    // an in-place write exposes the truncated, empty file to the watcher thread, which is
+    // different incomplete content and logged once more
+    replace(file, "a: 2\n");
     watcher.checkForChange();
     watcher.checkForChange();
     assertThat(watcher.forceReload().message()).contains("without #END");
