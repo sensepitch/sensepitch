@@ -35,6 +35,7 @@ public class DeflectorHandlerTest {
   private ProtectionHandler handler;
   private final ProxyMetrics metrics = new ProxyMetrics();
   private Channel channel;
+  private HttpRequest lastRequest;
   private boolean passed;
   private Object messageWritten;
   static final String TWITTER = "Twitterbot/1.0";
@@ -47,10 +48,13 @@ public class DeflectorHandlerTest {
     request("/default");
     assertThat(passed).isFalse();
     expectResponseIsChallenge();
+    assertThat(trafficType()).isEqualTo("unknown");
     request("/default", WHATS_APP);
     assertThat(passed).isTrue();
+    assertThat(trafficType()).isEqualTo("bot");
     request("/bypass");
     assertThat(passed).isTrue();
+    assertThat(trafficType()).isEqualTo("unknown");
     request("/bypass/excluded");
     assertThat(passed).isFalse();
     expectResponseIsChallenge();
@@ -138,6 +142,7 @@ public class DeflectorHandlerTest {
     assertThat(answer.headers().get(Deflector.ADMISSION_TOKEN_HEADER))
         .as("issued token is logged")
         .isEqualTo(token);
+    assertThat(trafficType()).isEqualTo("human");
     DefaultHttpRequest req =
         new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/default");
     String cookieHeader =
@@ -145,6 +150,11 @@ public class DeflectorHandlerTest {
     req.headers().set(HttpHeaderNames.COOKIE, cookieHeader);
     request(req);
     assertThat(passed).isTrue();
+    assertThat(trafficType()).isEqualTo("human");
+  }
+
+  private String trafficType() {
+    return lastRequest.headers().get(Deflector.TRAFFIC_TYPE_HEADER);
   }
 
   /// Each outcome is counted once, challenge resources and progress steps are not counted.
@@ -373,6 +383,7 @@ public class DeflectorHandlerTest {
   }
 
   void request(HttpRequest req) throws Exception {
+    lastRequest = req;
     ChannelHandlerContext ctx = channel.pipeline().context(ProtectionHandler.class);
     messageWritten = null;
     passed = false;

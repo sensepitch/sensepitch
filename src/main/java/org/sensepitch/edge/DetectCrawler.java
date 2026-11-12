@@ -91,13 +91,13 @@ public class DetectCrawler implements BypassCheck {
     }
     BypassCheck bypassCheck = agentMatch.get(agent);
     if (bypassCheck != null && bypassCheck.allowBypass(channel, request)) {
-      request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_CRAWLER);
+      request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_BOT);
       return true;
     }
     String ipLabels = IpTraitsHandler.extract(request);
     if (ipLabels != null && ipLabels.contains("crawler")) {
       BypassCheck.setBypassReason(request, REASON_CRAWLER_IP_MATCH);
-      request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_CRAWLER);
+      request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_BOT);
       return true;
     }
     // screen first to be faster for normal browsers
@@ -106,7 +106,7 @@ public class DetectCrawler implements BypassCheck {
     }
     for (Map.Entry<String, BypassCheck> entry : fragmentAgentMatch.entrySet()) {
       if (agent.contains(entry.getKey()) && entry.getValue().allowBypass(channel, request)) {
-        request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_CRAWLER);
+        request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_BOT);
         return true;
       }
     }

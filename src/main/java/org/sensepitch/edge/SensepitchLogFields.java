@@ -58,6 +58,9 @@ public final class SensepitchLogFields {
   /// [BypassCheck#REASON_CONFIG_URI_MATCH]
   public static final String BYPASS = "sensepitch.protection.bypass";
 
+  /// Whether the request is human or bot traffic, see [Deflector#TRAFFIC_TYPE_HEADER]
+  public static final String TRAFFIC_TYPE = "sensepitch.traffic.type";
+
   /// Whether a cookie header was sent, its content is not logged
   public static final String REQUEST_COOKIE_PRESENT = "sensepitch.request.cookie_present";
 

@@ -27,17 +27,21 @@ public class DeflectorHandler implements ProtectionPlugin {
   @Override
   public boolean mightIntercept(HttpRequest request, ChannelHandlerContext ctx) {
     if (deflector.checkAdmissionCookie(request)) {
-      request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_USER);
+      request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_HUMAN);
       metrics.countDeflectorRequest(request, DeflectorOutcome.PASSED);
       report(ctx, DeflectorOutcome.PASSED);
       return false;
     } else if (deflector.needsBypass(ctx, request)) {
+      // a detected crawler has set bot already
+      if (!request.headers().contains(Deflector.TRAFFIC_TYPE_HEADER)) {
+        request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_UNKNOWN);
+      }
       metrics.countDeflectorRequest(request, DeflectorOutcome.BYPASSED);
       report(ctx, DeflectorOutcome.BYPASSED);
       return false;
     } else if (request.uri().startsWith(Deflector.CHALLENGE_STEP_URL)) {
       // this is just for progress reporting and debugging
-      request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_DEFLECT);
+      request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_UNKNOWN);
       FullHttpResponse response =
           new DefaultFullHttpResponse(
               HttpVersion.HTTP_1_1, HttpResponseStatus.NO_CONTENT, Unpooled.EMPTY_BUFFER);
@@ -50,11 +54,11 @@ public class DeflectorHandler implements ProtectionPlugin {
       ctx.writeAndFlush(response);
     } else if (request.method() == HttpMethod.GET
         && request.uri().startsWith(Deflector.CHALLENGE_RESOURCES_URL)) {
-      request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_DEFLECT);
+      request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_UNKNOWN);
       deflector.outputChallengeResources(ctx, request);
     } else if (request.method() == HttpMethod.GET
         && request.uri().startsWith(Deflector.CHALLENGE_ANSWER_URL)) {
-      request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_USER);
+      request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_HUMAN);
       // reported before responding, the request is logged when the response is written
       boolean correct = deflector.verifyChallengeAnswer(request);
       DeflectorOutcome outcome =
@@ -64,7 +68,7 @@ public class DeflectorHandler implements ProtectionPlugin {
       deflector.respondToChallengeAnswer(ctx, request, correct);
     } else {
       // TODO: behaviour of non GET requests?
-      request.headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, Deflector.FLAVOR_DEFLECT);
+      request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_UNKNOWN);
       metrics.countDeflectorRequest(request, DeflectorOutcome.CHALLENGE_SENT);
       report(ctx, DeflectorOutcome.CHALLENGE_SENT);
       deflector.outputChallengeHtml(ctx);

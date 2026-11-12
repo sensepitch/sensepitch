@@ -194,6 +194,7 @@ class RequestLogFieldsWriterTest {
         .set(Ja4HeaderHandler.JA4_HEADER, "t13d1516h2_8daaf6152771_02713d6af862");
     info.request().headers().set(Deflector.ADMISSION_TOKEN_HEADER, "token");
     info.request().headers().set(BypassCheck.HEADER, "uri");
+    info.request().headers().set(Deflector.TRAFFIC_TYPE_HEADER, "human");
     info.request().headers().set(HttpHeaderNames.COOKIE, "a=b");
     Map<String, Object> fields = fields(info).fields;
     assertThat(fields)
@@ -204,6 +205,7 @@ class RequestLogFieldsWriterTest {
         .containsEntry("sensepitch.tls.client.ja4", "t13d1516h2_8daaf6152771_02713d6af862")
         .containsEntry("sensepitch.protection.admission_token", "token")
         .containsEntry("sensepitch.protection.bypass", "uri")
+        .containsEntry("sensepitch.traffic.type", "human")
         .containsEntry("sensepitch.request.cookie_present", true)
         .containsEntry("sensepitch.duration.receive_ns", 1_000L)
         .containsEntry("sensepitch.duration.response_ns", 2_000L)
@@ -437,6 +439,8 @@ class RequestLogFieldsWriterTest {
     info.request().headers().add(Ja4HeaderHandler.JA4_RAW_HEADER, "raw");
     info.request().headers().add(Deflector.ADMISSION_TOKEN_HEADER, "token");
     info.request().headers().add(BypassCheck.HEADER, "uri");
+    info.request().headers().add(Deflector.TRAFFIC_TYPE_HEADER, "human");
+    info.request().headers().add("sp-future-header", "x");
     info.request().headers().add("X-Custom", "1");
     RecordingSink sink = new RecordingSink();
     RequestLogFieldsWriter.write(info, sink, 1);

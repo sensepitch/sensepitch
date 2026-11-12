@@ -10,7 +10,7 @@ public interface BypassCheck {
   BypassCheck NO_BYPASS = (ctx, request) -> false;
 
   /// Header is set when bypass is active with the reason
-  String HEADER = "X-Sensepitch-Admission-Bypass";
+  String HEADER = SensepitchHeaders.PREFIX + "Protection-Bypass";
 
   /// Bypass reason: the client address is in the configured `remotes`
   String REASON_CONFIG_IP_MATCH = "config-ip-match";

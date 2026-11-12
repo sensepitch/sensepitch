@@ -48,12 +48,14 @@ public class ProtectionBypass {
       String remoteHost = addr.getAddress().getHostAddress();
       if (remoteAddressMap.containsKey(remoteHost)) {
         BypassCheck.setBypassReason(request, BypassCheck.REASON_CONFIG_IP_MATCH);
+        request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_UNKNOWN);
         return true;
       }
     }
     String uri = request.uri();
     if (uriMatch.containsKey(uri) || uriPrefixList.lookup(uri) != null) {
       BypassCheck.setBypassReason(request, BypassCheck.REASON_CONFIG_URI_MATCH);
+      request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_UNKNOWN);
       return true;
     }
     return false;

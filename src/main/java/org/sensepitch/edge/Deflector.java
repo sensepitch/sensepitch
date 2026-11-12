@@ -39,13 +39,20 @@ public class Deflector {
   private static final ResourceFiles challengeFiles = new ResourceFiles("challenge/files/");
 
   /// Request header containing the validated or newly issued admission token
-  public static String ADMISSION_TOKEN_HEADER = "sensepitch-token";
+  public static final String ADMISSION_TOKEN_HEADER = SensepitchHeaders.PREFIX + "Admission-Token";
 
-  public static String TRAFFIC_FLAVOR_HEADER = "sensepitch-flavor";
+  /// Request header telling whether the request is human or bot traffic: [#TRAFFIC_HUMAN],
+  /// [#TRAFFIC_BOT] or [#TRAFFIC_UNKNOWN]. Absent if no protection handled the request.
+  public static final String TRAFFIC_TYPE_HEADER = SensepitchHeaders.PREFIX + "Traffic-Type";
 
-  public static String FLAVOR_USER = "user";
-  public static String FLAVOR_CRAWLER = "crawler";
-  public static String FLAVOR_DEFLECT = "deflect";
+  /// Traffic type: valid admission cookie or accepted challenge answer
+  public static final String TRAFFIC_HUMAN = "human";
+
+  /// Traffic type: detected crawler
+  public static final String TRAFFIC_BOT = "bot";
+
+  /// Traffic type: not determined, e.g. a request of the challenge or a configured bypass
+  public static final String TRAFFIC_UNKNOWN = "unknown";
 
   private final ChallengeGenerationAndVerification challengeVerification;
   private final NoBypassCheck noBypassCheck;

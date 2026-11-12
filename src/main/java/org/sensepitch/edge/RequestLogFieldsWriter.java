@@ -58,9 +58,10 @@ public final class RequestLogFieldsWriter {
 
   /// Request headers left out of the sampled headers, see
   /// [#write(RequestLogInfo, RequestLogSink, int)]: secrets and values that change per request,
-  /// and the headers the edge adds itself, which tell nothing about the client. `X-Forwarded-For`
-  /// would also leak the client address past [RequestLogDestinationConfig#anonymizeClientIp()].
-  /// Case insensitive.
+  /// and the forwarding headers the edge adds itself, which tell nothing about the client.
+  /// `X-Forwarded-For` would also leak the client address past
+  /// [RequestLogDestinationConfig#anonymizeClientIp()]. The `Sp-*` headers of the edge are left out
+  /// as well, see [SensepitchHeaders#isEdgeHeader]. Case insensitive.
   static final Set<String> SAMPLE_HEADERS_EXCLUDED = sampleHeadersExcluded();
 
   private static Set<String> sampleHeadersExcluded() {
@@ -72,15 +73,7 @@ public final class RequestLogFieldsWriter {
             HttpHeaderNames.PROXY_AUTHORIZATION.toString(),
             TraceContext.TRACEPARENT,
             "X-Forwarded-For",
-            "X-Forwarded-Proto",
-            IpTraitsHandler.TRAITS_HEADER,
-            IpTraitsHandler.COUNTRY_HEADER,
-            IpTraitsHandler.ASN_HEADER,
-            Ja4HeaderHandler.JA4_HEADER,
-            Ja4HeaderHandler.JA4_RAW_HEADER,
-            Deflector.ADMISSION_TOKEN_HEADER,
-            Deflector.TRAFFIC_FLAVOR_HEADER,
-            BypassCheck.HEADER));
+            "X-Forwarded-Proto"));
     return names;
   }
 
@@ -317,6 +310,8 @@ public final class RequestLogFieldsWriter {
     sink.optionalString(
         SensepitchLogFields.ADMISSION_TOKEN, headers.get(Deflector.ADMISSION_TOKEN_HEADER));
     sink.optionalString(SensepitchLogFields.BYPASS, headers.get(BypassCheck.HEADER));
+    sink.optionalString(
+        SensepitchLogFields.TRAFFIC_TYPE, headers.get(Deflector.TRAFFIC_TYPE_HEADER));
     sink.bool(SensepitchLogFields.REQUEST_COOKIE_PRESENT, headers.contains(HttpHeaderNames.COOKIE));
     sink.startArray(SensepitchLogFields.REQUEST_HEADER_NAMES);
     Iterator<Map.Entry<CharSequence, CharSequence>> entries = headers.iteratorCharSequence();
@@ -333,14 +328,14 @@ public final class RequestLogFieldsWriter {
   }
 
   /// All request headers as `Name: value` in the order received, except
-  /// [#SAMPLE_HEADERS_EXCLUDED]. Allocates, but only for the sampled requests.
+  /// [#SAMPLE_HEADERS_EXCLUDED] and the headers of the edge, see [SensepitchHeaders]. Allocates, but only for the sampled requests.
   private static void writeSampleHeaders(HttpHeaders headers, RequestLogSink sink) {
     sink.startArray(SensepitchLogFields.REQUEST_SAMPLE_HEADERS);
     Iterator<Map.Entry<CharSequence, CharSequence>> entries = headers.iteratorCharSequence();
     while (entries.hasNext()) {
       Map.Entry<CharSequence, CharSequence> entry = entries.next();
       String name = entry.getKey().toString();
-      if (!SAMPLE_HEADERS_EXCLUDED.contains(name)) {
+      if (!SAMPLE_HEADERS_EXCLUDED.contains(name) && !SensepitchHeaders.isEdgeHeader(name)) {
         sink.arrayValue(name + ": " + entry.getValue());
       }
     }

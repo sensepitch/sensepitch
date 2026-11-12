@@ -12,8 +12,8 @@ import io.netty.handler.codec.http.HttpRequest;
 @ChannelHandler.Sharable
 public class Ja4HeaderHandler extends ChannelInboundHandlerAdapter {
 
-  public static final String JA4_HEADER = "X-Sensepitch-Ja4";
-  public static final String JA4_RAW_HEADER = "X-Sensepitch-Ja4-Raw";
+  public static final String JA4_HEADER = SensepitchHeaders.PREFIX + "Ja4";
+  public static final String JA4_RAW_HEADER = SensepitchHeaders.PREFIX + "Ja4-Raw";
 
   private final boolean sendRaw;
 
