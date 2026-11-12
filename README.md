@@ -182,8 +182,13 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [ ] Admission performance: skip validation for keep-alive connections
 - [ ] Admission performance: deliver a challenge via cookie and serve static HTML
 - [ ] improve bypass matching (maybe ASN, geo)
-- [ ] rename the headers the edge adds from `X-Sensepitch-*` to a short `Sp-*` prefix, like
-  Cloudflare's `Cf-*` (e.g. `Sp-Admission-Bypass`); upstreams reading them must follow
+- [x] rename the headers the edge adds from `X-Sensepitch-*` to a short `Sp-*` prefix, like
+  Cloudflare's `Cf-*` (e.g. `Sp-Protection-Bypass`); upstreams reading them must follow
+- [ ] naming: the deflector is one component of the protection system, next to cookie gates and
+  the bypass. Decide whether to rename the metric `sensepitch_deflector_requests_total` to
+  `sensepitch_protection_requests_total` (with a label for the component, once more components
+  report outcomes) and "deflector" to "protection" in general, or keep it as is. A metric rename
+  breaks dashboards and alerts.
 - [ ] downstream http2 support
 - [ ] Expiry of granted admissions
 - [ ] abnormal admission usage detection of admission
@@ -303,6 +308,12 @@ A high ratio of `challenge_sent` to `answer_accepted` is normal under bot traffi
 `answer_rejected` hint at clients trying to forge answers. Requests for the challenge's scripts and
 styles are not counted.
 
+### `sensepitch_ingress_request_flavor_count_total{flavor="...",country="..."}`
+
+Requests by traffic type and client country. `flavor` is the value of the `Sp-Traffic-Type`
+header: `human`, `bot` or `unknown`, also when no protection handled the request. Before the
+`Sp-*` headers, the values were `user`, `crawler`, `deflect` and `unknown`.
+
 ### `sensepitch_request_log_dropped_total{destination="..."}`
 
 Request log records dropped because a destination could not keep up, by `destination`: `stdout`,
@@ -342,6 +353,25 @@ Example Paypal
 - user agent: PayPal/AUHR-1.0-1
 - IP: 173.0.81.140
 
+
+## Headers sent to the upstream
+
+The edge adds these request headers for the upstream. They all start with `Sp-`, short like
+Cloudflare's `Cf-*`. Any incoming header starting with `Sp-` (case insensitive) is removed first, so
+a client cannot pretend to be a crawler or human traffic.
+
+| Header | Content |
+|---|---|
+| `Sp-Traffic-Type` | `human`: valid admission cookie or accepted challenge answer; `bot`: detected crawler; `unknown`: a configured bypass. Absent if no protection handled the request |
+| `Sp-Admission-Token` | the validated admission token |
+| `Sp-Protection-Bypass` | reason the protection was bypassed, see `sensepitch.protection.bypass` |
+| `Sp-Ip-Traits`, `Sp-Country`, `Sp-Asn` | traits of the client address, if the IP lookup knows it |
+| `Sp-Ja4`, `Sp-Ja4-Raw` | JA4 TLS fingerprint, if enabled, the raw one only if configured |
+
+Before, these headers were named `X-Sensepitch-Ja4`, `X-Sensepitch-Ja4-Raw`,
+`X-Sensepitch-Ip-Traits`, `X-Sensepitch-Country`, `X-Sensepitch-Asn`,
+`X-Senseptich-Admission-Bypass` and `sensepitch-token`. `Sp-Traffic-Type` replaces
+`sensepitch-flavor` (`user`, `crawler`, `deflect`).
 
 ## Fallback / maintenance pages
 
@@ -619,8 +649,8 @@ Everything specific to OTLP is in the `otlp` object, which is rejected on a `std
   this many requests, picked at random, also logs its request headers as
   `sensepitch.request.sample_headers`, `Name: value` in the order received with the original
   casing, to study what identifies a client. `Cookie`, `Authorization`, `Proxy-Authorization`,
-  `traceparent` and the headers the edge adds itself (`X-Forwarded-*`, `X-Sensepitch-*`,
-  admission token, flavor, bypass) are left out. The plain text format ignores it.
+  `traceparent` and the headers the edge adds itself (`X-Forwarded-*`, `Sp-*`) are left out. The
+  plain text format ignores it.
 - **Batching:** each event loop encodes its records into a buffer of its own, so logging a request
   allocates nothing and needs no shared queue. A buffer is handed to the sender when it reaches
   `otlp.batchBytes` or after `otlp.flushIntervalMillis`, and the event loop continues with an
@@ -725,6 +755,7 @@ Attributes without a semantic convention:
 | `sensepitch.ip_traits` | traits of the client address, e.g. `asn=64496, country=DE, crawler=...` |
 | `sensepitch.tls.client.ja4` | JA4 TLS fingerprint, if enabled |
 | `sensepitch.protection.admission_token` | admission token of the protection: of a valid admission cookie, or the token issued for an accepted challenge answer |
+| `sensepitch.traffic.type` | `human`, `bot` or `unknown`, see the `Sp-Traffic-Type` header |
 | `sensepitch.protection.bypass` | reason the protection was bypassed: `config-ip-match`, `config-uri-match` (a configured `bypass.remotes` or `bypass.uris`), `crawler-agent-match`, `crawler-fragment-agent-match`, `crawler-ip-match` |
 | `sensepitch.request.cookie_present` | whether a cookie header was sent, not its content |
 | `sensepitch.request.header_names` | names of the request headers, in order |

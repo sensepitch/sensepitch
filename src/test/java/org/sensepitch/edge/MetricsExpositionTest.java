@@ -95,7 +95,7 @@ class MetricsExpositionTest {
     perStatus.registerCollectors(registry::register);
     perStatus.logRequest(TestRequestLogInfo.of(HttpMethod.GET, 200));
     TestRequestLogInfo flavored = TestRequestLogInfo.of(HttpMethod.POST, 404);
-    flavored.request().headers().set(Deflector.TRAFFIC_FLAVOR_HEADER, "human");
+    flavored.request().headers().set(Deflector.TRAFFIC_TYPE_HEADER, "human");
     flavored.request().headers().set(IpTraitsHandler.COUNTRY_HEADER, "DE");
     perStatus.logRequest(flavored);
 

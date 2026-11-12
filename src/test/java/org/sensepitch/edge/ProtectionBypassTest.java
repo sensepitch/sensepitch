@@ -51,6 +51,7 @@ public class ProtectionBypassTest {
     assertThat(passed).isTrue();
     assertThat(messageWritten).isNull();
     assertThat(req.headers().get(BypassCheck.HEADER)).isEqualTo("config-uri-match");
+    assertThat(req.headers().get(Deflector.TRAFFIC_TYPE_HEADER)).isEqualTo("unknown");
   }
 
   @Test
@@ -70,6 +71,7 @@ public class ProtectionBypassTest {
     assertThat(passed).isTrue();
     assertThat(messageWritten).isNull();
     assertThat(req.headers().get(BypassCheck.HEADER)).isEqualTo("config-ip-match");
+    assertThat(req.headers().get(Deflector.TRAFFIC_TYPE_HEADER)).isEqualTo("unknown");
   }
 
   /// Every configured prefix counts, also when a longer prefix sorts in between.

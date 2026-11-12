@@ -368,8 +368,12 @@ public class Proxy implements ProxyContext {
     requestLogOutput.close();
   }
 
+  private static final StripEdgeHeadersHandler STRIP_EDGE_HEADERS_HANDLER =
+      new StripEdgeHeadersHandler();
+
   void addHttpHandlers(ChannelPipeline pipeline) {
     pipeline.addLast(sanitizeHostHandler);
+    pipeline.addLast(STRIP_EDGE_HEADERS_HANDLER);
     // logger sits between codec and rest so it sees header modifications
     // from timeout and keep alive below
     // pipeline.addLast(new LoggingHandler(LogLevel.INFO, ByteBufFormat.SIMPLE));

@@ -38,8 +38,8 @@ public class DetectCrawlerTest {
     request.headers().set(HttpHeaderNames.USER_AGENT, amazonbotAgent);
     request.headers().set(IpTraitsHandler.TRAITS_HEADER, "asn=14618, crawler=amazon:amazonbot");
     assertThat(detectCrawler.allowBypass(null, request)).isTrue();
-    assertThat(request.headers().get(Deflector.TRAFFIC_FLAVOR_HEADER))
-        .isEqualTo(Deflector.FLAVOR_CRAWLER);
+    assertThat(request.headers().get(Deflector.TRAFFIC_TYPE_HEADER))
+        .isEqualTo(Deflector.TRAFFIC_BOT);
     assertThat(request.headers().get(BypassCheck.HEADER)).isEqualTo("crawler-ip-match");
   }
 

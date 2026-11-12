@@ -10,9 +10,9 @@ import java.util.function.Supplier;
 /// @author Jens Wilke
 public class IpTraitsHandler extends ChannelInboundHandlerAdapter {
 
-  public static final String TRAITS_HEADER = "X-Sensepitch-Ip-Traits";
-  public static final String COUNTRY_HEADER = "X-Sensepitch-Country";
-  public static final String ASN_HEADER = "X-Sensepitch-Asn";
+  public static final String TRAITS_HEADER = SensepitchHeaders.PREFIX + "Ip-Traits";
+  public static final String COUNTRY_HEADER = SensepitchHeaders.PREFIX + "Country";
+  public static final String ASN_HEADER = SensepitchHeaders.PREFIX + "Asn";
 
   private final Supplier<IpTraitsLookup> ipTraitsLookup;
   private String traits = null;

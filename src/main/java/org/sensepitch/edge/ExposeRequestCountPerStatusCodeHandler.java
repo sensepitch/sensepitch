@@ -91,7 +91,7 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
     if (country == null) {
       country = "unknown";
     }
-    String flavor = info.request().headers().get(Deflector.TRAFFIC_FLAVOR_HEADER);
+    String flavor = info.request().headers().get(Deflector.TRAFFIC_TYPE_HEADER);
     if (flavor == null) {
       flavor = "unknown";
     }
