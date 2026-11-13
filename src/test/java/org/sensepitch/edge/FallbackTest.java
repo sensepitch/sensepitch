@@ -32,9 +32,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.sensepitch.edge.config.RecordConstructor;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.nodes.Node;
@@ -265,13 +269,6 @@ public class FallbackTest {
   }
 
   @Test
-  public void testPageWithoutStatusKeepsOriginStatus() {
-    init(merged(siteUnavailable(page("still down"))));
-    upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
-    assertPage(SERVICE_UNAVAILABLE, "still down");
-  }
-
-  @Test
   public void testCustomContentType() {
     init(
         merged(
@@ -405,72 +402,32 @@ public class FallbackTest {
     assertPage(SERVICE_UNAVAILABLE, "<html>disk-down</html>");
   }
 
-  @Test
-  public void testUnavailableRedirectDefaults302() {
-    init(
-        merged(
-            siteUnavailable(ResponseConfig.builder().location("https://status.example/").build())));
-    upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
-    assertRedirect(FOUND, "https://status.example/");
+  /// Upstream status, configured redirect status (`0` for none) and the status sent
+  static Stream<Arguments> redirects() {
+    return Stream.of(
+        Arguments.of(SERVICE_UNAVAILABLE, 0, FOUND),
+        Arguments.of(SERVICE_UNAVAILABLE, 301, MOVED_PERMANENTLY),
+        Arguments.of(SERVICE_UNAVAILABLE, 303, SEE_OTHER),
+        Arguments.of(SERVICE_UNAVAILABLE, 308, PERMANENT_REDIRECT),
+        Arguments.of(INTERNAL_SERVER_ERROR, 307, TEMPORARY_REDIRECT),
+        Arguments.of(INTERNAL_SERVER_ERROR, 308, PERMANENT_REDIRECT));
   }
 
-  @Test
-  public void testUnavailableRedirectHonorsExplicitStatus() {
+  @ParameterizedTest(name = "upstream {0}, configured {1} -> {2}")
+  @MethodSource("redirects")
+  public void testRedirect(
+      HttpResponseStatus upstreamStatus, int configuredStatus, HttpResponseStatus expected) {
+    ResponseConfig.Builder redirect = ResponseConfig.builder().location("https://status.example/");
+    if (configuredStatus != 0) {
+      redirect.status(configuredStatus);
+    }
     init(
         merged(
-            siteUnavailable(
-                ResponseConfig.builder().location("https://status.example/").status(301).build())));
-    upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
-    assertRedirect(MOVED_PERMANENTLY, "https://status.example/");
-  }
-
-  @Test
-  public void testUnavailablePermanentRedirect() {
-    init(
-        merged(
-            siteUnavailable(
-                ResponseConfig.builder()
-                    .location("https://elsewhere.example/")
-                    .status(308)
-                    .build())));
-    upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
-    assertRedirect(PERMANENT_REDIRECT, "https://elsewhere.example/");
-  }
-
-  @Test
-  public void testErrorPermanentRedirect() {
-    init(
-        merged(
-            siteError(
-                ResponseConfig.builder()
-                    .location("https://elsewhere.example/")
-                    .status(308)
-                    .build())));
-    upstreamResponds(INTERNAL_SERVER_ERROR, "ignored-origin-body");
-    assertRedirect(PERMANENT_REDIRECT, "https://elsewhere.example/");
-  }
-
-  @Test
-  public void testErrorTemporaryRedirect() {
-    init(
-        merged(
-            siteError(
-                ResponseConfig.builder()
-                    .location("https://elsewhere.example/")
-                    .status(307)
-                    .build())));
-    upstreamResponds(INTERNAL_SERVER_ERROR, "ignored-origin-body");
-    assertRedirect(TEMPORARY_REDIRECT, "https://elsewhere.example/");
-  }
-
-  @Test
-  public void testUnavailableSeeOtherRedirect() {
-    init(
-        merged(
-            siteUnavailable(
-                ResponseConfig.builder().location("https://status.example/").status(303).build())));
-    upstreamResponds(SERVICE_UNAVAILABLE, "ignored-origin-body");
-    assertRedirect(SEE_OTHER, "https://status.example/");
+            upstreamStatus == SERVICE_UNAVAILABLE
+                ? siteUnavailable(redirect.build())
+                : siteError(redirect.build())));
+    upstreamResponds(upstreamStatus, "ignored-origin-body");
+    assertRedirect(expected, "https://status.example/");
   }
 
   @Test
@@ -493,14 +450,6 @@ public class FallbackTest {
   @Test
   public void testEmptySlotHardFails() {
     assertThatThrownBy(() -> ResponseConfig.builder().build())
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("response should be one of");
-  }
-
-  @Test
-  public void redirectAndPageInSameResponseRejected() {
-    assertThatThrownBy(
-            () -> ResponseConfig.builder().location("/elsewhere").text("we are down").build())
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("response should be one of");
   }

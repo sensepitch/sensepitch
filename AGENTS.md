@@ -43,6 +43,15 @@
 - Frameworks: JUnit 5, AssertJ, and Serenity BDD.
 - Tests live under `src/test/java/` and generally use `*Test` or `*BDDTest` suffixes.
 - Run all tests with `./mvnw test`; use Surefire defaults unless a test needs explicit configuration.
+- Prefer Serenity BDD (`*BDDTest`) for behaviour tests: the step chains are more compact and
+  readable than plain JUnit, compare `UnservicedHostHandlerBDDTest` with `UnservicedHostHandlerIT`,
+  or `ProxyRejectedConfigBDDTest` with its former inline form. Group many rejected-input variants
+  into one `@ParameterizedTest` over a step chain.
+- When a plain JUnit test duplicates a BDD test, keep the BDD test as the unit test and move the
+  JUnit one to `*IT` (runs with `verify` only). Port scenarios the BDD test lacks first, and let both
+  class docs reference each other, naming the BDD test as the place for new scenarios.
+- Tests that mainly exercise the JDK, Netty or other libraries rather than our code (e.g. real TLS
+  handshakes, GC or RSS behaviour) belong in `*IT`, so `./mvnw test` stays fast.
 
 ## Commit & Pull Request Guidelines
 - Recent commits use short, imperative summaries (e.g., “update crawlers”, “fix concurrency issues”).

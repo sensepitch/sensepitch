@@ -18,6 +18,10 @@ import net.serenitybdd.junit5.SerenityJUnit5Extension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
+/// Behaviour of the [UnservicedHost] handler. [UnservicedHostHandlerIT] covers the same scenarios
+/// in plain JUnit as a cross check; add new scenarios here.
+///
+/// @author Jens Wilke
 @ExtendWith(SerenityJUnit5Extension.class)
 class UnservicedHostHandlerBDDTest {
 
@@ -108,9 +112,38 @@ class UnservicedHostHandlerBDDTest {
         .then_location_header_is("https://www.foo.com");
   }
 
+  /// Without a default location, a host that is accepted but not serviced gets a 404, e.g. a host
+  /// only listed in `listen.hosts`.
+  @Test
+  void otherHostWithoutDefaultLocation_isNotFound() {
+    steps
+        .given_a_configuration_without_default_location()
+        .when_request_to("other.com", "/")
+        .then_response_status_is(NOT_FOUND)
+        .then_location_header_is_absent();
+  }
+
+  @Test
+  void mappedHostWithoutDefaultLocation_redirectsToMappedTarget() {
+    steps
+        .given_a_configuration_without_default_location()
+        .when_request_to("foo.com", "/")
+        .then_response_status_is(STATUS_301_MOVED_PERMANENTLY)
+        .then_location_header_is("https://www.foo.com");
+  }
+
+  /// A serviced domain is compared with the normalized host, see [SanitizeHostHandler]
+  @Test
+  void servicedDomainNotNormalized_isRejected() {
+    steps
+        .when_configuring_serviced_domain("www.Example.com")
+        .then_configuration_is_rejected_with("www.Example.com");
+  }
+
   public static class UnservicedSteps {
 
     private EmbeddedChannel channel;
+    private Throwable configurationFailure;
     private HttpRequest request;
     private boolean passed;
     private Object passedMessage;
@@ -126,6 +159,34 @@ class UnservicedHostHandlerBDDTest {
               .defaultLocation("https://default.example")
               .build();
       channel = new EmbeddedChannel(new UnservicedHost(cfg).newHandler());
+      return this;
+    }
+
+    @Step("Given a configuration without default location: passDomains=www.foo.com")
+    public UnservicedSteps given_a_configuration_without_default_location() {
+      UnservicedHostConfig cfg =
+          UnservicedHostConfig.builder().servicedDomains(Set.of("www.foo.com")).build();
+      channel = new EmbeddedChannel(new UnservicedHost(cfg).newHandler());
+      return this;
+    }
+
+    @Step
+    public UnservicedSteps when_configuring_serviced_domain(String domain) {
+      UnservicedHostConfig cfg =
+          UnservicedHostConfig.builder().servicedDomains(Set.of(domain)).build();
+      try {
+        new UnservicedHost(cfg);
+      } catch (Throwable t) {
+        configurationFailure = t;
+      }
+      return this;
+    }
+
+    @Step
+    public UnservicedSteps then_configuration_is_rejected_with(String messagePart) {
+      assertThat(configurationFailure)
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining(messagePart);
       return this;
     }
 

@@ -1,6 +1,5 @@
 package org.sensepitch.edge;
 
-/// @author Jens Wilke
 import static io.netty.handler.codec.http.HttpMethod.GET;
 import static io.netty.handler.codec.http.HttpResponseStatus.*;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
@@ -20,7 +19,11 @@ import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-class UnservicedHostHandlerTest {
+/// Plain JUnit counterpart of [UnservicedHostHandlerBDDTest], which is the unit test and the
+/// place for new scenarios. Kept as a cross check of the BDD steps, so it runs with `verify` only.
+///
+/// @author Jens Wilke
+class UnservicedHostHandlerIT {
 
   private EmbeddedChannel channel;
 
@@ -69,6 +72,7 @@ class UnservicedHostHandlerTest {
     DefaultHttpRequest req = new DefaultHttpRequest(HTTP_1_1, GET, "/");
     req.headers().set(HttpHeaderNames.HOST, SanitizeHostHandler.UNKNOWN_HOST);
     HttpResponse resp = writeAndExpectResponse(req);
+    assertThat(resp.status()).isEqualTo(BAD_REQUEST);
     assertThat(resp.headers().get(HttpHeaderNames.LOCATION) == null).isTrue();
   }
 

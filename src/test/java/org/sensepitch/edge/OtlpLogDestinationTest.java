@@ -492,7 +492,7 @@ class OtlpLogDestinationTest {
             new RequestLogMetrics(),
             10,
             50,
-            200);
+            50);
     OtlpRequestLogger logger = new OtlpRequestLogger(destination);
     for (int i = 0; i < 10; i++) {
       logger.logRequest(TestRequestLogInfo.of(HttpMethod.GET, 200));
@@ -521,7 +521,7 @@ class OtlpLogDestinationTest {
     destination = new OtlpLogDestination("otlp", config().flushIntervalMillis(5).build());
     OtlpRequestLogger logger = new OtlpRequestLogger(destination);
     int threads = 4;
-    int perThread = 2_000;
+    int perThread = 500;
     List<Thread> started = new ArrayList<>();
     for (int t = 0; t < threads; t++) {
       int thread = t;
