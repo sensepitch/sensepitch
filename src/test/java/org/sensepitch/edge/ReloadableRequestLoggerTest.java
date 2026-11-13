@@ -8,6 +8,7 @@ import io.netty.handler.codec.http.HttpMethod;
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
 import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
@@ -249,7 +250,8 @@ class ReloadableRequestLoggerTest {
   void noRecordIsLostWhileReloading() throws Exception {
     logger = RequestLoggerFactory.create(config(otlp("vl", 1)), stdout, metrics);
     int threads = 4;
-    int perThread = 2_000;
+    int perThread = 300;
+    int minReloads = 20;
     List<Thread> workers = new java.util.ArrayList<>();
     for (int t = 0; t < threads; t++) {
       Thread worker =
@@ -263,7 +265,8 @@ class ReloadableRequestLoggerTest {
       workers.add(worker);
     }
     int reloads = 0;
-    for (int i = 0; workers.stream().anyMatch(Thread::isAlive); i++) {
+    // with few records the workers may finish early, keep reloading to a minimum count
+    for (int i = 0; workers.stream().anyMatch(Thread::isAlive) || reloads < minReloads; i++) {
       reload(config(otlp("vl", 1 + i % 2)));
       reloads++;
       Thread.sleep(1);
@@ -316,6 +319,31 @@ class ReloadableRequestLoggerTest {
     assertThat(awaitReceived(1)).isOne();
     assertThat(dropped("old")).isZero();
     assertThat(dropped("next")).isZero();
+  }
+
+  /// A record logged into a replaced destination is passed on without taking a batch there. The
+  /// thread would keep that batch as long as it lives, a batch per reload.
+  @Test
+  void replacedDestinationAllocatesNoBatch() throws Exception {
+    OtlpConfig otlpConfig =
+        OtlpConfig.builder().endpoint(endpoint()).flushIntervalMillis(60_000).build();
+    OtlpRequestLogger old =
+        new OtlpRequestLogger(new OtlpLogDestination("old", otlpConfig, metrics));
+    OtlpRequestLogger next =
+        new OtlpRequestLogger(new OtlpLogDestination("next", otlpConfig, metrics));
+    // the replacement sets up the batch of this thread before the measurement
+    next.logRequest(TestRequestLogInfo.of(HttpMethod.GET, 200));
+    old.handOverTo(next, next);
+    RequestLogInfo info = TestRequestLogInfo.of(HttpMethod.GET, 200);
+    com.sun.management.ThreadMXBean threads =
+        (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
+    long before = threads.getCurrentThreadAllocatedBytes();
+    old.logRequest(info);
+    long allocated = threads.getCurrentThreadAllocatedBytes() - before;
+    assertThat(allocated).as("bytes allocated").isLessThan(otlpConfig.effectiveBatchBytes());
+    next.close();
+    assertThat(awaitReceived(2)).as("both records arrive").isEqualTo(2);
+    assertThat(dropped("old")).isZero();
   }
 
   @Test

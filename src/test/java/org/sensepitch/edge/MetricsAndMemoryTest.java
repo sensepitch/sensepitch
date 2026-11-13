@@ -8,7 +8,6 @@ import io.netty.buffer.ByteBufAllocatorMetric;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import io.netty.buffer.UnpooledByteBufAllocator;
-import io.prometheus.metrics.core.metrics.Counter;
 import io.prometheus.metrics.expositionformats.PrometheusTextFormatWriter;
 import io.prometheus.metrics.instrumentation.jvm.JvmMetrics;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
@@ -24,12 +23,8 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.lang.foreign.Arena;
 import java.lang.ref.Reference;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -43,25 +38,13 @@ import org.junit.jupiter.api.Test;
 /// memory, and that differs both between netty versions, see [#jvmMemoryMetricForDirectByteBuffer],
 /// and between allocators, see [#pooledAllocatorMemoryIsInvisibleToTheJvmBufferPool].
 ///
+/// The slow checks of plain JVM behaviour, garbage collection and resident memory in a forked
+/// JVM, run as integration tests in [JvmMemoryMetricsIT].
+///
 /// @author Jens Wilke
 class MetricsAndMemoryTest {
 
   PrometheusRegistry reg = new PrometheusRegistry();
-
-  @Test
-  void exportsCounterWithValue() throws Exception {
-    Counter ops =
-        Counter.builder()
-            .name("my_ops_total")
-            .help("Number of ops")
-            .labelNames("status")
-            .register(reg);
-    // exercise code under test
-    ops.labelValues("ok").inc(3);
-    var snapshots = new Snapshots(reg.scrape());
-    var counter = snapshots.counter("my_ops");
-    assertThat(counter.getValue()).isEqualTo(3);
-  }
 
   /// The general Java memory metrics `jvm_memory_used_bytes` do not reflect the usage of the byte
   /// buffers that netty is using. With `--enable-native-access=ALL-UNNAMED`, which is the
@@ -121,83 +104,6 @@ class MetricsAndMemoryTest {
     return snapshots()
         .gauge(NettyAllocatorMetrics.METRIC_NAME, "allocator", "unpooled", "type", "direct")
         .getValue();
-  }
-
-  /// Preserve the positive JVM-pool and reclamation checks independently of Netty's cleaner choice.
-  @Test
-  void jvmDirectBufferMetricTracksAllocationAndCollection() throws Exception {
-    JvmMetrics.builder().register(reg);
-    final int sampleAllocation = 100 * 1024 * 1024;
-    double before = snapshots().gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue();
-    allocateJvmDirectBuffer(sampleAllocation, before);
-    for (int i = 0; i < 100; i++) {
-      System.gc();
-      if (snapshots().gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue() <= before) {
-        return;
-      }
-      Thread.sleep(20);
-    }
-    assertThat(snapshots().gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue())
-        .as("collected direct buffer memory returns to the JVM pool")
-        .isLessThanOrEqualTo(before);
-  }
-
-  private void allocateJvmDirectBuffer(int size, double before) {
-    ByteBuffer buffer = ByteBuffer.allocateDirect(size);
-    try {
-      assertThat(snapshots().gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue())
-          .as("the JVM direct pool sees ByteBuffer.allocateDirect")
-          .isGreaterThanOrEqualTo(before + size);
-    } finally {
-      Reference.reachabilityFence(buffer);
-    }
-  }
-
-  /// Run in a fresh JVM so unrelated tests and heap reclamation cannot drown out the RSS signal.
-  @Test
-  void residentMemoryMetricReflectsTouchedDirectByteBuffer() throws Exception {
-    Process process =
-        new ProcessBuilder(
-                Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                "--enable-native-access=ALL-UNNAMED",
-                "-Xms64m",
-                "-Xmx64m",
-                "-XX:+AlwaysPreTouch",
-                "-XX:MaxDirectMemorySize=256m",
-                "-cp",
-                System.getProperty("java.class.path"),
-                ResidentMemoryProbe.class.getName())
-            .redirectErrorStream(true)
-            .start();
-    try {
-      assertThat(process.waitFor(30, TimeUnit.SECONDS)).as("RSS probe completes").isTrue();
-      String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-      assertThat(process.exitValue()).as("RSS probe output: %s", output).isZero();
-    } finally {
-      process.destroyForcibly();
-    }
-  }
-
-  public static class ResidentMemoryProbe {
-    public static void main(String[] args) {
-      MetricsAndMemoryTest test = new MetricsAndMemoryTest();
-      JvmMetrics.builder().register(test.reg);
-      ByteBuf warmup = Unpooled.directBuffer(123);
-      warmup.release();
-      test.snapshots();
-      double before = test.snapshots().gauge("process_resident_memory_bytes").getValue();
-      final int sampleAllocation = 100 * 1024 * 1024;
-      ByteBuf buf = Unpooled.directBuffer(sampleAllocation);
-      try {
-        // malloc does not make the pages resident until they are written.
-        buf.setZero(0, buf.capacity());
-        assertThat(test.snapshots().gauge("process_resident_memory_bytes").getValue())
-            .as("RSS sees touched native memory")
-            .isGreaterThanOrEqualTo(before + sampleAllocation / 2);
-      } finally {
-        buf.release();
-      }
-    }
   }
 
   /// `process_virtual_memory_bytes` grows with the netty buffers whichever way netty allocates

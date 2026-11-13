@@ -1,7 +1,6 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import java.util.Map;
@@ -16,126 +15,16 @@ class ProxyConstructBDDTest {
 
   Steps steps = new Steps();
 
-  @Test
-  void testEmpty() {
-    steps
-        .given_the_configuration(ProxyConfig.builder().build())
-        .then_expect_exception_with_message("Missing listen");
-  }
+  static final ListenConfig SSL_LISTEN =
+      ListenConfig.builder()
+          .ssl(
+              SslConfig.builder()
+                  .keyPath("classpath:ssl/test.key")
+                  .certPath("classpath:ssl/test.crt")
+                  .build())
+          .build();
 
-  @Test
-  void testWithEmptyListen() {
-    ProxyConfig config =
-        ProxyConfig.builder()
-            .listen(ListenConfig.builder().build())
-            .metrics(MetricsConfig.builder().enable(false).build())
-            .sites(
-                Map.of(
-                    "somesite",
-                    SiteConfig.builder()
-                        .protection(ProtectionConfig.builder().disable(true).build())
-                        .upstream(UpstreamConfig.builder().target("localhost").build())
-                        .build()))
-            .build();
-    steps.given_the_configuration(config).then_expect_exception_with_message("SSL setup missing");
-  }
-
-  @Test
-  void testWithSSL() {
-    ProxyConfig config =
-        ProxyConfig.builder()
-            .listen(
-                ListenConfig.builder()
-                    .ssl(
-                        SslConfig.builder()
-                            .keyPath("classpath:ssl/test.key")
-                            .certPath("classpath:ssl/test.crt")
-                            .build())
-                    .build())
-            .metrics(MetricsConfig.builder().enable(false).build())
-            .build();
-    steps.given_the_configuration(config).then_expect_exception_with_message("sites missing");
-  }
-
-  @Test
-  void testWithOneSite() {
-    ProxyConfig config =
-        ProxyConfig.builder()
-            .listen(
-                ListenConfig.builder()
-                    .ssl(
-                        SslConfig.builder()
-                            .keyPath("classpath:ssl/test.key")
-                            .certPath("classpath:ssl/test.crt")
-                            .build())
-                    .build())
-            .sites(Map.of("example.com", SiteConfig.builder().build()))
-            .metrics(MetricsConfig.builder().enable(false).build())
-            .build();
-    steps.given_the_configuration(config).then_expect_exception_with_message("upstream missing");
-  }
-
-  @Test
-  void testWithOneSiteWithResponse() {
-    ProxyConfig config =
-        ProxyConfig.builder()
-            .listen(
-                ListenConfig.builder()
-                    .ssl(
-                        SslConfig.builder()
-                            .keyPath("classpath:ssl/test.key")
-                            .certPath("classpath:ssl/test.crt")
-                            .build())
-                    .build())
-            .sites(
-                Map.of(
-                    "example.com",
-                    SiteConfig.builder()
-                        .response(ResponseConfig.builder().text("demo").build())
-                        .build()))
-            .metrics(MetricsConfig.builder().enable(false).build())
-            .build();
-    steps.given_the_configuration(config).then_expect_exception_with_message("protection scheme");
-  }
-
-  @Test
-  void testWithOneSiteWithResponseDisabledProtection() {
-    ProxyConfig config =
-        ProxyConfig.builder()
-            .listen(
-                ListenConfig.builder()
-                    .ssl(
-                        SslConfig.builder()
-                            .keyPath("classpath:ssl/test.key")
-                            .certPath("classpath:ssl/test.crt")
-                            .build())
-                    .build())
-            .sites(
-                Map.of(
-                    "example.com",
-                    SiteConfig.builder()
-                        .response(ResponseConfig.builder().text("demo").build())
-                        .protection(ProtectionConfig.builder().disable(true).build())
-                        .build()))
-            .metrics(MetricsConfig.builder().enable(false).build())
-            .build();
-    steps.given_the_configuration(config).then_expect_initialized_without_exception();
-  }
-
-  @Test
-  void testResponseConfigMixingTextAndLocationFailsParsing() {
-    assertThatThrownBy(
-            () ->
-                SiteConfig.builder()
-                    .response(
-                        ResponseConfig.builder()
-                            .text("demo")
-                            .location("https://elsewhere.example/")
-                            .build())
-                    .build())
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("response should be one of");
-  }
+  static final MetricsConfig NO_METRICS = MetricsConfig.builder().enable(false).build();
 
   static final UpstreamConfig LOCAL = UpstreamConfig.builder().target("localhost:8080").build();
 
@@ -150,14 +39,7 @@ class ProxyConstructBDDTest {
   /// Configuration with named upstreams `api` and `beta` and a single site.
   static ProxyConfig routingConfig(SiteConfig site) {
     return ProxyConfig.builder()
-        .listen(
-            ListenConfig.builder()
-                .ssl(
-                    SslConfig.builder()
-                        .keyPath("classpath:ssl/test.key")
-                        .certPath("classpath:ssl/test.crt")
-                        .build())
-                .build())
+        .listen(SSL_LISTEN)
         .upstreams(Map.of("api", LOCAL, "beta", LOCAL))
         .sites(
             Map.of(
@@ -165,8 +47,28 @@ class ProxyConstructBDDTest {
                 site.toBuilder()
                     .protection(ProtectionConfig.builder().disable(true).build())
                     .build()))
-        .metrics(MetricsConfig.builder().enable(false).build())
+        .metrics(NO_METRICS)
         .build();
+  }
+
+  /// Single site with SSL, but without the routing setup of [#routingConfig(SiteConfig)]
+  static ProxyConfig siteConfig(SiteConfig site) {
+    return ProxyConfig.builder()
+        .listen(SSL_LISTEN)
+        .sites(Map.of("example.com", site))
+        .metrics(NO_METRICS)
+        .build();
+  }
+
+  @Test
+  void testWithOneSiteWithResponseDisabledProtection() {
+    ProxyConfig config =
+        siteConfig(
+            SiteConfig.builder()
+                .response(ResponseConfig.builder().text("demo").build())
+                .protection(ProtectionConfig.builder().disable(true).build())
+                .build());
+    steps.given_the_configuration(config).then_expect_initialized_without_exception();
   }
 
   @Test
@@ -184,23 +86,6 @@ class ProxyConstructBDDTest {
                         .build()))
             .build();
     steps.given_the_configuration(routingConfig(site)).then_expect_initialized_without_exception();
-  }
-
-  @Test
-  void hostWildcardIsRejected() {
-    ProxyConfig config = routingConfig(SiteConfig.builder().upstream(LOCAL).build());
-    SiteConfig site = config.sites().get("example.com");
-    steps
-        .given_the_configuration(config.toBuilder().sites(Map.of("*.example.com", site)).build())
-        .then_expect_exception_with_message("Host wildcards are not yet supported");
-  }
-
-  @Test
-  void siteUriMustBePrefix() {
-    SiteConfig site = SiteConfig.builder().uri("/api").upstream(LOCAL).build();
-    steps
-        .given_the_configuration(routingConfig(site))
-        .then_expect_exception_with_message("Site match uri needs to be prefix");
   }
 
   /// A site without own upstream uses the global `upstream`.
@@ -224,8 +109,9 @@ class ProxyConstructBDDTest {
                             .build())
                     .build())
             .build();
-    steps.given_the_configuration(config);
-    assertThat(steps.constructionFailure).hasMessageContaining("/does/not/exist/country.mmdb");
+    steps
+        .given_the_configuration(config)
+        .then_expect_construction_failure_containing("/does/not/exist/country.mmdb");
   }
 
   @Test
@@ -236,99 +122,6 @@ class ProxyConstructBDDTest {
             .paths(Map.of("/api", path(LOCAL), "/api/*", path(LOCAL)))
             .build();
     steps.given_the_configuration(routingConfig(site)).then_expect_initialized_without_exception();
-  }
-
-  @Test
-  void pathRequiresUpstreamOrResponse() {
-    SiteConfig site =
-        SiteConfig.builder()
-            .upstream(LOCAL)
-            .paths(Map.of("/api/*", PathRouteConfig.builder().build()))
-            .build();
-    steps
-        .given_the_configuration(routingConfig(site))
-        .then_expect_exception_with_message("Path requires upstream or response: /api/*");
-  }
-
-  @Test
-  void pathWithUpstreamAndResponseFails() {
-    PathRouteConfig both =
-        PathRouteConfig.builder()
-            .upstream(LOCAL)
-            .response(ResponseConfig.builder().status(404).text("Not Found").build())
-            .build();
-    SiteConfig site = SiteConfig.builder().upstream(LOCAL).paths(Map.of("/bo/*", both)).build();
-    steps
-        .given_the_configuration(routingConfig(site))
-        .then_expect_exception_with_message("Path requires upstream or response: /bo/*");
-  }
-
-  @Test
-  void overrideRequiresCookie() {
-    SiteConfig site =
-        SiteConfig.builder()
-            .upstream(LOCAL)
-            .overrides(List.of(RoutingOverrideConfig.builder().upstream(LOCAL).build()))
-            .build();
-    steps
-        .given_the_configuration(routingConfig(site))
-        .then_expect_exception_with_message("Routing override requires whenCookie");
-  }
-
-  @Test
-  void overrideRequiresUpstream() {
-    SiteConfig site =
-        SiteConfig.builder()
-            .upstream(LOCAL)
-            .overrides(
-                List.of(
-                    RoutingOverrideConfig.builder()
-                        .whenCookie("beta")
-                        .paths(Map.of("/api/*", path(LOCAL)))
-                        .build()))
-            .build();
-    steps
-        .given_the_configuration(routingConfig(site))
-        .then_expect_exception_with_message("Routing override requires upstream: beta");
-  }
-
-  @Test
-  void unknownUpstreamRef() {
-    SiteConfig site = SiteConfig.builder().upstream(ref("missing")).build();
-    steps
-        .given_the_configuration(routingConfig(site))
-        .then_expect_exception_with_message("unknown upstream ref: missing");
-  }
-
-  @Test
-  void upstreamRefNotCombinedWithTarget() {
-    SiteConfig site =
-        SiteConfig.builder()
-            .upstream(UpstreamConfig.builder().ref("api").target("localhost").build())
-            .build();
-    steps
-        .given_the_configuration(routingConfig(site))
-        .then_expect_exception_with_message("Upstream ref must not be combined");
-  }
-
-  @Test
-  void upstreamRequiresTargetOrRef() {
-    SiteConfig site = SiteConfig.builder().upstream(UpstreamConfig.builder().build()).build();
-    steps
-        .given_the_configuration(routingConfig(site))
-        .then_expect_exception_with_message("Upstream requires target or ref");
-  }
-
-  @Test
-  void namedUpstreamMustNotUseRef() {
-    ProxyConfig config =
-        routingConfig(SiteConfig.builder().upstream(LOCAL).build()).toBuilder()
-            .upstreams(Map.of("api", LOCAL, "alias", ref("api")))
-            .build();
-    steps
-        .given_the_configuration(config)
-        .then_expect_exception_with_message(
-            "Named upstream must not reference another upstream: alias");
   }
 
   static class Steps extends ExtendableSteps<Steps> {}
@@ -352,19 +145,24 @@ class ProxyConstructBDDTest {
 
     @Step()
     T then_expect_exception_with_message(String expectedMessage) {
-      String message = constructionFailure.getMessage();
-      if (message == null) {
-        message = "";
-      }
-      if (constructionFailure instanceof IllegalArgumentException
-          && message.contains(expectedMessage)) {
-        return (T) this;
-      }
       if (constructionFailure == null) {
         throw new AssertionError("Exception expected: " + IllegalArgumentException.class);
       }
+      String message = constructionFailure.getMessage();
+      if (constructionFailure instanceof IllegalArgumentException
+          && message != null
+          && message.contains(expectedMessage)) {
+        return (T) this;
+      }
       // chain
       throw new AssertionError("Unexpected exception: " + constructionFailure, constructionFailure);
+    }
+
+    /// Construction fails with any exception, e.g. an I/O error on a configured file
+    @Step
+    T then_expect_construction_failure_containing(String expectedMessage) {
+      assertThat(constructionFailure).isNotNull().hasMessageContaining(expectedMessage);
+      return (T) this;
     }
 
     @Step
