@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -99,7 +100,8 @@ class OtlpLogDestinationTest {
               new Received(
                   exchange.getRequestHeaders().getFirst("Content-Type"),
                   headers,
-                  ExportLogsServiceRequest.parseFrom(body),
+                  ExportLogsServiceRequest.parseFrom(
+                      "gzip".equals(headers.get("content-encoding")) ? gunzip(body) : body),
                   answer.status(),
                   System.nanoTime()));
           if (answer.retryAfter() != null) {
@@ -111,6 +113,25 @@ class OtlpLogDestinationTest {
     server.start();
   }
 
+  /// The request of a post, decompressed if the sender compressed it
+  static ExportLogsServiceRequest decode(com.sun.net.httpserver.HttpExchange exchange)
+      throws IOException {
+    return decode(exchange, exchange.getRequestBody().readAllBytes());
+  }
+
+  static ExportLogsServiceRequest decode(com.sun.net.httpserver.HttpExchange exchange, byte[] body)
+      throws IOException {
+    boolean gzip = "gzip".equals(exchange.getRequestHeaders().getFirst("Content-Encoding"));
+    return ExportLogsServiceRequest.parseFrom(gzip ? gunzip(body) : body);
+  }
+
+  static byte[] gunzip(byte[] body) throws IOException {
+    try (java.util.zip.GZIPInputStream in =
+        new java.util.zip.GZIPInputStream(new java.io.ByteArrayInputStream(body))) {
+      return in.readAllBytes();
+    }
+  }
+
   /// The log server comes back on the same port after a restart
   void restartServer() throws IOException {
     server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
@@ -120,7 +141,9 @@ class OtlpLogDestinationTest {
   @AfterEach
   void stop() {
     if (destination != null) {
-      destination.close();
+      // does not wait, some tests end in an outage
+      destination.endThread();
+      destination.finish();
     }
     server.stop(0);
   }
@@ -133,9 +156,9 @@ class OtlpLogDestinationTest {
     return OtlpConfig.builder().endpoint(endpoint()).flushIntervalMillis(1);
   }
 
-  /// Destination with short retry delays and close timeout, to keep the tests fast
+  /// Destination with short retry delays, to keep the tests fast
   OtlpLogDestination fastDestination(OtlpConfig config) {
-    return new OtlpLogDestination("otlp", config, new RequestLogMetrics(), 10, 50, 1_000);
+    return new OtlpLogDestination("otlp", config, new RequestLogMetrics(), 10, 50);
   }
 
   static Map<String, AnyValue> attributes(List<KeyValue> keyValues) {
@@ -184,6 +207,119 @@ class OtlpLogDestinationTest {
       }
       Thread.sleep(5);
     }
+  }
+
+  MetricsAndMemoryTest.Snapshots scrape() {
+    PrometheusRegistry registry = new PrometheusRegistry();
+    destination.metrics().registerCollectors(registry::register);
+    return new MetricsAndMemoryTest.Snapshots(registry.scrape());
+  }
+
+  /// A circuit breaker counter of this destination, e.g. `calls` with `kind`, `successful`
+  long breakerCounter(String metric, String... labels) {
+    String[] keyValues = new String[labels.length + 4];
+    keyValues[0] = "component";
+    keyValues[1] = "requestLog";
+    keyValues[2] = "name";
+    keyValues[3] = "otlp";
+    System.arraycopy(labels, 0, keyValues, 4, labels.length);
+    return (long) scrape().counter(CircuitBreakerMetrics.PREFIX + metric, keyValues).getValue();
+  }
+
+  double breakerGauge(String metric, String... labels) {
+    String[] keyValues = new String[labels.length + 4];
+    keyValues[0] = "component";
+    keyValues[1] = "requestLog";
+    keyValues[2] = "name";
+    keyValues[3] = "otlp";
+    System.arraycopy(labels, 0, keyValues, 4, labels.length);
+    return scrape().gauge(CircuitBreakerMetrics.PREFIX + metric, keyValues).getValue();
+  }
+
+  /// Sent records and bytes, and the circuit breaker metrics of an outage and its recovery
+  @Test
+  void metricsOfAnOutage() throws Exception {
+    answers.add(new Answer(503, null));
+    destination = fastDestination(config().build());
+    long start = System.currentTimeMillis();
+    new OtlpRequestLogger(destination).logRequest(request("/a"));
+    await(() -> counter("sensepitch_request_log_sent_records") == 1);
+    assertThat(counter("sensepitch_request_log_sent_bytes"))
+        .as("the request body")
+        .isEqualTo(sentBodyBytes());
+    assertThat(breakerCounter("calls", "kind", "successful")).isOne();
+    assertThat(breakerCounter("calls", "kind", "failed")).isOne();
+    assertThat(breakerCounter("calls", "kind", "ignored")).isZero();
+    assertThat(breakerCounter("errors", "error", "http_503")).isOne();
+    assertThat(breakerCounter("transitions", "from", "closed", "to", "open", "reason", "http_503"))
+        .isOne();
+    assertThat(
+            breakerCounter(
+                "transitions", "from", "open", "to", "half_open", "reason", "backoff_over"))
+        .isOne();
+    assertThat(
+            breakerCounter(
+                "transitions", "from", "half_open", "to", "closed", "reason", "recovered"))
+        .isOne();
+    assertThat(breakerGauge("state", "state", "closed")).isOne();
+    assertThat(breakerGauge("state", "state", "open")).isZero();
+    assertThat(breakerGauge("consecutive_failures")).isZero();
+    double trip = breakerGauge("last_trip_time_seconds");
+    assertThat(breakerGauge("start_time_seconds")).isBetween(start / 1000.0 - 1, trip);
+    assertThat(trip).isGreaterThanOrEqualTo(start / 1000.0);
+    assertThat(breakerGauge("last_restart_time_seconds")).isGreaterThanOrEqualTo(trip);
+    HttpBatchSenderTest.close(destination);
+    assertThat(scrape().containsSnapshot(CircuitBreakerMetrics.PREFIX + "state").getDataPoints())
+        .as("gauges of a stopped breaker are gone")
+        .isEmpty();
+    assertThat(breakerCounter("calls", "kind", "successful")).as("counters stay").isOne();
+  }
+
+  /// The posts are compressed by default, with the uncompressed batch size
+  @Test
+  void gzipByDefault() throws Exception {
+    // one post at the close
+    destination = fastDestination(config().flushIntervalMillis(60_000).build());
+    OtlpRequestLogger logger = new OtlpRequestLogger(destination);
+    for (int i = 0; i < 100; i++) {
+      logger.logRequest(request("/same/path/" + i));
+    }
+    HttpBatchSenderTest.close(destination);
+    Received post = received.take();
+    assertThat(post.headers()).containsEntry("content-encoding", "gzip");
+    assertThat(post.records()).isEqualTo(100);
+    assertThat(Long.parseLong(post.headers().get("content-length")))
+        .as("compressed")
+        .isLessThan(post.body().getSerializedSize() / 2);
+  }
+
+  @Test
+  void compressionNone() throws Exception {
+    destination = fastDestination(config().compression(OtlpConfig.NONE).build());
+    new OtlpRequestLogger(destination).logRequest(request("/plain"));
+    HttpBatchSenderTest.close(destination);
+    Received post = received.take();
+    assertThat(post.headers()).doesNotContainKey("content-encoding");
+    assertThat(post.paths()).containsExactly("/plain");
+  }
+
+  @Test
+  void unknownCompressionIsRejected() {
+    org.assertj.core.api.Assertions.assertThatThrownBy(
+            () -> fastDestination(config().compression("zstd").build()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Request log destination otlp: compression must be gzip or none, not zstd");
+  }
+
+  /// Bytes of the successful request bodies the server received
+  long sentBodyBytes() {
+    long bytes = 0;
+    for (Received post : received) {
+      if (post.status() == 200) {
+        bytes += Long.parseLong(post.headers().get("content-length"));
+      }
+    }
+    return bytes;
   }
 
   long bufferedBytesGauge() {
@@ -292,7 +428,7 @@ class OtlpLogDestinationTest {
       logger.logRequest(TestRequestLogInfo.of(HttpMethod.GET, 200));
     }
     assertThat(destination.queueSize()).isEqualTo(25);
-    destination.close();
+    HttpBatchSenderTest.close(destination);
     assertThat(received.take().records()).isEqualTo(25);
     assertThat(received).isEmpty();
   }
@@ -320,7 +456,10 @@ class OtlpLogDestinationTest {
   @Test
   void outageLosesNothing() throws Exception {
     status = 503;
-    destination = fastDestination(config().batchBytes(OtlpConfig.MIN_BATCH_BYTES).build());
+    // one request at a time, so the batches arrive in order
+    destination =
+        fastDestination(
+            config().batchBytes(OtlpConfig.MIN_BATCH_BYTES).maxConcurrentRequests(1).build());
     OtlpRequestLogger logger = new OtlpRequestLogger(destination);
     int total = 1_000;
     for (int i = 0; i < total / 2; i++) {
@@ -360,7 +499,7 @@ class OtlpLogDestinationTest {
 
   /// A server asking for a delay via `Retry-After` is not asked again meanwhile, although the
   /// backoff of this destination is only milliseconds. The exact delay is tested with
-  /// [OtlpLogDestination#retryDelayMillis], without waiting. At shutdown the batch gets a last
+  /// [Backoff#delayMillis(int, long)], without waiting. At shutdown the batch gets a last
   /// attempt, regardless of the requested delay, before its records would be dropped.
   @Test
   void retryAfterIsHonoured() throws Exception {
@@ -370,40 +509,9 @@ class OtlpLogDestinationTest {
     assertThat(received.take().status()).isEqualTo(429);
     assertThat(received.poll(100, TimeUnit.MILLISECONDS)).as("no retry before the delay").isNull();
     assertThat(counter("sensepitch_request_log_export_retries")).isOne();
-    destination.close();
+    HttpBatchSenderTest.close(destination);
     assertThat(received.take().status()).as("last attempt at shutdown").isEqualTo(200);
     assertThat(destination.droppedCount()).isZero();
-  }
-
-  /// Exponential backoff with jitter, capped, a longer requested delay wins
-  @Test
-  void retryDelay() {
-    // without jitter (random 0) the delay is half the backoff, with the maximum jitter all of it
-    assertThat(OtlpLogDestination.retryDelayMillis(1_000, 30_000, 0, 0, 0)).isEqualTo(500);
-    assertThat(OtlpLogDestination.retryDelayMillis(1_000, 30_000, 0, 0, 0.999)).isEqualTo(1_000);
-    assertThat(OtlpLogDestination.retryDelayMillis(1_000, 30_000, 3, 0, 0)).isEqualTo(4_000);
-    assertThat(OtlpLogDestination.retryDelayMillis(1_000, 30_000, 10, 0, 0))
-        .as("capped")
-        .isEqualTo(15_000);
-    assertThat(OtlpLogDestination.retryDelayMillis(1_000, 30_000, 100, 0, 0.999))
-        .as("no overflow for many retries, at most the maximum")
-        .isBetween(29_900L, 30_000L);
-    assertThat(OtlpLogDestination.retryDelayMillis(1_000, 30_000, 0, 120_000, 0))
-        .as("longer Retry-After wins")
-        .isEqualTo(120_000);
-    assertThat(OtlpLogDestination.retryDelayMillis(1_000, 30_000, 3, 1_000, 0))
-        .as("shorter Retry-After does not shorten the backoff")
-        .isEqualTo(4_000);
-    assertThat(OtlpLogDestination.retryDelayMillis(1, 1, 0, 0, 0)).as("at least 1 ms").isOne();
-  }
-
-  @Test
-  void retryAfterParsing() {
-    assertThat(OtlpLogDestination.parseRetryAfter(" 2 ")).isEqualTo(2_000);
-    assertThat(OtlpLogDestination.parseRetryAfter("-5")).isZero();
-    assertThat(OtlpLogDestination.parseRetryAfter("Wed, 21 Oct 2026 07:28:00 GMT")).isZero();
-    assertThat(OtlpLogDestination.parseRetryAfter("999999"))
-        .isEqualTo(OtlpLogDestination.MAX_RETRY_AFTER_MILLIS);
   }
 
   /// A status that retrying cannot fix gives up the batch, it is not sent again
@@ -414,12 +522,15 @@ class OtlpLogDestinationTest {
     OtlpRequestLogger logger = new OtlpRequestLogger(destination);
     logger.logRequest(TestRequestLogInfo.of(HttpMethod.GET, 200));
     logger.logRequest(TestRequestLogInfo.of(HttpMethod.GET, 200));
-    destination.close();
+    HttpBatchSenderTest.close(destination);
     assertThat(received.take().status()).isEqualTo(400);
     assertThat(received).as("not retried").isEmpty();
     assertThat(counter("sensepitch_request_log_export_failed")).isOne();
     assertThat(counter("sensepitch_request_log_export_retries")).isZero();
     assertThat(destination.droppedCount()).isEqualTo(2);
+    assertThat(counter("sensepitch_request_log_sent_records")).isZero();
+    assertThat(breakerCounter("calls", "kind", "ignored")).isOne();
+    assertThat(breakerCounter("errors", "error", "http_400")).isOne();
     assertThat(logs.messages(OtlpLogDestination.class))
         .singleElement()
         .asString()
@@ -446,20 +557,27 @@ class OtlpLogDestinationTest {
   void limitDropsTheNewestRecords() throws Exception {
     status = 503;
     int batchBytes = OtlpConfig.MIN_BATCH_BYTES;
-    destination =
-        fastDestination(config().batchBytes(batchBytes).maxBufferedBytes(2 * batchBytes).build());
+    OtlpConfig config =
+        config()
+            .batchBytes(batchBytes)
+            // one request at a time, so the batches arrive in order
+            .maxConcurrentRequests(1)
+            .build();
+    long limit = config.effectiveMaxBufferedBytes();
+    destination = fastDestination(config);
     OtlpRequestLogger logger = new OtlpRequestLogger(destination);
-    int total = 10 * batchBytes / framedSize(request("/0000"));
+    // a few batches more than the limit holds
+    int total = (int) ((limit + 4L * batchBytes) / framedSize(request("/000000")));
     for (int i = 0; i < total; i++) {
-      logger.logRequest(request(String.format("/%04d", i)));
+      logger.logRequest(request(String.format("/%06d", i)));
     }
     assertThat(destination.droppedCount()).isPositive();
-    assertThat(bufferedBytesGauge()).isLessThanOrEqualTo(2L * batchBytes);
+    assertThat(bufferedBytesGauge()).isLessThanOrEqualTo(limit);
     status = 200;
-    destination.close();
+    HttpBatchSenderTest.close(destination);
     List<String> delivered = deliveredPaths();
     assertThat(delivered.size() + destination.droppedCount()).isEqualTo(total);
-    assertThat(delivered).as("the oldest are kept").startsWith("/0000", "/0001").isSorted();
+    assertThat(delivered).as("the oldest are kept").startsWith("/000000", "/000001").isSorted();
   }
 
   /// Batches taken during an outage are released again after it, only a few stay in the pool
@@ -467,7 +585,9 @@ class OtlpLogDestinationTest {
   void poolShrinksAfterAnOutage() throws Exception {
     status = 503;
     int batchBytes = OtlpConfig.MIN_BATCH_BYTES;
-    destination = fastDestination(config().batchBytes(batchBytes).build());
+    // room for all batches, also on machines with few event loops
+    destination =
+        fastDestination(config().batchBytes(batchBytes).maxBufferedBytes(64 << 20).build());
     OtlpRequestLogger logger = new OtlpRequestLogger(destination);
     int total = 20 * batchBytes / framedSize(request("/0"));
     for (int i = 0; i < total; i++) {
@@ -480,37 +600,28 @@ class OtlpLogDestinationTest {
     assertThat(destination.pooledBatches()).as("one thread plus a spare").isLessThanOrEqualTo(2);
   }
 
-  /// Close gives up on an unavailable log server after its timeout and counts what is left
+  /// A finished destination keeps its records during an outage, they are reported as unsent
   @Test
-  void closeDuringAnOutage() throws Exception {
+  void finishDuringAnOutage() throws Exception {
     server.stop(0);
-    // a short close timeout, close waits it out while the log server is unavailable
-    destination =
-        new OtlpLogDestination(
-            "otlp",
-            config().flushIntervalMillis(60_000).build(),
-            new RequestLogMetrics(),
-            10,
-            50,
-            50);
+    destination = fastDestination(config().flushIntervalMillis(60_000).build());
     OtlpRequestLogger logger = new OtlpRequestLogger(destination);
     for (int i = 0; i < 10; i++) {
       logger.logRequest(TestRequestLogInfo.of(HttpMethod.GET, 200));
     }
-    long start = System.nanoTime();
-    destination.close();
-    assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start)).isLessThan(1_000);
-    assertThat(destination.droppedCount()).isEqualTo(10);
-    assertThat(counter("sensepitch_request_log_export_retries")).isPositive();
-    assertThat(logs.messages(OtlpLogDestination.class))
-        .anySatisfy(m -> assertThat(m).contains("unavailable at shutdown, dropped 10"));
+    logger.endThread();
+    CompletableFuture<Void> stopped = destination.finish();
+    await(() -> counter("sensepitch_request_log_export_retries") > 0);
+    assertThat(stopped).isNotDone();
+    assertThat(destination.queueSize()).isEqualTo(10);
+    assertThat(destination.droppedCount()).isZero();
   }
 
   @Test
   void closeSendsPendingRecords() throws Exception {
     destination = new OtlpLogDestination("otlp", config().flushIntervalMillis(60_000).build());
     new OtlpRequestLogger(destination).logRequest(TestRequestLogInfo.of(HttpMethod.GET, 200));
-    destination.close();
+    HttpBatchSenderTest.close(destination);
     assertThat(received.poll()).isNotNull();
   }
 
@@ -538,7 +649,7 @@ class OtlpLogDestinationTest {
     for (Thread worker : started) {
       worker.join();
     }
-    destination.close();
+    HttpBatchSenderTest.close(destination);
     List<String> paths = deliveredPaths();
     Set<String> unique = new HashSet<>(paths);
     assertThat(destination.droppedCount()).isZero();
@@ -585,8 +696,379 @@ class OtlpLogDestinationTest {
         };
     assertThatThrownBy(() -> logger.logRequest(broken)).isInstanceOf(IllegalStateException.class);
     logger.logRequest(TestRequestLogInfo.of(HttpMethod.GET, 200));
-    destination.close();
+    HttpBatchSenderTest.close(destination);
     assertThat(received.take().records()).isOne();
+  }
+
+  /// At the flush interval, the partly filled batches of all threads go out in one request
+  @Test
+  void partialBatchesOfThreadsArriveInOneRequest() throws Exception {
+    destination = new OtlpLogDestination("otlp", config().flushIntervalMillis(500).build());
+    OtlpRequestLogger logger = new OtlpRequestLogger(destination);
+    int threads = 4;
+    int perThread = 5;
+    java.util.concurrent.CountDownLatch logged = new java.util.concurrent.CountDownLatch(threads);
+    java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+    List<Thread> workers = new ArrayList<>();
+    for (int t = 0; t < threads; t++) {
+      int thread = t;
+      Thread worker =
+          new Thread(
+              () -> {
+                for (int i = 0; i < perThread; i++) {
+                  logger.logRequest(request("/" + thread + "/" + i));
+                }
+                logged.countDown();
+                // alive until the flush took the batch
+                awaitQuietly(release);
+              });
+      worker.start();
+      workers.add(worker);
+    }
+    logged.await();
+    Received first = received.take();
+    release.countDown();
+    for (Thread worker : workers) {
+      worker.join();
+    }
+    assertThat(first.records()).as("all threads in one request").isEqualTo(threads * perThread);
+    assertThat(new HashSet<>(first.paths())).hasSize(threads * perThread);
+  }
+
+  /// Partly filled batches beyond the batch size are split into several requests
+  @Test
+  void partialBatchesBeyondTheBatchSizeAreSplit() throws Exception {
+    int batchBytes = OtlpConfig.MIN_BATCH_BYTES;
+    destination =
+        new OtlpLogDestination(
+            "otlp", config().batchBytes(batchBytes).flushIntervalMillis(500).build());
+    OtlpRequestLogger logger = new OtlpRequestLogger(destination);
+    // each thread fills about 60% of a batch, two of them do not fit into one request
+    int perThread = batchBytes * 6 / 10 / framedSize(request("/0/0000"));
+    java.util.concurrent.CountDownLatch logged = new java.util.concurrent.CountDownLatch(2);
+    java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+    List<Thread> workers = new ArrayList<>();
+    for (int t = 0; t < 2; t++) {
+      int thread = t;
+      Thread worker =
+          new Thread(
+              () -> {
+                for (int i = 0; i < perThread; i++) {
+                  logger.logRequest(request(String.format("/%d/%04d", thread, i)));
+                }
+                logged.countDown();
+                awaitQuietly(release);
+              });
+      worker.start();
+      workers.add(worker);
+    }
+    logged.await();
+    Received first = received.take();
+    Received second = received.take();
+    release.countDown();
+    for (Thread worker : workers) {
+      worker.join();
+    }
+    assertThat(first.records()).isEqualTo(perThread);
+    assertThat(second.records()).isEqualTo(perThread);
+    assertThat(destination.droppedCount()).isZero();
+  }
+
+  static void awaitQuietly(java.util.concurrent.CountDownLatch latch) {
+    try {
+      latch.await();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
+  }
+
+  /// Full batches are posted concurrently, at most `maxConcurrentRequests` at a time
+  @Test
+  void concurrentRequestsUpToTheLimit() throws Exception {
+    java.util.concurrent.atomic.AtomicInteger inFlight =
+        new java.util.concurrent.atomic.AtomicInteger();
+    java.util.concurrent.atomic.AtomicInteger maxInFlight =
+        new java.util.concurrent.atomic.AtomicInteger();
+    java.util.concurrent.atomic.AtomicInteger records =
+        new java.util.concurrent.atomic.AtomicInteger();
+    java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+    HttpServer slow = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    slow.setExecutor(java.util.concurrent.Executors.newCachedThreadPool());
+    slow.createContext(
+        "/v1/logs",
+        exchange -> {
+          byte[] body = exchange.getRequestBody().readAllBytes();
+          maxInFlight.accumulateAndGet(inFlight.incrementAndGet(), Math::max);
+          awaitQuietly(release);
+          inFlight.decrementAndGet();
+          records.addAndGet(
+              decode(exchange, body).getResourceLogs(0).getScopeLogs(0).getLogRecordsCount());
+          exchange.sendResponseHeaders(200, -1);
+          exchange.close();
+        });
+    slow.start();
+    try {
+      int batchBytes = OtlpConfig.MIN_BATCH_BYTES;
+      destination =
+          new OtlpLogDestination(
+              "otlp",
+              OtlpConfig.builder()
+                  .endpoint("http://127.0.0.1:" + slow.getAddress().getPort() + "/v1/logs")
+                  .batchBytes(batchBytes)
+                  .maxBufferedBytes(64 << 20)
+                  .maxConcurrentRequests(3)
+                  .flushIntervalMillis(60_000)
+                  .build());
+      OtlpRequestLogger logger = new OtlpRequestLogger(destination);
+      int total = 6 * batchBytes / framedSize(request("/0")) + 1;
+      for (int i = 0; i < total; i++) {
+        logger.logRequest(request("/" + i));
+      }
+      await(() -> inFlight.get() == 3);
+      Thread.sleep(100);
+      assertThat(maxInFlight.get()).as("requests at the same time").isEqualTo(3);
+      release.countDown();
+      HttpBatchSenderTest.close(destination);
+      assertThat(records.get()).isEqualTo(total);
+      assertThat(destination.droppedCount()).isZero();
+    } finally {
+      release.countDown();
+      slow.stop(0);
+    }
+  }
+
+  /// After an outage the backlog is sent with a slow start: the probe alone, then two requests in
+  /// flight, one more with each success, up to `maxConcurrentRequests`
+  @Test
+  void slowStartAfterAnOutage() throws Exception {
+    java.util.concurrent.atomic.AtomicBoolean available =
+        new java.util.concurrent.atomic.AtomicBoolean();
+    java.util.concurrent.atomic.AtomicInteger inFlight =
+        new java.util.concurrent.atomic.AtomicInteger();
+    java.util.concurrent.atomic.AtomicInteger maxInFlight =
+        new java.util.concurrent.atomic.AtomicInteger();
+    java.util.concurrent.atomic.AtomicInteger records =
+        new java.util.concurrent.atomic.AtomicInteger();
+    java.util.concurrent.Semaphore answers = new java.util.concurrent.Semaphore(0);
+    HttpServer held = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    held.setExecutor(java.util.concurrent.Executors.newCachedThreadPool());
+    held.createContext(
+        "/v1/logs",
+        exchange -> {
+          byte[] body = exchange.getRequestBody().readAllBytes();
+          if (!available.get()) {
+            exchange.sendResponseHeaders(503, -1);
+            exchange.close();
+            return;
+          }
+          maxInFlight.accumulateAndGet(inFlight.incrementAndGet(), Math::max);
+          answers.acquireUninterruptibly();
+          inFlight.decrementAndGet();
+          records.addAndGet(
+              decode(exchange, body).getResourceLogs(0).getScopeLogs(0).getLogRecordsCount());
+          exchange.sendResponseHeaders(200, -1);
+          exchange.close();
+        });
+    held.start();
+    try {
+      int batchBytes = OtlpConfig.MIN_BATCH_BYTES;
+      destination =
+          fastDestination(
+              OtlpConfig.builder()
+                  .endpoint("http://127.0.0.1:" + held.getAddress().getPort() + "/v1/logs")
+                  .batchBytes(batchBytes)
+                  .maxBufferedBytes(64 << 20)
+                  .maxConcurrentRequests(8)
+                  .flushIntervalMillis(60_000)
+                  .build());
+      OtlpRequestLogger logger = new OtlpRequestLogger(destination);
+      int total = 10 * (batchBytes / framedSize(request("/0")) + 1);
+      for (int i = 0; i < total; i++) {
+        logger.logRequest(request("/" + i));
+      }
+      await(() -> counter("sensepitch_request_log_export_retries") >= 1);
+      assertThat(destination.window()).as("after a failure").isOne();
+      available.set(true);
+      // the probe alone
+      await(() -> inFlight.get() == 1);
+      Thread.sleep(100);
+      assertThat(maxInFlight.get()).as("only the probe").isOne();
+      // its success allows two
+      answers.release();
+      await(() -> inFlight.get() == 2);
+      Thread.sleep(100);
+      assertThat(maxInFlight.get()).as("two after the probe").isEqualTo(2);
+      answers.release(1_000);
+      HttpBatchSenderTest.close(destination);
+      assertThat(records.get()).isEqualTo(total);
+      assertThat(destination.droppedCount()).isZero();
+      assertThat(destination.window()).as("back at the maximum").isEqualTo(8);
+    } finally {
+      answers.release(1_000);
+      held.stop(0);
+    }
+  }
+
+  /// During an outage the breaker lets one probe through per backoff, not a retry per batch, and
+  /// sends all waiting batches once the server is back
+  @Test
+  void breakerSendsOneProbePerBackoff() throws Exception {
+    status = 503;
+    int batchBytes = OtlpConfig.MIN_BATCH_BYTES;
+    // a backoff of 100 to 200 ms with jitter
+    destination =
+        new OtlpLogDestination(
+            "otlp",
+            config()
+                .batchBytes(batchBytes)
+                .maxBufferedBytes(64 << 20)
+                .flushIntervalMillis(60_000)
+                .build(),
+            new RequestLogMetrics(),
+            200,
+            200);
+    OtlpRequestLogger logger = new OtlpRequestLogger(destination);
+    int perBatch = batchBytes / framedSize(request("/0000")) + 1;
+    int index = 0;
+    for (; index < perBatch; index++) {
+      logger.logRequest(request(String.format("/%04d", index)));
+    }
+    // the first batch failed, the breaker is open
+    await(() -> counter("sensepitch_request_log_export_retries") >= 1);
+    int total = 11 * perBatch;
+    for (; index < total; index++) {
+      logger.logRequest(request(String.format("/%04d", index)));
+    }
+    int before = received.size();
+    Thread.sleep(500);
+    assertThat(received.size() - before)
+        .as("probes in 500 ms, with 10 more batches waiting")
+        .isLessThanOrEqualTo(6);
+    status = 200;
+    await(() -> deliveredPaths().size() >= total);
+    assertThat(new HashSet<>(deliveredPaths())).hasSize(total);
+    assertThat(destination.droppedCount()).isZero();
+  }
+
+  /// A batch whose first record is older than the maximum age is dropped, the retries end
+  @Test
+  void agedBatchIsDiscarded() throws Exception {
+    status = 503;
+    destination = fastDestination(config().maximumUnsentLogAgeMillis(200).build());
+    OtlpRequestLogger logger = new OtlpRequestLogger(destination);
+    for (int i = 0; i < 5; i++) {
+      logger.logRequest(request("/old" + i));
+    }
+    await(() -> destination.droppedCount() == 5);
+    assertThat(bufferedBytesGauge()).isZero();
+    // a second round in the same outage is dropped as well, but not logged again
+    for (int i = 0; i < 3; i++) {
+      logger.logRequest(request("/older" + i));
+    }
+    await(() -> destination.droppedCount() == 8);
+    status = 200;
+    logger.logRequest(request("/new"));
+    await(() -> deliveredPaths().contains("/new"));
+    assertThat(deliveredPaths()).containsExactly("/new");
+    assertThat(destination.droppedCount()).isEqualTo(8);
+    assertThat(logs.messages(OtlpLogDestination.class))
+        .filteredOn(m -> m.contains("older than maximumUnsentLogAge"))
+        .as("logged once per outage")
+        .hasSize(1);
+  }
+
+  /// A status that retrying cannot fix does not open the breaker, the next batch goes out at once
+  @Test
+  void badRequestDoesNotOpenTheBreaker() throws Exception {
+    answers.add(new Answer(400, null));
+    // a long backoff, an open breaker would hold the second batch for seconds
+    destination =
+        new OtlpLogDestination("otlp", config().build(), new RequestLogMetrics(), 10_000, 10_000);
+    OtlpRequestLogger logger = new OtlpRequestLogger(destination);
+    logger.logRequest(request("/bad"));
+    assertThat(received.take().status()).isEqualTo(400);
+    logger.logRequest(request("/good"));
+    Received next = received.poll(2, TimeUnit.SECONDS);
+    assertThat(next).as("sent without waiting for a backoff").isNotNull();
+    assertThat(next.status()).isEqualTo(200);
+    assertThat(next.paths()).containsExactly("/good");
+  }
+
+  /// A batch given up is logged once, further ones are only counted
+  @Test
+  void givingUpIsLoggedOnce() throws Exception {
+    answers.add(new Answer(400, null));
+    answers.add(new Answer(400, null));
+    destination = new OtlpLogDestination("otlp", config().build());
+    OtlpRequestLogger logger = new OtlpRequestLogger(destination);
+    logger.logRequest(request("/bad1"));
+    assertThat(received.take().status()).isEqualTo(400);
+    logger.logRequest(request("/bad2"));
+    assertThat(received.take().status()).isEqualTo(400);
+    await(() -> counter("sensepitch_request_log_export_failed") == 2);
+    assertThat(logs.messages(OtlpLogDestination.class))
+        .filteredOn(m -> m.contains("failed, dropped a batch"))
+        .hasSize(1);
+  }
+
+  /// A thread that reached the limit takes records again once the waiting batches were sent
+  @Test
+  void recordsAreAcceptedAgainWhenThereIsRoom() throws Exception {
+    status = 503;
+    int batchBytes = OtlpConfig.MIN_BATCH_BYTES;
+    OtlpConfig config = config().batchBytes(batchBytes).flushIntervalMillis(60_000).build();
+    destination = fastDestination(config);
+    OtlpRequestLogger logger = new OtlpRequestLogger(destination);
+    // two batches more than the limit holds
+    int total =
+        (int) ((config.effectiveMaxBufferedBytes() + 2L * batchBytes) / framedSize(request("/0")));
+    for (int i = 0; i < total; i++) {
+      logger.logRequest(request("/" + i));
+    }
+    long dropped = destination.droppedCount();
+    assertThat(dropped).as("limit reached").isPositive();
+    status = 200;
+    await(() -> bufferedBytesGauge() == 0);
+    logger.logRequest(request("/again"));
+    HttpBatchSenderTest.close(destination);
+    assertThat(deliveredPaths()).contains("/again");
+    assertThat(destination.droppedCount()).isEqualTo(dropped);
+  }
+
+  /// The buffer limit defaults to its minimum, two batches per event loop, without a warning. A
+  /// larger value is kept.
+  @Test
+  void bufferLimitDefaultsToTheMinimum() {
+    io.netty.channel.MultiThreadIoEventLoopGroup group =
+        new io.netty.channel.MultiThreadIoEventLoopGroup(
+            io.netty.channel.nio.NioIoHandler.newFactory());
+    try {
+      OtlpConfig defaults = config().build();
+      assertThat(defaults.effectiveMaxBufferedBytes())
+          .isEqualTo(2L * group.executorCount() * OtlpConfig.DEFAULT_BATCH_BYTES);
+      new OtlpLogDestination("otlp", defaults).finish();
+      assertThat(logs.messages(OtlpLogDestination.class))
+          .noneSatisfy(m -> assertThat(m).contains("not respected"));
+      int larger = (int) defaults.minMaxBufferedBytes() + 1;
+      assertThat(config().maxBufferedBytes(larger).build().effectiveMaxBufferedBytes())
+          .isEqualTo(larger);
+    } finally {
+      group.shutdownGracefully();
+    }
+  }
+
+  /// By default, every event loop can have a full batch in flight
+  @Test
+  void maxConcurrentRequestsDefaultsToTheEventLoops() {
+    io.netty.channel.MultiThreadIoEventLoopGroup group =
+        new io.netty.channel.MultiThreadIoEventLoopGroup(
+            io.netty.channel.nio.NioIoHandler.newFactory());
+    try {
+      assertThat(OtlpConfig.builder().build().effectiveMaxConcurrentRequests())
+          .isEqualTo(group.executorCount());
+    } finally {
+      group.shutdownGracefully();
+    }
   }
 
   @Test
@@ -601,16 +1083,48 @@ class OtlpLogDestinationTest {
     assertThatThrownBy(() -> new OtlpLogDestination("otlp", config().batchBytes(1000).build()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("batchBytes must be at least");
+    OtlpConfig tooSmall =
+        config()
+            .batchBytes(OtlpConfig.MIN_BATCH_BYTES)
+            .maxBufferedBytes(OtlpConfig.MIN_BATCH_BYTES - 1)
+            .build();
+    assertThat(tooSmall.effectiveMaxBufferedBytes()).isEqualTo(tooSmall.minMaxBufferedBytes());
+    new OtlpLogDestination("otlp", tooSmall).finish();
+    assertThat(logs.messages(OtlpLogDestination.class))
+        .anySatisfy(
+            m ->
+                assertThat(m)
+                    .contains(
+                        "maxBufferedBytes "
+                            + (OtlpConfig.MIN_BATCH_BYTES - 1)
+                            + " not respected, using the minimum "
+                            + tooSmall.minMaxBufferedBytes()
+                            + " = 2 × "
+                            + OtlpConfig.defaultEventLoopThreads()
+                            + " event loops × "
+                            + OtlpConfig.MIN_BATCH_BYTES
+                            + " batchBytes"));
+    assertThatThrownBy(
+            () -> new OtlpLogDestination("otlp", config().maxConcurrentRequests(-1).build()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("maxConcurrentRequests must be positive");
+    assertThatThrownBy(
+            () -> new OtlpLogDestination("otlp", config().maximumUnsentLogAgeMillis(-1).build()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("maximumUnsentLogAgeMillis must be positive");
+    assertThatThrownBy(() -> new OtlpLogDestination("otlp", config().endpoint(" ").build()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("endpoint missing");
     assertThatThrownBy(
             () ->
                 new OtlpLogDestination(
-                    "otlp",
-                    config()
-                        .batchBytes(OtlpConfig.MIN_BATCH_BYTES)
-                        .maxBufferedBytes(OtlpConfig.MIN_BATCH_BYTES - 1)
-                        .build()))
+                    "otlp", config().headers(Map.of("Host", "example.com")).build()))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("maxBufferedBytes must be at least batchBytes");
+        .hasMessageStartingWith("Request log destination otlp: invalid header Host");
+    OtlpLogDestination https =
+        new OtlpLogDestination("otlp", config().endpoint("https://127.0.0.1:1/v1/logs").build());
+    https.finish();
+    assertThat(config().timeoutMillis(1234).build().effectiveTimeoutMillis()).isEqualTo(1234);
   }
 
   /// The resource identifies the instance by default, configured attributes override defaults

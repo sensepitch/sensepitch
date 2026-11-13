@@ -9,6 +9,9 @@ import io.prometheus.metrics.model.snapshots.CounterSnapshot;
 import io.prometheus.metrics.model.snapshots.GaugeSnapshot;
 import io.prometheus.metrics.model.snapshots.Labels;
 import java.util.Locale;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 
@@ -78,6 +81,36 @@ public class ProxyMetrics implements HasMultipleMetrics {
   public final LongAdder ingressRequestsCompleted = new LongAdder();
   public final LongAdder ingressRequestsAborted = new LongAdder();
 
+  /// Requests in flight per upstream name, for the shutdown report, see [Proxy#shutdown()]
+  private final Map<String, LongAdder> upstreamRequestsInFlight = new ConcurrentHashMap<>();
+
+  /// Requests started minus completed and aborted
+  public long ingressRequestsInFlight() {
+    return ingressRequestsStarted.sum()
+        - ingressRequestsCompleted.sum()
+        - ingressRequestsAborted.sum();
+  }
+
+  /// Counter of the requests in flight to the upstream, incremented when the upstream is selected
+  /// and decremented when the request is logged
+  LongAdder upstreamRequestsInFlight(Upstream upstream) {
+    String name = upstream.name() != null ? upstream.name() : String.valueOf(upstream.target());
+    return upstreamRequestsInFlight.computeIfAbsent(name, k -> new LongAdder());
+  }
+
+  /// Upstreams with requests in flight, by name
+  Map<String, Long> upstreamRequestsInFlight() {
+    Map<String, Long> inFlight = new TreeMap<>();
+    upstreamRequestsInFlight.forEach(
+        (name, count) -> {
+          long sum = count.sum();
+          if (sum > 0) {
+            inFlight.put(name, sum);
+          }
+        });
+    return inFlight;
+  }
+
   @Override
   public void registerCollectors(Consumer<Collector> consumer) {
     metricSet.forEach(consumer);
@@ -132,10 +165,7 @@ public class ProxyMetrics implements HasMultipleMetrics {
                 .help("Number of requests currently in flight")
                 .dataPoint(
                     GaugeSnapshot.GaugeDataPointSnapshot.builder()
-                        .value(
-                            ingressRequestsStarted.sum()
-                                - ingressRequestsCompleted.sum()
-                                - ingressRequestsAborted.sum())
+                        .value(ingressRequestsInFlight())
                         .build())
                 .build());
   }

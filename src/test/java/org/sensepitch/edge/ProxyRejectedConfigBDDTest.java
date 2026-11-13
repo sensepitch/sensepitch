@@ -49,6 +49,23 @@ class ProxyRejectedConfigBDDTest {
                 .build(),
             "SSL setup missing"),
         rejected(
+            "request log drain longer than the shutdown",
+            upstreamSite.toBuilder()
+                .shutdownTimeoutMillis(1_000)
+                .requestLog(RequestLogConfig.builder().drainTimeoutMillis(2_000).build())
+                .build(),
+            "requestLog.drainTimeoutMillis 2000 exceeds shutdownTimeoutMillis 1000"),
+        rejected(
+            "negative request log drain timeout",
+            upstreamSite.toBuilder()
+                .requestLog(RequestLogConfig.builder().drainTimeoutMillis(-1).build())
+                .build(),
+            "must not be negative"),
+        rejected(
+            "negative shutdown timeout",
+            upstreamSite.toBuilder().shutdownTimeoutMillis(-1).build(),
+            "must not be negative"),
+        rejected(
             "no sites",
             ProxyConfig.builder().listen(SSL_LISTEN).metrics(NO_METRICS).build(),
             "sites missing"),

@@ -1,28 +1,27 @@
 package org.sensepitch.edge;
 
 /// A buffer of encoded OTLP records, each framed as a `ScopeLogs.log_records` entry, so the buffer
-/// can be sent as it is. Filled by one [OtlpThreadLogger], then queued and sent by the
-/// [OtlpLogDestination] and reused afterwards.
+/// can be sent as it is, see [OtlpBatchPayload].
 ///
 /// @author Jens Wilke
-final class OtlpBatch {
+final class OtlpBatch extends Batch {
 
   /// Room beyond the batch size for the record that crosses it, so a buffer does not grow
   static final int SLACK = 16 * 1024;
 
   final ProtobufWriter writer;
-  int records;
 
   OtlpBatch(int batchBytes) {
     writer = new ProtobufWriter(batchBytes + SLACK);
   }
 
+  @Override
   int size() {
     return writer.size();
   }
 
-  void reset() {
+  @Override
+  void clear() {
     writer.reset();
-    records = 0;
   }
 }

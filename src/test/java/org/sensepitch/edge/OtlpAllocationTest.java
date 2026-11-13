@@ -11,7 +11,7 @@ import java.net.InetSocketAddress;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-/// Logging a request via OTLP must not allocate in steady state, see [OtlpThreadLogger].
+/// Logging a request via OTLP must not allocate in steady state, see [ThreadBatcher].
 ///
 /// Measured with the allocation counter of the JVM for the calling thread, so the work of the
 /// sender thread of the destination is not included. What remains are the iterators Netty

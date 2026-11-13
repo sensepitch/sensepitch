@@ -28,7 +28,7 @@ import java.net.InetAddress;
 /// [RequestLogFieldsWriter], the record level fields map to the log data model. The body is a short
 /// summary, e.g. `GET /path 200`.
 ///
-/// Holds reusable state, so an instance is used by one thread at a time, see [OtlpThreadLogger].
+/// Holds reusable state, so an instance is used by one thread at a time, see [ThreadBatcher].
 ///
 /// @author Jens Wilke
 final class OtlpRequestLogSink implements RequestLogSink {

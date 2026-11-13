@@ -85,6 +85,69 @@ class ShadedJarIT {
     assertThat(lines).noneMatch(line -> line.startsWith("WARNING"));
   }
 
+  /// `SIGTERM` shuts down gracefully: the request log is complete when the process exits, also the
+  /// OTLP export, which flushes only every minute, and the process exits right away when there
+  /// is nothing left to wait for
+  @Test
+  void sigtermSendsTheRequestLogAndExits() throws Exception {
+    java.util.concurrent.atomic.AtomicInteger records =
+        new java.util.concurrent.atomic.AtomicInteger();
+    com.sun.net.httpserver.HttpServer logServer =
+        com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+    logServer.createContext(
+        "/v1/logs",
+        exchange -> {
+          records.addAndGet(
+              OtlpLogDestinationTest.decode(exchange)
+                  .getResourceLogs(0)
+                  .getScopeLogs(0)
+                  .getLogRecordsCount());
+          exchange.sendResponseHeaders(200, -1);
+          exchange.close();
+        });
+    logServer.start();
+    try {
+      int port = freePort();
+      Path config =
+          writeConfig(
+              port,
+              """
+              requestLog:
+                destinations:
+                  - type: stdout
+                  - type: otlp
+                    otlp:
+                      endpoint: http://127.0.0.1:%d/v1/logs
+                      flushIntervalMillis: 60000
+              """
+                  .formatted(logServer.getAddress().getPort()));
+      Path stderr = dir.resolve("stderr.log");
+      Path stdout = dir.resolve("stdout.log");
+      process =
+          new ProcessBuilder(
+                  Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                  "-jar",
+                  jar.toString(),
+                  config.toString())
+              .redirectOutput(stdout.toFile())
+              .redirectError(stderr.toFile())
+              .start();
+      awaitOutput(stderr, "Proxy listening on 127.0.0.1:" + port);
+      assertThat(get(port)).startsWith("HTTP/1.1 200");
+      long start = System.nanoTime();
+      process.destroy();
+      assertThat(process.waitFor(10, TimeUnit.SECONDS)).as("exited").isTrue();
+      assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start))
+          .as("faster than the shutdown timeout")
+          .isLessThan(4_000);
+      assertThat(Files.readAllLines(stdout)).singleElement().asString().contains("\"url.path\"");
+      assertThat(records.get()).as("OTLP record sent before the exit").isOne();
+      assertThat(Files.readAllLines(stderr)).noneMatch(line -> line.contains("Shutdown:"));
+    } finally {
+      logServer.stop(0);
+    }
+  }
+
   /// Checks the header of each bundled tcnative library: object file format and CPU type.
   @ParameterizedTest
   @CsvSource({
@@ -147,6 +210,11 @@ class ShadedJarIT {
   /// Same shape as `performance-test/ja4-benchmark.yaml`: the response comes from the proxy
   /// itself, so no upstream is needed.
   private Path writeConfig(int port) throws IOException {
+    return writeConfig(port, "");
+  }
+
+  /// @param extra YAML appended to the configuration
+  private Path writeConfig(int port, String extra) throws IOException {
     Path cert = copyResource("ssl/test.crt");
     Path key = copyResource("ssl/test.key");
     String yaml =
@@ -166,7 +234,8 @@ class ShadedJarIT {
             response:
               text: ok
         """
-            .formatted(port, cert, key);
+                .formatted(port, cert, key)
+            + extra;
     return Files.writeString(dir.resolve("config.yaml"), yaml);
   }
 

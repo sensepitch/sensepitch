@@ -40,6 +40,13 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
   private final ProxyMetrics proxyMetrics;
   private boolean keepAlive;
 
+  /// No request in progress: before the first request, and after a response on a keep-alive
+  /// connection
+  private boolean idle = true;
+
+  /// The proxy shuts down, the connection closes after the current response
+  private boolean closing;
+
   public IngressTimeoutHandler(ConnectionConfig config, ProxyMetrics proxyMetrics) {
     this.config = config;
     this.proxyMetrics = proxyMetrics;
@@ -94,8 +101,25 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
     super.channelInactive(ctx);
   }
 
+  /// On shutdown an idle connection is closed at once, a busy one after its response, see
+  /// [TrackIngressConnectionsHandler#drain()]
+  @Override
+  public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+    if (evt != TrackIngressConnectionsHandler.ShutdownEvent.SHUTDOWN) {
+      super.userEventTriggered(ctx, evt);
+      return;
+    }
+    closing = true;
+    if (idle) {
+      ctx.close();
+    }
+  }
+
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+    if (msg instanceof HttpRequest) {
+      idle = false;
+    }
     if (!responding && msg instanceof LastHttpContent) {
       // LOG.info("awaiting response");
       task.cancel();
@@ -135,7 +159,11 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
       // HttpKeepAliveHandler will add connection: close. We don't need to check client capabilities
       // again.
       keepAlive = HttpUtil.isKeepAlive(response);
-      if (keepAlive) {
+      if (closing) {
+        // shutting down, the client opens a new connection, which the next instance serves
+        keepAlive = false;
+        response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
+      } else if (keepAlive) {
         // Keep-Alive header values is not specified in HTTP/1.1, however, it is a good practice
         // to avoid the client from sending a new requests while the server closes the connection
         // also server should send a 408 response before closing the connection
@@ -164,7 +192,13 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
             .addListener(
                 future -> {
                   task.touch();
+                  if (msg instanceof LastHttpContent && closing) {
+                    // the keep-alive handler saw the response before the header was set
+                    ctx.close();
+                    return;
+                  }
                   if (msg instanceof LastHttpContent && keepAlive) {
+                    idle = true;
                     // LOG.info("awaiting another request");
                     task.cancel();
                     task =

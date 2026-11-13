@@ -18,6 +18,7 @@ import io.netty.handler.ssl.SslHandler;
 import io.netty.util.concurrent.Ticker;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Supplier;
 import javax.net.ssl.SSLSession;
 
@@ -83,6 +84,10 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
 
   private long requestBodyBytes;
   private Upstream upstream;
+
+  /// In flight counter of `upstream`, decremented when the request is logged
+  private LongAdder upstreamInFlight;
+
   private RequestOutcome outcome;
   private int upstreamStatus;
   private String route;
@@ -240,6 +245,10 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     bytesSentStart = countByteIoHandler.getBytesSent();
     request = null;
     upstream = null;
+    if (upstreamInFlight != null) {
+      upstreamInFlight.decrement();
+      upstreamInFlight = null;
+    }
     outcome = null;
     upstreamStatus = 0;
     route = null;
@@ -333,6 +342,8 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   public void setUpstream(Upstream upstream) {
     if (request != null) {
       this.upstream = upstream;
+      upstreamInFlight = metrics.upstreamRequestsInFlight(upstream);
+      upstreamInFlight.increment();
     }
   }
 
