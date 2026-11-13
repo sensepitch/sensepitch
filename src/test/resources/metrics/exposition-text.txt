@@ -1,4 +1,36 @@
 # Content-Type: text/plain; version=0.0.4; charset=utf-8
+# HELP sensepitch_circuitbreaker_calls_total Calls by outcome: successful, failed, ignored, or not permitted by the breaker
+# TYPE sensepitch_circuitbreaker_calls_total counter
+sensepitch_circuitbreaker_calls_total{component="requestLog",kind="failed",name="otlp"} 1.0
+sensepitch_circuitbreaker_calls_total{component="requestLog",kind="ignored",name="otlp"} 1.0
+sensepitch_circuitbreaker_calls_total{component="requestLog",kind="not_permitted",name="otlp"} 1.0
+sensepitch_circuitbreaker_calls_total{component="requestLog",kind="successful",name="otlp"} 1.0
+# HELP sensepitch_circuitbreaker_consecutive_failures Failed calls in a row, the backoff grows with them
+# TYPE sensepitch_circuitbreaker_consecutive_failures gauge
+sensepitch_circuitbreaker_consecutive_failures{component="requestLog",name="otlp"} 0.0
+# HELP sensepitch_circuitbreaker_errors_total Failed and ignored calls by error code
+# TYPE sensepitch_circuitbreaker_errors_total counter
+sensepitch_circuitbreaker_errors_total{component="requestLog",error="http_400",name="otlp"} 1.0
+sensepitch_circuitbreaker_errors_total{component="requestLog",error="http_503",name="otlp"} 1.0
+# HELP sensepitch_circuitbreaker_last_restart_time_seconds When the circuit breaker last closed after a trip, 0 if never
+# TYPE sensepitch_circuitbreaker_last_restart_time_seconds gauge
+sensepitch_circuitbreaker_last_restart_time_seconds{component="requestLog",name="otlp"} 1.700000002E9
+# HELP sensepitch_circuitbreaker_last_trip_time_seconds When the circuit breaker last opened after being closed, 0 if never
+# TYPE sensepitch_circuitbreaker_last_trip_time_seconds gauge
+sensepitch_circuitbreaker_last_trip_time_seconds{component="requestLog",name="otlp"} 1.700000001E9
+# HELP sensepitch_circuitbreaker_start_time_seconds When the circuit breaker was created
+# TYPE sensepitch_circuitbreaker_start_time_seconds gauge
+sensepitch_circuitbreaker_start_time_seconds{component="requestLog",name="otlp"} 1.7E9
+# HELP sensepitch_circuitbreaker_state The state of the circuit breaker, 1 for the current one
+# TYPE sensepitch_circuitbreaker_state gauge
+sensepitch_circuitbreaker_state{component="requestLog",name="otlp",state="closed"} 1.0
+sensepitch_circuitbreaker_state{component="requestLog",name="otlp",state="half_open"} 0.0
+sensepitch_circuitbreaker_state{component="requestLog",name="otlp",state="open"} 0.0
+# HELP sensepitch_circuitbreaker_transitions_total State changes of the circuit breaker, the reason of a trip is the error code
+# TYPE sensepitch_circuitbreaker_transitions_total counter
+sensepitch_circuitbreaker_transitions_total{component="requestLog",from="closed",name="otlp",reason="http_503",to="open"} 1.0
+sensepitch_circuitbreaker_transitions_total{component="requestLog",from="half_open",name="otlp",reason="recovered",to="closed"} 1.0
+sensepitch_circuitbreaker_transitions_total{component="requestLog",from="open",name="otlp",reason="backoff_over",to="half_open"} 1.0
 # HELP sensepitch_deflector_requests_total Requests handled by the deflector, by ingress and outcome
 # TYPE sensepitch_deflector_requests_total counter
 sensepitch_deflector_requests_total{ingress="example.com",outcome="challenge_sent"} 2.0
@@ -170,3 +202,9 @@ sensepitch_request_log_export_retries_total{destination="otlp"} 1.0
 # TYPE sensepitch_request_log_queued gauge
 sensepitch_request_log_queued{destination="otlp"} 3.0
 sensepitch_request_log_queued{destination="stdout"} 7.0
+# HELP sensepitch_request_log_sent_bytes_total Bytes of request log records sent successfully, as on the wire, i.e. compressed
+# TYPE sensepitch_request_log_sent_bytes_total counter
+sensepitch_request_log_sent_bytes_total{destination="otlp"} 1234.0
+# HELP sensepitch_request_log_sent_records_total Request log records sent successfully
+# TYPE sensepitch_request_log_sent_records_total counter
+sensepitch_request_log_sent_records_total{destination="otlp"} 5.0

@@ -149,6 +149,8 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [x] YAML based configuration
 - [x] improve default configuration
 - [x] metrics: byte IO count per ingress
+- [ ] Evergreen: Improve code according to styling rules
+- [ ] Evergreen: improve code coverage towards 100%
 - [ ] Performance test: different Netty allocators, leak detection, -XX:NativeMemoryTracking=summary
 - [x] Remove MetricsBridge, we exclusively use Prometheus
 - [ ] bypass config should be in the protection and not in the protection providers => we need a proper API for the protection provider
@@ -194,7 +196,7 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [ ] abnormal admission usage detection of admission
 - [x] reload configuration without closing the port
 - [ ] multiple servers per upstream
-- [ ] upstream health
+- [ ] upstream health and circuit breaker
 - [ ] warmup
 - [ ] limit body size for incoming requests? NGINX has 1M as default / client_max_body_size / status 413
 - [ ] google-java-format 2, https://github.com/google/google-java-format/releases#release-v2.0.0
@@ -207,6 +209,11 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
   `net.bytebuddy.nexus.disabled` to avoid a `sun.misc.Unsafe` warning, 5.x writes ~1000 report
   files (4 MB) to `target/serenity-reports`, and `./mvnw clean verify` takes ~38 s instead of
   ~29.5 s without it (+30 %). Removing it touches 7 test classes (`@ExtendWith`, ~21 `@Step`).
+- [ ] Flaky build: one of six `./mvnw clean verify` runs failed (2026-11-13, after the graceful
+  shutdown), the failing test is unknown, the log was not kept. Suspects are the timing based
+  tests: `ProxyShutdownIT` (duration bounds), `ShadedJarIT.sigtermSendsTheRequestLogAndExits`
+  (exit within 4 s), `OtlpLogDestinationTest` and `ReloadableRequestLoggerTest` (awaits). Next
+  failure: keep `target/surefire-reports` and `target/failsafe-reports`.
 
 ## Resources
 
@@ -333,6 +340,45 @@ error.
 Failed attempts that are retried, e.g. while the log server is restarted, and the bytes of the
 batches waiting to be sent. A rising `buffered_bytes` shows an outage being bridged; when it nears
 `otlp.maxBufferedBytes`, records will be dropped.
+
+### `sensepitch_request_log_sent_records_total{destination="..."}` and `sensepitch_request_log_sent_bytes_total{destination="..."}`
+
+Records an OTLP destination sent successfully, and the bytes of their requests as on the wire,
+i.e. compressed. Together with `dropped_total` this gives the share of records lost.
+
+### Circuit breaker metrics: `sensepitch_circuitbreaker_*{component="...",name="..."}`
+
+Every remote the proxy protects with a circuit breaker reports the same metrics, with two labels:
+`component`, what the breaker protects, and `name`, the instance. An OTLP destination's breaker
+has `component="requestLog"` and the destination name as `name`, e.g. `name="otlp"` or
+`name="victorialogs"`, the same value as the `destination` label of the request log metrics. The
+basic names follow the resilience4j Micrometer binding, so its dashboards carry over with a prefix
+rename.
+
+| Metric | Type | Meaning |
+|---|---|---|
+| `_state{state}` | gauge | 1 for the current state, `closed`, `open` or `half_open`, 0 for the others |
+| `_calls_total{kind}` | counter | each call once: `successful`, `failed` (counts against the breaker, e.g. 503), `ignored` (a failure retrying cannot fix, e.g. 400), `not_permitted` (refused by the breaker) |
+| `_transitions_total{from,to,reason}` | counter | each state change; the reason of a trip is the error code, otherwise `backoff_over` or `recovered` |
+| `_errors_total{error}` | counter | failed and ignored calls by error code: `http_<status>`, `timeout`, `connect`, `io`, `unexpected` |
+| `_consecutive_failures` | gauge | failures in a row, the backoff grows with them |
+| `_start_time_seconds` | gauge | when the breaker was created, e.g. at startup or by a reload |
+| `_last_trip_time_seconds` | gauge | when it last opened after being closed, 0 if never |
+| `_last_restart_time_seconds` | gauge | when it last closed again after a trip, 0 if never |
+
+The breaker counts consecutive failures with an exponential backoff, it has no sliding window, so
+there is no failure rate. The gauges of a breaker disappear when its destination is removed, the
+counters keep their values.
+
+````promql
+sensepitch_circuitbreaker_state{state="open"} == 1                     # open breakers
+# dropped records of the destinations whose breaker is open
+sensepitch_request_log_dropped_total and on (destination)
+  label_replace(sensepitch_circuitbreaker_state{component="requestLog",state="open"} == 1,
+                "destination", "$1", "name", "(.*)")
+increase(sensepitch_circuitbreaker_transitions_total{to="open"}[1h])   # trips per hour
+topk(1, increase(sensepitch_circuitbreaker_errors_total[15m]))         # the current error
+````
 
 ## Put Sensepitch Edge in front of NGINX
 
@@ -552,12 +598,11 @@ reloaded, so adding the marker enables live reload. Starting the proxy does not 
 - **What is reloaded:** sites, upstreams, protection, fallback, `unservicedHost`, `listen.hosts`,
   certificates (`listen.ssl`, `snis`, Let's Encrypt), `ipLookup` and `requestLog`. The IP lookup
   databases are only read again if `ipLookup` changed. Upstreams with unchanged configuration are
-  kept. Request log destinations with unchanged name and settings are kept. A changed OTLP
-  destination hands its buffered records over to its replacement of the same name, also during
-  an outage of the log server, and records logged into it while the switch happens are passed on,
-  so a reload loses nothing. This also works when the change fixes a wrong endpoint. A removed
-  destination is closed: it tries to send what it buffered for 5 seconds, then counts the rest in
-  `sensepitch_request_log_dropped_total`.
+  kept. Request log destinations with unchanged name and settings are kept, with their buffered
+  records. A changed or removed OTLP destination keeps sending what it buffered to its own
+  endpoint in the background, without delaying the reload. Each event loop writes an end marker
+  into it after the switch, so a record logged just before the switch is sent as well. It ends
+  when everything is sent, or dropped after `otlp.maximumUnsentLogAgeMillis` during an outage.
 - **Restart needed:** changes of `listen.address`, `listen.httpsPort`, `listen.connection`,
   `metrics`, `ja4` and `traceContext` are logged as a warning and ignored.
 - **Invalid configuration:** the error is logged and the active configuration stays.
@@ -587,6 +632,39 @@ environment variables. The endpoint has no authentication, so it binds to the lo
 by default. Binding another address exposes it to that network. A reload only reads the local
 file again, so the worst case is repeated reloads.
 
+## Shutdown
+
+On `SIGTERM` the proxy shuts down gracefully, within `shutdownTimeoutMillis` (default 5000). It
+ends as soon as everything is done, so an idle proxy exits at once.
+
+1. The listener closes, no new connections are accepted.
+2. Idle keep-alive connections are closed. A response in flight gets `Connection: close`, and its
+   connection is closed after it.
+3. The requests in flight may take the shutdown timeout minus `requestLog.drainTimeoutMillis`.
+   Requests still running then are aborted and logged with status 499.
+4. The event loops end, each writes its last request log records. The request log destinations
+   send them, within the drain timeout.
+
+````yaml
+shutdownTimeoutMillis: 5000       # upper limit of the whole shutdown
+requestLog:
+  drainTimeoutMillis: 1666        # reserved for the request log, default a third of the above
+````
+
+A phase that runs out of time is logged at level `INFO` with what was left: the requests in
+flight per upstream, or the request log records not sent per destination. Records not sent by
+then are lost.
+
+A configuration reload and the shutdown run one at a time: `SIGTERM` during a reload waits until
+it is applied, a reload after the shutdown started is rejected.
+
+Both settings are read when the shutdown starts, so a reload changes them. Fit
+`shutdownTimeoutMillis` into the grace period of the platform, e.g.
+`terminationGracePeriodSeconds` in Kubernetes. Kubernetes removes the pod from the service
+endpoints at the same time as it sends `SIGTERM`, so a client may still be routed to the pod for
+a moment. A `preStop` hook with a short `sleep` keeps the listener open until the endpoints are
+updated.
+
 ## Request log
 
 Each request is logged with its fields named after the
@@ -608,6 +686,11 @@ By default the request log goes to standard out, one JSON object per line:
 
 `requestLog.plainText: true` switches standard out to the legacy single line format, useful for
 local debugging.
+
+`requestLog.disabled: true` switches the request log off, the metrics per status code stay.
+`disabled: true` on a destination skips only that one, e.g. standard out while the OTLP export
+stays. Both are flags rather than an empty list, so a later configuration layer, e.g. an
+environment variable like `SENSEPITCH_EDGE_REQUEST_LOG_DISABLED=true`, can switch off a default.
 
 ### Destinations
 
@@ -633,6 +716,7 @@ requestLog:
         flushIntervalMillis: 1000
         batchBytes: 1048576       # per event loop buffer and request
         maxBufferedBytes: 67108864  # batches waiting during an outage
+        compression: gzip         # or none
 ````
 
 `type`, `name` and `anonymizeClientIp` apply to every destination, `plainText` to `stdout` only.
@@ -662,10 +746,15 @@ Everything specific to OTLP is in the `otlp` object, which is rejected on a `std
   `sensepitch_request_log_dropped_total`, the waiting ones are kept. After the outage the extra
   buffers are released again. Other errors, e.g. status 400, cannot succeed by retrying, the batch
   is dropped and counted in `sensepitch_request_log_export_failed_total`.
+- **Compression:** posts are compressed with gzip and sent with `Content-Encoding: gzip`, which
+  VictoriaLogs and the OpenTelemetry collector accept. The records repeat hosts, attribute keys
+  and user agents, so a post shrinks several times. The compression runs on a thread of its own,
+  never on an event loop. Set `otlp.compression: none` for a log server without gzip support;
+  it would reject the posts with a 4xx status, counted in `export_failed_total`.
 - **Memory:** about `otlp.batchBytes` per event loop, plus the waiting batches up to
   `otlp.maxBufferedBytes`. Buffers are kept in memory only: when the proxy itself is restarted
   during an outage of the log server, the waiting records are lost. At shutdown the proxy tries
-  for 5 seconds to send them.
+  to send them within the drain timeout, see Shutdown.
 - **VictoriaLogs:** the `VL-Stream-Fields` header selects the
   [log stream](https://docs.victoriametrics.com/victorialogs/keyconcepts/#stream-fields) fields.
   Keep them to a few low-cardinality fields, never `client.address` or `url.path`.

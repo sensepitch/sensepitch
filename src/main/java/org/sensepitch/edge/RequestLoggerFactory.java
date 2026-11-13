@@ -6,6 +6,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Executor;
 
 /// Builds the request logger of the configured destinations, see [RequestLogConfig].
 ///
@@ -20,27 +21,43 @@ public final class RequestLoggerFactory {
 
   /// Validates the configuration and creates a logger passing each request to all destinations.
   /// The logger can be reconfigured on a configuration reload, see [ReloadableRequestLogger].
-  /// Closing the logger stops the sender threads of `otlp` destinations, the standard out output
-  /// is not closed, it belongs to the caller.
+  /// Finishing the logger sends what `otlp` destinations buffered and stops them, the standard
+  /// out output is not closed, it belongs to the caller.
   ///
   /// @param config request log configuration, `null` for the defaults
   /// @param stdout output of the `stdout` destinations
   /// @param metrics metrics shared by all destinations, those of the standard out writer if it has
   ///   them, so all destinations register under the same metric names
+  /// @param loggingThreads the threads that log, the event loops, see [ReloadableRequestLogger]
   /// @throws IllegalArgumentException if the configuration is invalid
   public static ReloadableRequestLogger create(
+      RequestLogConfig config,
+      RequestLogOutput stdout,
+      RequestLogMetrics metrics,
+      Iterable<? extends Executor> loggingThreads) {
+    return new ReloadableRequestLogger(config, stdout, metrics, loggingThreads);
+  }
+
+  /// For a single thread that logs and reloads, e.g. a test: the end marker of a replaced
+  /// destination runs right away on the reloading thread
+  public static ReloadableRequestLogger create(
       RequestLogConfig config, RequestLogOutput stdout, RequestLogMetrics metrics) {
-    return new ReloadableRequestLogger(config, stdout, metrics);
+    return create(config, stdout, metrics, List.<Executor>of(Runnable::run));
   }
 
   /// The configured destinations, or one standard out destination in the format selected by
-  /// [RequestLogConfig#plainText()] if none are configured
+  /// [RequestLogConfig#plainText()] if none are configured. Disabled destinations are included,
+  /// their names count, see [#names(List)].
   ///
   /// @param config request log configuration, `null` for the defaults
+  /// @return the destinations, empty if the request log is disabled
   /// @throws IllegalArgumentException if the destinations are configured but empty
   static List<RequestLogDestinationConfig> destinations(RequestLogConfig config) {
     if (config == null) {
       config = RequestLogConfig.DEFAULT;
+    }
+    if (config.disabled()) {
+      return List.of();
     }
     List<RequestLogDestinationConfig> destinations = config.destinations();
     if (destinations == null) {
@@ -52,7 +69,8 @@ public final class RequestLoggerFactory {
     }
     if (destinations.isEmpty()) {
       throw new IllegalArgumentException(
-          "requestLog.destinations is empty, remove it to log to standard out");
+          "requestLog.destinations is empty, remove it to log to standard out, or set"
+              + " requestLog.disabled to switch the request log off");
     }
     return destinations;
   }
@@ -86,7 +104,7 @@ public final class RequestLoggerFactory {
   /// `sampleHeadersInterval` is not negative, and checks names are unique.
   static List<String> names(List<RequestLogDestinationConfig> destinations) {
     // the name identifies an otlp destination across a reload, a positional default would shift
-    // when a destination is inserted and hand a backlog to the wrong endpoint
+    // when a destination is inserted and replace unchanged destinations, with their metrics
     boolean severalOtlp =
         destinations.stream()
                 .filter(d -> RequestLogDestinationConfig.TYPE_OTLP.equals(d.type()))

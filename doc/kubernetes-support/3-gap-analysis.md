@@ -32,7 +32,7 @@ same loader can read JSON snapshots.
 | Crawler DB | `DetectCrawler` parses the TSV on each `Deflector` construction | Cache it across rebuilds |
 | Upstream connections | No pooling (pool code disabled in `DefaultUpstream`), DNS via Netty `Bootstrap` | Endpoint selection by weight; pooling optional |
 | Health | No health or readiness endpoint | `/healthz`, `/readyz` on an opt-in admin port |
-| Shutdown | No shutdown hook, no draining | SIGTERM: not ready → drain → close → `shutdownGracefully` |
+| Shutdown | Done: SIGTERM closes the listener, drains the connections, then the request log, within `shutdownTimeoutMillis` (see README) | Not ready on SIGTERM, once a readiness endpoint exists |
 | Client IP | TCP peer, `X-Forwarded-For` set; no PROXY protocol | PROXY protocol v1/v2 per listener; incoming `X-Forwarded-For` / `-Proto` accepted only from trusted proxy CIDRs (load balancer terminating TLS) |
 | Bind address | One `listen.address` for all listeners | Bind address per listener, so one node can serve several IPs (one IP per Gateway in HostNetwork mode) |
 | Gateway merging | One listen configuration | Listeners from several Gateways merged by port in a shared fleet; hostname and SNI keep them apart |

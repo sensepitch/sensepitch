@@ -25,6 +25,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import javax.net.ssl.SSLException;
@@ -60,6 +62,14 @@ public class Proxy implements ProxyContext {
   private final Mapping<String, SslContext> sniMapping = host -> state.get().sniMapping().map(host);
 
   private final EventLoopGroup eventLoopGroup;
+
+  /// Accepts the connections, set by [#start()], closed first on [#shutdown()]
+  private volatile EventLoopGroup bossGroup;
+
+  private volatile Channel serverChannel;
+
+  /// Completed when the shutdown is done, set by the first [#shutdown()] call
+  private final AtomicReference<CompletableFuture<Void>> shutdown = new AtomicReference<>();
 
   /// Request log destinations plus the metrics per status code, closed on shutdown
   private final RequestLogger requestLogger;
@@ -112,8 +122,11 @@ public class Proxy implements ProxyContext {
         requestLogOutput instanceof AsyncRequestLogWriter writer
             ? writer.metrics()
             : new RequestLogMetrics();
+    // validates the shutdown timeouts
+    config.effectiveDrainTimeoutMillis();
     requestLogDestinations =
-        RequestLoggerFactory.create(config.requestLog(), requestLogOutput, requestLogMetrics);
+        RequestLoggerFactory.create(
+            config.requestLog(), requestLogOutput, requestLogMetrics, eventLoopGroup);
     expose(requestLogMetrics);
     requestLogger =
         new DistributingRequestLogger(
@@ -128,15 +141,23 @@ public class Proxy implements ProxyContext {
   /// need a restart are logged as a warning and ignored. Requests on keep-alive connections use
   /// the new configuration from their next request on.
   ///
-  /// @return applied, or rejected with the reason if the configuration is invalid. The error is
-  ///   logged and the current configuration stays active.
+  /// A reload and the start of the shutdown run one at a time: a shutdown waits for a running
+  /// reload, a reload after the shutdown started is rejected.
+  ///
+  /// @return applied, or rejected with the reason if the configuration is invalid or the proxy
+  ///   shuts down. The error is logged and the current configuration stays active.
   public synchronized ReloadResult reload(ProxyConfig newConfig) {
+    if (shutdown.get() != null) {
+      LOG.info("Configuration reload skipped, shutting down");
+      return ReloadResult.rejected("Shutting down");
+    }
     EdgeState current = state.get();
     EdgeState next;
     ReloadableRequestLogger.Prepared requestLog;
     try {
       newConfig = KeyInjector.injectAllMapKeys(newConfig);
       warnAboutRestartOnlyChanges(newConfig);
+      newConfig.effectiveDrainTimeoutMillis();
       next = EdgeState.build(this, newConfig, current);
       // last, nothing can fail after it, so the destinations it created are always applied
       requestLog = requestLogDestinations.prepare(newConfig.requestLog());
@@ -312,7 +333,7 @@ public class Proxy implements ProxyContext {
 
   public void start() throws Exception {
     dumpConfig(config);
-    EventLoopGroup bossGroup = new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory());
+    bossGroup = new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory());
     try {
       ServerBootstrap sb = new ServerBootstrap();
       // deliberately no allocator is set, here or in DefaultUpstream, so both sides use
@@ -342,30 +363,103 @@ public class Proxy implements ProxyContext {
       String addr = config.listen().address();
       int port = config.listen().httpsPort();
       ChannelFuture f = sb.bind(new InetSocketAddress(addr, port)).sync();
+      serverChannel = f.channel();
       LOG.info("Open SSL: " + OpenSsl.versionString());
       LOG.info("Proxy listening on " + addr + ":" + port);
       LOG.trace("tracing enabled");
-      // write out queued request log records when the JVM is stopped, e.g. by SIGTERM
-      Runtime.getRuntime().addShutdownHook(new Thread(this::closeRequestLog));
+      // when the JVM is stopped, e.g. by SIGTERM, the JVM exits when the hook returns
+      Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown, "shutdown"));
       f.channel().closeFuture().sync();
     } finally {
-      bossGroup.shutdownGracefully();
       shutdown();
     }
   }
 
-  void shutdown() {
-    eventLoopGroup.shutdownGracefully();
-    closeRequestLog();
+  /// Shuts down gracefully within [ProxyConfig#effectiveShutdownTimeoutMillis()], and faster
+  /// when everything is done earlier:
+  ///
+  /// 1. Stops accepting connections.
+  /// 2. Closes idle connections, the others after their response, see
+  ///    [TrackIngressConnectionsHandler#drain()]. Waits for that until only the drain timeout
+  ///    of the request log is left, see [ProxyConfig#effectiveDrainTimeoutMillis()].
+  /// 3. Shuts down the event loops, which closes the remaining connections, their requests are
+  ///    logged as aborted. Each loop writes its end marker into the request log when it ends.
+  /// 4. Waits until the request log destinations sent everything, or the shutdown timeout is
+  ///    over.
+  ///
+  /// A reload in progress completes first, later reloads are rejected, see [#reload(ProxyConfig)].
+  /// A phase that runs out of time is logged with what was left. Can be called more than once,
+  /// e.g. by the shutdown hook and by [#start()], the later calls wait for the first.
+  public void shutdown() {
+    CompletableFuture<Void> done = new CompletableFuture<>();
+    CompletableFuture<Void> running;
+    // waits for a running reload, see reload()
+    synchronized (this) {
+      running = shutdown.compareAndExchange(null, done);
+    }
+    if (running != null) {
+      running.join();
+      return;
+    }
+    try {
+      shutdownOnce();
+    } finally {
+      done.complete(null);
+    }
+  }
+
+  private void shutdownOnce() {
+    ProxyConfig active = state.get().config();
+    long totalMillis = active.effectiveShutdownTimeoutMillis();
+    long drainMillis = active.effectiveDrainTimeoutMillis();
+    long start = System.nanoTime();
+    long connectionsDeadline = start + TimeUnit.MILLISECONDS.toNanos(totalMillis - drainMillis);
+    long deadline = start + TimeUnit.MILLISECONDS.toNanos(totalMillis);
+    if (serverChannel != null) {
+      serverChannel.close().syncUninterruptibly();
+      bossGroup.shutdownGracefully(0, 0, TimeUnit.MILLISECONDS);
+    }
+    if (!trackIngressConnectionsHandler
+        .drain()
+        .awaitUninterruptibly(remainingMillis(connectionsDeadline))) {
+      LOG.info(
+          "Shutdown: requests still in flight after "
+              + (totalMillis - drainMillis)
+              + " ms, total "
+              + metrics.ingressRequestsInFlight()
+              + ", by upstream "
+              + metrics.upstreamRequestsInFlight()
+              + ", closing the connections");
+    }
+    // the calling thread may have logged as well, e.g. a test driving an EmbeddedChannel
+    requestLogDestinations.endThread();
+    CompletableFuture<Void> loops = new CompletableFuture<>();
+    eventLoopGroup
+        .shutdownGracefully(0, remainingMillis(deadline), TimeUnit.MILLISECONDS)
+        .addListener(future -> loops.complete(null));
+    // finished after the loops ended: a loop that logs for the first time while closing its
+    // connections still gets a batcher
+    boolean drained =
+        loops
+            .thenCompose(done -> requestLogDestinations.finish())
+            .thenApply(v -> true)
+            .completeOnTimeout(false, remainingMillis(deadline), TimeUnit.MILLISECONDS)
+            .join();
+    if (!drained) {
+      LOG.info(
+          "Shutdown: request log not drained after "
+              + drainMillis
+              + " ms, unsent records "
+              + requestLogDestinations.unsent());
+    }
+    requestLogOutput.close();
     if (metricsServer != null) {
       metricsServer.close();
     }
   }
 
-  /// Writes out queued request log records of all destinations, can be called more than once
-  private void closeRequestLog() {
-    requestLogger.close();
-    requestLogOutput.close();
+  private static long remainingMillis(long deadlineNanos) {
+    return Math.max(0, TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime()));
   }
 
   private static final StripEdgeHeadersHandler STRIP_EDGE_HEADERS_HANDLER =

@@ -14,7 +14,7 @@ public interface RequestLogger extends AutoCloseable {
   /// request any heavy processing and I/O needs to be scheduled.
   void logRequest(RequestLogInfo info);
 
-  /// Writes out pending records and releases resources, e.g. the sender thread of an OTLP
+  /// Writes out pending records and releases resources, e.g. the HTTP client of an OTLP
   /// destination. Can be called more than once. Default does nothing.
   @Override
   default void close() {}

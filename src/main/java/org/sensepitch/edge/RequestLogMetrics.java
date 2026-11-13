@@ -3,7 +3,9 @@ package org.sensepitch.edge;
 import io.prometheus.metrics.core.metrics.Counter;
 import io.prometheus.metrics.core.metrics.GaugeWithCallback;
 import io.prometheus.metrics.model.registry.Collector;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
@@ -46,6 +48,24 @@ public class RequestLogMetrics implements HasMultipleMetrics {
           .labelNames(DESTINATION_LABEL)
           .build();
 
+  /// Of the destinations that post, see [HttpBatchSender], which creates the data points
+  final Counter sentRecords =
+      Counter.builder()
+          .name("sensepitch_request_log_sent_records")
+          .help("Request log records sent successfully")
+          .labelNames(DESTINATION_LABEL)
+          .build();
+
+  final Counter sentBytes =
+      Counter.builder()
+          .name("sensepitch_request_log_sent_bytes")
+          .help("Bytes of request log records sent successfully, as on the wire, i.e. compressed")
+          .labelNames(DESTINATION_LABEL)
+          .build();
+
+  /// The breakers of the destinations that post, e.g. OTLP, named `requestLog.<destination>`
+  final CircuitBreakerMetrics circuitBreakers = new CircuitBreakerMetrics();
+
   final Counter exportRetries =
       Counter.builder()
           .name("sensepitch_request_log_export_retries")
@@ -60,12 +80,14 @@ public class RequestLogMetrics implements HasMultipleMetrics {
           .labelNames(DESTINATION_LABEL)
           .callback(
               cb -> {
+                Map<String, Long> bytesPerDestination = new LinkedHashMap<>();
                 for (QueueSource writer : writers) {
                   long bytes = writer.bufferedBytes();
                   if (bytes >= 0) {
-                    cb.call(bytes, writer.destination());
+                    bytesPerDestination.merge(writer.destination(), bytes, Long::sum);
                   }
                 }
+                bytesPerDestination.forEach((name, bytes) -> cb.call(bytes, name));
               })
           .build();
 
@@ -76,9 +98,12 @@ public class RequestLogMetrics implements HasMultipleMetrics {
           .labelNames(DESTINATION_LABEL)
           .callback(
               cb -> {
+                Map<String, Long> queuedPerDestination = new LinkedHashMap<>();
                 for (QueueSource writer : writers) {
-                  cb.call(writer.queueSize(), writer.destination());
+                  queuedPerDestination.merge(
+                      writer.destination(), (long) writer.queueSize(), Long::sum);
                 }
+                queuedPerDestination.forEach((name, records) -> cb.call(records, name));
               })
           .build();
 
@@ -99,6 +124,9 @@ public class RequestLogMetrics implements HasMultipleMetrics {
     consumer.accept(dropped);
     consumer.accept(exportFailed);
     consumer.accept(exportRetries);
+    consumer.accept(sentRecords);
+    consumer.accept(sentBytes);
+    circuitBreakers.registerCollectors(consumer);
     consumer.accept(bufferedBytes);
     consumer.accept(queued);
   }

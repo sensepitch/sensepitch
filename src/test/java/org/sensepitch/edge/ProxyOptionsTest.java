@@ -49,7 +49,7 @@ class ProxyOptionsTest {
     collector.createContext(
         "/v1/logs",
         exchange -> {
-          posts.add(ExportLogsServiceRequest.parseFrom(exchange.getRequestBody().readAllBytes()));
+          posts.add(OtlpLogDestinationTest.decode(exchange));
           exchange.sendResponseHeaders(200, -1);
           exchange.close();
         });

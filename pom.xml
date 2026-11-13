@@ -404,7 +404,36 @@
                     <limit>
                       <counter>BRANCH</counter>
                       <value>COVEREDRATIO</value>
-                      <minimum>0.88</minimum>
+                      <minimum>0.89</minimum>
+                    </limit>
+                  </limits>
+                </rule>
+                <!-- the generic request log posting is held at full coverage: a gap points to
+                     error handling that is not needed or to a design that should change -->
+                <rule>
+                  <element>CLASS</element>
+                  <includes>
+                    <include>org.sensepitch.edge.HttpBatchSender*</include>
+                    <include>org.sensepitch.edge.CircuitBreaker*</include>
+                    <include>org.sensepitch.edge.Backoff*</include>
+                    <include>org.sensepitch.edge.RandomNumberProvider*</include>
+                    <include>org.sensepitch.edge.ThreadBatcher*</include>
+                    <include>org.sensepitch.edge.BatchingRequestLogger*</include>
+                    <include>org.sensepitch.edge.Batch</include>
+                    <include>org.sensepitch.edge.OtlpBatchPayload*</include>
+                    <include>org.sensepitch.edge.OtlpBatch</include>
+                    <include>org.sensepitch.edge.GzipCompressor</include>
+                  </includes>
+                  <limits>
+                    <limit>
+                      <counter>LINE</counter>
+                      <value>COVEREDRATIO</value>
+                      <minimum>1.0</minimum>
+                    </limit>
+                    <limit>
+                      <counter>BRANCH</counter>
+                      <value>COVEREDRATIO</value>
+                      <minimum>1.0</minimum>
                     </limit>
                   </limits>
                 </rule>

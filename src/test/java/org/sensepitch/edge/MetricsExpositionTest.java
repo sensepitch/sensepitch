@@ -112,6 +112,26 @@ class MetricsExpositionTest {
     requestLogMetrics.dropped.labelValues("otlp").inc(2);
     requestLogMetrics.exportRetries.labelValues("otlp").inc();
     requestLogMetrics.exportFailed.labelValues("otlp").inc();
+    requestLogMetrics.sentRecords.labelValues("otlp").inc(5);
+    requestLogMetrics.sentBytes.labelValues("otlp").inc(1234);
+    // an outage and its recovery, with fixed clocks
+    long[] wallMillis = {1_700_000_000_000L};
+    CircuitBreaker breaker =
+        new CircuitBreaker(
+            new Backoff(1_000, 30_000, bound -> 0),
+            5_000,
+            requestLogMetrics.circuitBreakers.events("requestLog", "otlp"),
+            () -> 0,
+            () -> wallMillis[0]);
+    requestLogMetrics.circuitBreakers.add("requestLog", "otlp", breaker);
+    wallMillis[0] += 1_000;
+    breaker.onFailure(0, "http_503");
+    breaker.tryAcquire();
+    breaker.skipBackoff();
+    breaker.tryAcquire();
+    wallMillis[0] += 1_000;
+    breaker.onSuccess();
+    breaker.onIgnored("http_400");
 
     new NettyAllocatorMetrics().registerCollectors(registry::register);
     return registry;

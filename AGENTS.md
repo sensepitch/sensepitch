@@ -13,7 +13,11 @@
 - `./mvnw spotless:check` verifies formatting; `./mvnw spotless:apply` auto-formats Java sources.
 - `./mvnw verify` runs the whole gate: tests, `spotless:check`, the Javadoc build, and the JaCoCo
   coverage floor (`jacoco-check` in `pom.xml`, unit and integration tests combined). Raise the floor
-  when coverage improves.
+  when coverage improves. The generic request log posting (`HttpBatchSender`, `CircuitBreaker`,
+  `CircuitBreakerMetrics`, `Backoff`, `ThreadBatcher`, `BatchingRequestLogger`, `OtlpBatchPayload`,
+  `GzipCompressor`, ...) is held at 100% line and
+  branch coverage by a class rule. A gap is a design question: remove the stray error handling,
+  validate earlier, or test the case; do not lower the rule.
 - `./mvnw lombok:delombok javadoc:javadoc` renders the API docs into `target/reports/apidocs` and
   fails on doc errors. Delombok is bound to `verify`, so standalone javadoc needs it named explicitly.
 - `.mvn/jvm.config` runs Maven's own JVM with `-XX:TieredStopAtLevel=1` (C1 only): Maven, javac and
@@ -30,6 +34,10 @@
 - Lombok is enabled; `lombok.config` sets the `Builder` class name. `toBuilder` can't be enabled
   globally, so config records declare `@Builder(toBuilder = true)` explicitly.
 - Keep class and method names descriptive and consistent with existing `*Config`, `*Handler`, and `*Lookup` patterns.
+- Order methods so a class reads top down: entry points first, a factored-out helper that is not
+  called from outside right after the method(s) calling it. Group the methods of larger classes by
+  role (e.g. the API for callers, the end/lifecycle, timers, sending) with a short `//` section
+  comment. Every helper's doc says what it is for, not only what it does.
 - Doc comments use Markdown (`///`, JEP 467): backticks for code, `[Foo#bar]` for references,
   `-` for lists, fenced blocks for samples. Do not use HTML tags or `{@code}`/`{@link}`.
   Exceptions: `{@value}` (no Markdown form) and `@see <a href>` (Markdown link syntax is
@@ -64,9 +72,12 @@
 | File | Purpose |
 |---|---|
 | `Main.java` | Entry point, loads config from YAML or env vars, starts `Proxy` |
-| `Proxy.java` | Netty `ServerBootstrap`, channel pipeline, SSL setup, `start()` |
+| `Proxy.java` | Netty `ServerBootstrap`, channel pipeline, SSL setup, `start()`, graceful `shutdown()` (listener, connection drain, event loops, request log, one deadline) |
 | `ProxyConfig.java` | Root config record (holds `listen`, `sites`, `metrics`, etc.) |
 | `ListenConfig.java` | Listen/bind settings (`address`, `httpsPort`, `ssl`, `hosts`, `snis`) |
+| `HttpBatchSender.java` | Generic async posting of request log batches (concurrency cap, breaker, age limit); payload via `BatchPayload`, e.g. `OtlpBatchPayload` |
+| `CircuitBreaker.java` | Passive, reusable circuit breaker with `Backoff`; used by `HttpBatchSender`, meant for upstreams too |
+| `CircuitBreakerMetrics.java` | Metrics standard of all breakers, `sensepitch_circuitbreaker_*{component,name}`, resilience4j names plus transitions, errors and times |
 
 ### Configuration loading
 - **Env vars**: prefix `SENSEPITCH_EDGE_`, camelCase → UPPER_SNAKE_CASE (e.g. `SENSEPITCH_EDGE_LISTEN_ADDRESS`)

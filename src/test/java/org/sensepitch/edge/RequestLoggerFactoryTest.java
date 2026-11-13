@@ -95,6 +95,55 @@ class RequestLoggerFactoryTest {
     assertThat(stdout.lines()).singleElement().asString().startsWith("{\"timestamp\"");
   }
 
+  /// The request log can be switched off as a whole, also with destinations configured, e.g. by
+  /// a later configuration layer
+  @Test
+  void disabledRequestLogHasNoDestinations() {
+    try (RequestLogger logger =
+        build(
+            RequestLogConfig.builder()
+                .destinations(List.of(stdout(false, false), otlp(null)))
+                .disabled(true)
+                .build())) {
+      assertThat(((ReloadableRequestLogger) logger).destinations()).isEmpty();
+      logOneRequest(logger);
+    }
+    assertThat(queuedDestinations()).isEmpty();
+    assertThat(stdout.lines()).isEmpty();
+  }
+
+  /// A disabled destination is skipped, the others keep their names
+  @Test
+  void disabledDestinationIsSkipped() {
+    RequestLogDestinationConfig disabledStdout =
+        stdout(false, false).toBuilder().disabled(true).build();
+    try (RequestLogger logger =
+        build(
+            RequestLogConfig.builder()
+                .destinations(List.of(disabledStdout, stdout(true, false), otlp(null)))
+                .build())) {
+      assertThat(((ReloadableRequestLogger) logger).destinations())
+          .extracting(ReloadableRequestLogger.Destination::name)
+          .containsExactly("stdout1", "otlp");
+      logOneRequest(logger);
+    }
+    assertThat(stdout.lines()).singleElement().asString().startsWith("RQ0 ");
+  }
+
+  /// All destinations disabled means no request log, it is not rejected like an empty list
+  @Test
+  void allDestinationsDisabled() {
+    RequestLogDestinationConfig disabledStdout =
+        stdout(false, false).toBuilder().disabled(true).build();
+    try (RequestLogger logger =
+        build(RequestLogConfig.builder().destinations(List.of(disabledStdout)).build())) {
+      assertThat(((ReloadableRequestLogger) logger).destinations()).isEmpty();
+    }
+    assertThatThrownBy(() -> build(RequestLogConfig.builder().destinations(List.of()).build()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("requestLog.disabled");
+  }
+
   @Test
   void legacyPlainTextShorthand() {
     try (RequestLogger logger = build(RequestLogConfig.builder().plainText(true).build())) {
@@ -131,20 +180,16 @@ class RequestLoggerFactoryTest {
 
   /// Every destination gets the request, each with its own format and anonymization
   @Test
-  void multipleDestinations() {
+  void multipleDestinations() throws Exception {
     try (RequestLogger logger =
         build(
             RequestLogConfig.builder()
                 .destinations(List.of(stdout(false, false), stdout(true, true), otlp(null)))
                 .build())) {
-      assertThat(threadNames()).contains("request-log-otlp");
       assertThat(queuedDestinations()).containsExactly("otlp");
       logOneRequest(logger);
     }
-    assertThat(threadNames())
-        .as("closing the logger stops the destination")
-        .doesNotContain("request-log-otlp");
-    assertThat(queuedDestinations()).as("a closed destination has no gauge").isEmpty();
+    OtlpLogDestinationTest.await(() -> queuedDestinations().isEmpty());
     assertThat(stdout.lines()).hasSize(2);
     assertThat(stdout.lines().get(0)).contains("\"client.address\":\"192.0.2.7\"");
     assertThat(stdout.lines().get(1)).startsWith("RQ0 0 example.com 192.0.2.0 ");
@@ -234,7 +279,7 @@ class RequestLoggerFactoryTest {
                         .build()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("endpoint missing");
-    assertThat(threadNames()).doesNotContain("request-log-first");
+    assertThat(queuedDestinations()).as("the created one is closed").doesNotContain("first");
   }
 
   /// Destinations can be configured via environment variables, by index
@@ -281,10 +326,7 @@ class RequestLoggerFactoryTest {
     assertThat(config.effectiveTimeoutMillis()).isEqualTo(10_000);
     assertThat(config.effectiveFlushIntervalMillis()).isEqualTo(1_000);
     assertThat(config.effectiveBatchBytes()).isEqualTo(1024 * 1024);
-    assertThat(config.effectiveMaxBufferedBytes()).isEqualTo(64L * 1024 * 1024);
-  }
-
-  static List<String> threadNames() {
-    return Thread.getAllStackTraces().keySet().stream().map(Thread::getName).toList();
+    assertThat(config.effectiveMaxBufferedBytes())
+        .isEqualTo(2L * OtlpConfig.defaultEventLoopThreads() * 1024 * 1024);
   }
 }
