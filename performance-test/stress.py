@@ -1,3 +1,5 @@
+# Load phases with changing concurrency against the proxy started by start.sh,
+# which must be running. Requires: pip install aiohttp
 import asyncio
 import aiohttp
 import random
@@ -17,6 +19,9 @@ async def fetch(session, url):
     try:
         async with session.get(url, ssl=False) as response:
             body = await response.read()
+            # e.g. the deflector challenge page (403) when the URI is not bypassed
+            if response.status >= 400:
+                return len(body), f"status {response.status}"
             return len(body), None  # bytes, error
     except Exception as e:
         return 0, e  # bytes, error
