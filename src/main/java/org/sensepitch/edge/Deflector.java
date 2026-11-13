@@ -171,7 +171,6 @@ public class Deflector {
   }
 
   void outputChallengeHtml(ChannelHandlerContext ctx) {
-    // TODO: the output only changes with the challange, make output static and use cookie
     String challenge = challengeVerification.generateChallenge();
     String msg = htmlTemplate;
     msg = msg.replaceAll("files/", CHALLENGE_RESOURCES_URL + "/");

@@ -37,7 +37,7 @@ same loader can read JSON snapshots.
 | Bind address | One `listen.address` for all listeners | Bind address per listener, so one node can serve several IPs (one IP per Gateway in HostNetwork mode) |
 | Gateway merging | One listen configuration | Listeners from several Gateways merged by port in a shared fleet; hostname and SNI keep them apart |
 | Reserved paths | Only the deflector's `/.sensepitch.challenge.*` paths | Block `/.well-known/sensepitch-edge/*` from external requests (profile exposure) |
-| Response headers | Not sanitized (`FIXME` in `DownstreamHandler`) | Hop-by-hop header handling for conformance |
+| Response headers | Only `Connection` and `Keep-Alive` removed, see `TODO.md` | Hop-by-hop header handling for conformance |
 
 ## Multiple replicas
 

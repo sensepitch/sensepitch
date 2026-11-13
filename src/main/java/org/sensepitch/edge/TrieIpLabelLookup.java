@@ -2,7 +2,7 @@ package org.sensepitch.edge;
 
 import java.util.List;
 
-/// TODO: Needs to be consolidated into [IpTraitsLookup]
+/// Looks up a label of an IP address in a prefix tree, for IPv4 and IPv6.
 ///
 /// @author Jens Wilke
 public class TrieIpLabelLookup implements IpLabelLookup {

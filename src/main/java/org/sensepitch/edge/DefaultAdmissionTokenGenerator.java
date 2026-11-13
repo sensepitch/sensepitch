@@ -67,8 +67,6 @@ public class DefaultAdmissionTokenGenerator implements AdmissionTokenGenerator {
     byte[] sha256 =
         ChallengeGenerationAndVerification.sha256(
             (uniqueId + secret).getBytes(StandardCharsets.ISO_8859_1));
-    // TODO: performance instead of encoding the newly generated checksum, we can decode the
-    // received checksum and compare the byte value
     String checkSum = encodeChecksum(sha256);
     if (!checkSum.equals(receivedChecksum)) {
       return 0;

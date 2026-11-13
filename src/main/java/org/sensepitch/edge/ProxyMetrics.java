@@ -114,7 +114,6 @@ public class ProxyMetrics implements HasMultipleMetrics {
   @Override
   public void registerCollectors(Consumer<Collector> consumer) {
     metricSet.forEach(consumer);
-    // TODO: add 1 per ingress, so we can drill down per ingress and know how many servers it has
     consumer.accept(
         () ->
             GaugeSnapshot.builder()

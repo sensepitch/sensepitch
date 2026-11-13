@@ -140,7 +140,6 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
     loggingHandler.setOutcome(RequestOutcome.EDGE_ERROR);
     // send a proper response if possible, log via standard request log
     if (loggingHandler.isRequestReceived() && !loggingHandler.isResponseStarted()) {
-      // TODO: timeout?
       // The exception is recorded in the request log. It is not sent to the client, it may reveal
       // internal addresses, and a line break in its message would make the status line invalid.
       completeWithError(ctx, HttpResponseStatus.BAD_GATEWAY);
