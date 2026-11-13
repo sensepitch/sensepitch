@@ -91,7 +91,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
           .addListener(
               (ChannelFutureListener)
                   f -> {
-                    // TODO: error counter!
                     if (!f.isSuccess()) {
                       ctx.executor()
                           .execute(
@@ -129,8 +128,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   }
 
   void completeWithError(ChannelHandlerContext ctx, HttpResponseStatus status) {
-    // TODO: maybe response was already sent
-    // TODO: drop upstream
     FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status);
     response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
     ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
@@ -210,8 +207,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   ///
   /// That should work okay for small responses. For longer responses it might be better to close
   /// the upstream channel to avoid transferring data needlessly.
-  ///
-  /// TODO: track and log if the close was unexpected
   @Override
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     if (upstreamChannelFuture != null && upstreamChannelFuture.isDone()) {
@@ -228,7 +223,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   @Override
   public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
       throws Exception {
-    // FIXME: sanitize headers
     if (msg instanceof HttpResponse response) {
       // hop-by-hop headers of the upstream connection, the client connection has its own
       response.headers().remove(HttpHeaderNames.KEEP_ALIVE);
@@ -252,7 +246,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     super.exceptionCaught(ctx, cause);
   }
 
-  // TODO: discuss @Sharable
   @Override
   public boolean isSharable() {
     return super.isSharable();

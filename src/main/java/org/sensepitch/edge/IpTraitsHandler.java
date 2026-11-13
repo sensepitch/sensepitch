@@ -63,7 +63,6 @@ public class IpTraitsHandler extends ChannelInboundHandlerAdapter {
         collectTraits.append("crawler=");
         collectTraits.append(attributes.crawlerName());
       }
-      // TODO: add key/value traits
       traits = collectTraits.toString();
       // Debug.INSTANCE.trace(ctx.channel(), "trais: " + traits);
     }

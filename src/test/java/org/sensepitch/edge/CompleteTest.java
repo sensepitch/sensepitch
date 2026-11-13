@@ -424,11 +424,8 @@ class CompleteTest {
         req.headers().set(HttpHeaderNames.HOST, host);
       }
       headers.forEach((name, value) -> req.headers().set(name, value));
-      // TODO: add lstacontent?
-      // ingressChannel.writeInbound(req);
       HttpContent emptyChunk = new DefaultHttpContent(ingressChannel.alloc().buffer(1).clear());
       referenceCounted.add(emptyChunk);
-      // ingressChannel.writeInbound(emptyChunk);
       LastHttpContent emptyLastContent =
           new DefaultLastHttpContent(ingressChannel.alloc().buffer(1).clear());
       referenceCounted.add(emptyLastContent);

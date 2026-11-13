@@ -94,7 +94,6 @@ public class SiteSelector {
                 throw new IllegalArgumentException("Site requires host or key");
               }
               if (host.contains("*")) {
-                // TODO: support wildcard hosts
                 throw new IllegalArgumentException("Host wildcards are not yet supported");
               }
               String uriPrefix = uriPrefix(site.uri());

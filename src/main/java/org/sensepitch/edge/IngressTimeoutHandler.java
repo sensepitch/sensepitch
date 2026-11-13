@@ -26,9 +26,6 @@ import java.util.concurrent.TimeUnit;
 ///
 /// This must be placed between the http codec handler and the keep alive handler.
 ///
-/// TODO: only works with HttpKeepAliveHandler next, maybe unify TODO: corner case when ingress
-/// still sends and upstream is responding, however, we can do connection: close
-///
 /// @author Jens Wilke
 public final class IngressTimeoutHandler extends ChannelDuplexHandler {
 
@@ -127,14 +124,12 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
           new TimeoutTask(ctx, config.responseTimeoutSeconds()) {
             @Override
             public void fire() {
-              // TODO: Metrics
               RequestLoggingHandler.reportOutcome(ctx, RequestOutcome.UPSTREAM_TIMEOUT);
               FullHttpResponse response =
                   new DefaultFullHttpResponse(
                       HttpVersion.HTTP_1_1, HttpResponseStatus.GATEWAY_TIMEOUT);
               response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
               ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-              // TODO: which one?
               ctx.fireExceptionCaught(new UpstreamResponseTimeoutException());
               // throw new ClientTimeoutHandler.UpstreamResponseTimeoutException();
             }
@@ -180,7 +175,6 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
           new TimeoutTask(ctx, config.writeTimeoutSeconds()) {
             @Override
             public void fire() {
-              // TODO: Metrics
               RequestLoggingHandler.reportOutcome(ctx, RequestOutcome.RESPONSE_WRITE_TIMEOUT);
               ctx.fireExceptionCaught(new WriteTimeoutException());
             }

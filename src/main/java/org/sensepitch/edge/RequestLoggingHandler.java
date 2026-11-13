@@ -215,7 +215,6 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
                 return;
               }
               metrics.ingressRequestsCompleted.increment();
-              // TODO: switch response in case of error?
               setException(future.cause());
               log(ctx);
             });
@@ -230,7 +229,6 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
       resolveTls(ctx);
     }
     responseReceivedTimeNanos = ticker.nanoTime();
-    // TODO: in case of error, maybe different status code? maybe set content to 0?
     try {
       logger.logRequest(this);
       requestCount++;

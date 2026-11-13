@@ -67,7 +67,6 @@ public class DeflectorHandler implements ProtectionPlugin {
       report(ctx, outcome);
       deflector.respondToChallengeAnswer(ctx, request, correct);
     } else {
-      // TODO: behaviour of non GET requests?
       request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_UNKNOWN);
       metrics.countDeflectorRequest(request, DeflectorOutcome.CHALLENGE_SENT);
       report(ctx, DeflectorOutcome.CHALLENGE_SENT);
