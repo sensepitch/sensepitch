@@ -1,7 +1,7 @@
 package org.sensepitch.edge;
 
+import io.netty.util.concurrent.Ticker;
 import java.util.concurrent.TimeUnit;
-import java.util.function.LongSupplier;
 
 /// Stops requests to a remote that failed, and lets a single probe through after a backoff.
 ///
@@ -15,8 +15,11 @@ import java.util.function.LongSupplier;
 ///   breaker cannot get stuck.
 ///
 /// The breaker is passive: it has no thread or timer, a caller that wants to retry by itself
-/// schedules for [#retryAtNanos()]. It is used for posting request logs, see [HttpBatchSender],
-/// and fits the connections to an upstream as well.
+/// schedules after [#retryDelayNanos()]. It is used for posting request logs, see
+/// [HttpBatchSender]. It opens on the first failure, which suits a sender that retries one batch
+/// after a failure. Before it guards the connections to an upstream, which fail one at a time
+/// under load, it needs a failure threshold, e.g. consecutive failures or a failure rate over a
+/// window as in Armeria or resilience4j.
 ///
 /// [#tryAcquire()] in the closed state reads one volatile field, it neither locks nor allocates,
 /// so it can be called for each request on an event loop. State changes lock this object.
@@ -24,6 +27,10 @@ import java.util.function.LongSupplier;
 /// Every outcome, refusal and state change is reported to the [Events], e.g. the metrics, see
 /// [CircuitBreakerMetrics]. The breaker keeps the wall clock times of its start, its last trip and
 /// its last restart for them.
+///
+/// All times come from one [Ticker], so a test controls them with a mock ticker. The wall clock
+/// times are the wall clock time at the start plus the ticker time passed since, they do not
+/// follow later steps of the system clock, which does not matter for the metrics.
 ///
 /// @author Jens Wilke
 public final class CircuitBreaker {
@@ -70,9 +77,11 @@ public final class CircuitBreaker {
 
   private final Backoff backoff;
   private final long probeTimeoutNanos;
-  private final LongSupplier nanoClock;
-  private final LongSupplier wallClock;
+  private final Ticker ticker;
   private final long startMillis;
+
+  /// Ticker time of the start, the origin of the wall clock times, see [#nowMillis()]
+  private final long startNanos;
 
   private final Events events;
 
@@ -93,22 +102,20 @@ public final class CircuitBreaker {
   ///   least the request timeout
   /// @param events receives what the breaker does, e.g. [CircuitBreakerMetrics#events(String, String)]
   public CircuitBreaker(Backoff backoff, long probeTimeoutMillis, Events events) {
-    this(backoff, probeTimeoutMillis, events, System::nanoTime, System::currentTimeMillis);
+    this(backoff, probeTimeoutMillis, events, Ticker.systemTicker(), System.currentTimeMillis());
   }
 
-  /// With clocks, for tests
+  /// With a ticker and a start time, for tests
+  ///
+  /// @param startMillis wall clock time of the start, the ticker time passed since is added
   CircuitBreaker(
-      Backoff backoff,
-      long probeTimeoutMillis,
-      Events events,
-      LongSupplier nanoClock,
-      LongSupplier wallClock) {
+      Backoff backoff, long probeTimeoutMillis, Events events, Ticker ticker, long startMillis) {
     this.backoff = backoff;
     this.events = events;
     this.probeTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(probeTimeoutMillis);
-    this.nanoClock = nanoClock;
-    this.wallClock = wallClock;
-    this.startMillis = wallClock.getAsLong();
+    this.ticker = ticker;
+    this.startMillis = startMillis;
+    this.startNanos = ticker.nanoTime();
   }
 
   /// Asks for permission to send a request.
@@ -121,7 +128,7 @@ public final class CircuitBreaker {
   }
 
   private synchronized boolean tryAcquireSlow() {
-    long now = nanoClock.getAsLong();
+    long now = ticker.nanoTime();
     switch (state) {
       case CLOSED -> {
         // closed by another thread between the volatile read and taking the lock
@@ -157,7 +164,7 @@ public final class CircuitBreaker {
     if (before != State.CLOSED) {
       state = State.CLOSED;
       failures = 0;
-      lastRestartMillis = wallClock.getAsLong();
+      lastRestartMillis = nowMillis();
       events.transition(before, State.CLOSED, RECOVERED);
     }
     return before;
@@ -184,7 +191,7 @@ public final class CircuitBreaker {
     events.call(Kind.FAILED);
     events.error(error);
     State before = state;
-    long now = nanoClock.getAsLong();
+    long now = ticker.nanoTime();
     if (before == State.OPEN) {
       // a request in flight when the breaker opened, only a longer requested delay matters
       retryAtNanos = Math.max(retryAtNanos, now + TimeUnit.MILLISECONDS.toNanos(retryAfterMillis));
@@ -194,7 +201,7 @@ public final class CircuitBreaker {
     retryAtNanos = now + TimeUnit.MILLISECONDS.toNanos(delayMillis);
     state = State.OPEN;
     if (before == State.CLOSED) {
-      lastTripMillis = wallClock.getAsLong();
+      lastTripMillis = nowMillis();
     }
     events.transition(before, State.OPEN, error);
     return before;
@@ -204,13 +211,14 @@ public final class CircuitBreaker {
   /// when shutting down.
   public synchronized void skipBackoff() {
     if (state == State.OPEN) {
-      retryAtNanos = nanoClock.getAsLong();
+      retryAtNanos = ticker.nanoTime();
     }
   }
 
-  /// End of the backoff, when the breaker lets a probe through. Meaningful while open.
-  public synchronized long retryAtNanos() {
-    return retryAtNanos;
+  /// Time until the backoff is over and the breaker lets a probe through, `0` if it is over.
+  /// Meaningful while open.
+  public synchronized long retryDelayNanos() {
+    return Math.max(0, retryAtNanos - ticker.nanoTime());
   }
 
   public State state() {
@@ -235,5 +243,10 @@ public final class CircuitBreaker {
   /// Wall clock time of the last close after a trip, `0` if none
   public long lastRestartMillis() {
     return lastRestartMillis;
+  }
+
+  /// Wall clock time from the ticker, for the trip and restart times
+  private long nowMillis() {
+    return startMillis + TimeUnit.NANOSECONDS.toMillis(ticker.nanoTime() - startNanos);
   }
 }

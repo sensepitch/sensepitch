@@ -2,6 +2,11 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.netty.util.concurrent.MockTicker;
+import io.netty.util.concurrent.Ticker;
+import io.prometheus.metrics.model.registry.PrometheusRegistry;
+import io.prometheus.metrics.model.snapshots.GaugeSnapshot;
+import io.prometheus.metrics.model.snapshots.MetricSnapshot;
 import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
 import java.util.List;
@@ -12,7 +17,7 @@ import net.serenitybdd.junit5.SerenityJUnit5Extension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
-/// States of the [CircuitBreaker], with a clock of the test. The backoff starts at 1 s, the jitter
+/// States of the [CircuitBreaker], with a mock [Ticker]. The backoff starts at 1 s, the jitter
 /// is off, so a backoff takes half of its nominal value: 500 ms after the first failure, 1 s after
 /// the second.
 ///
@@ -203,13 +208,54 @@ class CircuitBreakerBDDTest {
     assertThat(allocated).as("bytes allocated by 10k calls").isLessThan(1_000);
   }
 
+  /// A reload that changes a destination starts a new breaker under the same name while the old
+  /// one drains. The gauges report the new one only, a label set twice would fail the scrape.
+  @Test
+  void sameLabelsTwice_reportsTheNewestBreaker() {
+    CircuitBreakerMetrics metrics = new CircuitBreakerMetrics();
+    PrometheusRegistry registry = new PrometheusRegistry();
+    metrics.registerCollectors(registry::register);
+    // another destination, open, which stays reported throughout
+    CircuitBreaker other = breaker(metrics, "vl");
+    other.onFailure(0, "http_503");
+    metrics.add("requestLog", "vl", other);
+    CircuitBreaker draining = breaker(metrics, "otlp");
+    draining.onFailure(0, "http_503");
+    metrics.add("requestLog", "otlp", draining);
+    CircuitBreaker replacing = breaker(metrics, "otlp");
+    metrics.add("requestLog", "otlp", replacing);
+    assertThat(openGauge(registry)).as("new otlp closed, vl open").containsExactly(0.0, 1.0);
+    metrics.remove(draining);
+    assertThat(openGauge(registry)).as("old otlp removed already").containsExactly(0.0, 1.0);
+    metrics.remove(replacing);
+    assertThat(openGauge(registry)).containsExactly(1.0);
+  }
+
+  private static CircuitBreaker breaker(CircuitBreakerMetrics metrics, String name) {
+    return new CircuitBreaker(
+        new Backoff(1_000, 30_000), 1_000, metrics.events("requestLog", name));
+  }
+
+  /// The values of the state gauge for `open`, one per reported breaker, sorted by name
+  private static List<Double> openGauge(PrometheusRegistry registry) {
+    MetricSnapshot state =
+        registry.scrape().stream()
+            .filter(m -> m.getMetadata().getName().equals("sensepitch_circuitbreaker_state"))
+            .findFirst()
+            .orElseThrow();
+    return ((GaugeSnapshot) state)
+        .getDataPoints().stream()
+            .filter(p -> p.getLabels().get("state").equals("open"))
+            .map(GaugeSnapshot.GaugeDataPointSnapshot::getValue)
+            .toList();
+  }
+
   public static class BreakerSteps {
 
     static final long PROBE_TIMEOUT_MILLIS = 5_000;
     static final long START_MILLIS = 1_700_000_000_000L;
 
-    private long nowNanos = 1_000_000_000L;
-    private long nowMillis = START_MILLIS;
+    private final MockTicker ticker = Ticker.newMockTicker();
     private CircuitBreaker breaker;
     private final List<String> events = new ArrayList<>();
 
@@ -223,12 +269,29 @@ class CircuitBreakerBDDTest {
               new Backoff(1_000, 30_000, bound -> 0),
               PROBE_TIMEOUT_MILLIS,
               new RecordingEvents(),
-              () -> {
-                onClockRead.run();
-                return nowNanos;
-              },
-              () -> nowMillis);
+              new HookedTicker(),
+              START_MILLIS);
       return this;
+    }
+
+    /// The mock ticker, running [#onClockRead] when the breaker reads the time
+    private final class HookedTicker implements Ticker {
+
+      @Override
+      public long initialNanoTime() {
+        return ticker.initialNanoTime();
+      }
+
+      @Override
+      public long nanoTime() {
+        onClockRead.run();
+        return ticker.nanoTime();
+      }
+
+      @Override
+      public void sleep(long delay, TimeUnit unit) throws InterruptedException {
+        ticker.sleep(delay, unit);
+      }
     }
 
     /// Records the events as text, see [#then_the_events_are(String...)]
@@ -281,8 +344,7 @@ class CircuitBreakerBDDTest {
 
     @Step
     public BreakerSteps when_time_passes_millis(long millis) {
-      nowNanos += TimeUnit.MILLISECONDS.toNanos(millis);
-      nowMillis += millis;
+      ticker.advanceMillis(millis);
       return this;
     }
 

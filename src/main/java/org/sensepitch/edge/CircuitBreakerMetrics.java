@@ -28,7 +28,10 @@ import java.util.function.ToLongFunction;
 ///   `0` if it did not happen yet
 ///
 /// The gauges report the registered breakers only, see [#remove(CircuitBreaker)]; the counters
-/// keep their values.
+/// keep their values. One breaker is reported per component and name, the one added last: a
+/// reload that changes a destination starts a new breaker under the same name while the old one
+/// still drains, and a label set must not appear twice in a scrape. The counters of both go to
+/// the same series.
 ///
 /// @author Jens Wilke
 public class CircuitBreakerMetrics implements HasMultipleMetrics {
@@ -38,7 +41,13 @@ public class CircuitBreakerMetrics implements HasMultipleMetrics {
   static final String NAME_LABEL = "name";
 
   /// A registered breaker with its label values
-  private record Entry(String component, String name, CircuitBreaker breaker) {}
+  private record Entry(String component, String name, CircuitBreaker breaker) {
+
+    /// The label values, equal for a breaker and the one replacing it
+    List<String> labels() {
+      return List.of(component, name);
+    }
+  }
 
   private final List<Entry> breakers = new CopyOnWriteArrayList<>();
 
@@ -116,14 +125,18 @@ public class CircuitBreakerMetrics implements HasMultipleMetrics {
     return new Recorder(component, name);
   }
 
-  /// Reports the gauges of the breaker under the labels, until removed
-  void add(String component, String name, CircuitBreaker breaker) {
+  /// Reports the gauges of the breaker under the labels, until removed. Replaces a breaker
+  /// reported under the same labels.
+  synchronized void add(String component, String name, CircuitBreaker breaker) {
+    List<String> labels = List.of(component, name);
+    breakers.removeIf(entry -> entry.labels().equals(labels));
     breakers.add(new Entry(component, name, breaker));
   }
 
   /// Stops reporting the gauges of the breaker, e.g. of a destination removed by a reload. Its
-  /// counters keep their values.
-  void remove(CircuitBreaker breaker) {
+  /// counters keep their values. Does nothing if the breaker was replaced, see
+  /// [#add(String, String, CircuitBreaker)].
+  synchronized void remove(CircuitBreaker breaker) {
     breakers.removeIf(entry -> entry.breaker() == breaker);
   }
 
