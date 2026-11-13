@@ -53,6 +53,12 @@ import java.util.concurrent.atomic.AtomicLong;
 /// batch is dropped and counted in `sensepitch_request_log_export_failed_total`, the breaker
 /// stays closed.
 ///
+/// The breaker is asked when a batch arrives while nothing waits, and when the sender dispatches
+/// after a completion, a flush or the backoff. So its `not_permitted` calls, see
+/// [CircuitBreakerMetrics], count refused dispatch attempts, not batches. The batches that wait
+/// show in `sensepitch_request_log_buffered_bytes`, those given up in
+/// `sensepitch_request_log_dropped_total`.
+///
 /// Age: a batch whose first record is older than `maximumUnsentLogAge` is dropped. This ends the
 /// retries for a persistent error, e.g. a wrong endpoint or a log server that is gone for good,
 /// and bounds the time a replaced destination keeps sending, see [#finish()]. The limit of the
@@ -645,7 +651,7 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
           failures = breaker.failures();
           before = breaker.onFailure(result.retryAfterMillis(), result.error());
           if (before != CircuitBreaker.State.OPEN) {
-            scheduleProbe(breaker.retryAtNanos());
+            scheduleProbe(breaker.retryDelayNanos());
           }
         }
       }
@@ -695,10 +701,9 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
 
   /// Dispatches again when the backoff is over, so the parked posts do not wait for the next
   /// flush or completion
-  private void scheduleProbe(long atNanos) {
-    long delay = Math.max(0, atNanos - System.nanoTime());
+  private void scheduleProbe(long delayNanos) {
     // when the backoff is over, the breaker lets a probe through
-    CompletableFuture.delayedExecutor(delay, TimeUnit.NANOSECONDS).execute(this::dispatch);
+    CompletableFuture.delayedExecutor(delayNanos, TimeUnit.NANOSECONDS).execute(this::dispatch);
   }
 
   /// The batches of the post are no longer waiting: sent or dropped

@@ -6,6 +6,8 @@ import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
+import io.netty.util.concurrent.MockTicker;
+import io.netty.util.concurrent.Ticker;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import java.io.IOException;
 import java.net.URI;
@@ -114,22 +116,22 @@ class MetricsExpositionTest {
     requestLogMetrics.exportFailed.labelValues("otlp").inc();
     requestLogMetrics.sentRecords.labelValues("otlp").inc(5);
     requestLogMetrics.sentBytes.labelValues("otlp").inc(1234);
-    // an outage and its recovery, with fixed clocks
-    long[] wallMillis = {1_700_000_000_000L};
+    // an outage and its recovery, with a mock ticker
+    MockTicker ticker = Ticker.newMockTicker();
     CircuitBreaker breaker =
         new CircuitBreaker(
             new Backoff(1_000, 30_000, bound -> 0),
             5_000,
             requestLogMetrics.circuitBreakers.events("requestLog", "otlp"),
-            () -> 0,
-            () -> wallMillis[0]);
+            ticker,
+            1_700_000_000_000L);
     requestLogMetrics.circuitBreakers.add("requestLog", "otlp", breaker);
-    wallMillis[0] += 1_000;
+    ticker.advanceMillis(1_000);
     breaker.onFailure(0, "http_503");
     breaker.tryAcquire();
     breaker.skipBackoff();
     breaker.tryAcquire();
-    wallMillis[0] += 1_000;
+    ticker.advanceMillis(1_000);
     breaker.onSuccess();
     breaker.onIgnored("http_400");
 
