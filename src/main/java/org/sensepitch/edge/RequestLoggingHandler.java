@@ -210,7 +210,6 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
         promise = promise.unvoid();
         promise.addListener(
             future -> {
-              // DEBUG.info("write complete, success=" + future.isSuccess());
               if (request == null) {
                 return;
               }

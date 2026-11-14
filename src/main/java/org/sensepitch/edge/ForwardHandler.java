@@ -52,9 +52,6 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
       }
     }
     if (msg instanceof LastHttpContent) {
-      // Channel downstreamCopy = downstream;
-      // DownstreamProgress.progress(downstream, "received last content from upstream, flushing
-      // response");
       // The write of an empty last content will fail regularly, since the client might have closed
       // the connection already. Maybe introduce error handling for non empty last contents and
       // requests only.
@@ -94,7 +91,6 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
 
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-    // DEBUG.trace(downstream, ctx.channel(), "upstream read exception closing downstream");
     LOG.upstreamError(ctx.channel(), "downstream=" + LOG.channelId(downstream), cause);
     if (downstream != null) {
       downstream.pipeline().fireExceptionCaught(new UpstreamException(cause));
