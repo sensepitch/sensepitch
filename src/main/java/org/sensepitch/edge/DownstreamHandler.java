@@ -12,6 +12,7 @@ import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaderValues;
+import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
@@ -224,9 +225,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
       throws Exception {
     if (msg instanceof HttpResponse response) {
-      // hop-by-hop headers of the upstream connection, the client connection has its own
-      response.headers().remove(HttpHeaderNames.KEEP_ALIVE);
-      response.headers().remove(HttpHeaderNames.CONNECTION);
+      sanitizeResponseHeaders(response.headers());
     }
     if (msg instanceof LastHttpContent) {
       // there is no connection pool, so the upstream connection is closed after each response,
@@ -236,6 +235,26 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       upstreamChannelFuture = null;
     }
     super.write(ctx, msg, promise);
+  }
+
+  /// Keep upstream connection options out of the client connection. Transfer-Encoding stays so
+  /// the downstream HTTP codec can frame the decoded content as chunks.
+  private static void sanitizeResponseHeaders(HttpHeaders headers) {
+    // Read all Connection fields before removing any: Connection can name itself or another field.
+    for (String connection : headers.getAll(HttpHeaderNames.CONNECTION)) {
+      for (String option : connection.split(",")) {
+        String name = option.trim();
+        if (!name.isEmpty()) {
+          headers.remove(name);
+        }
+      }
+    }
+    headers.remove(HttpHeaderNames.CONNECTION);
+    headers.remove(HttpHeaderNames.KEEP_ALIVE);
+    headers.remove(HttpHeaderNames.PROXY_CONNECTION);
+    headers.remove(HttpHeaderNames.TE);
+    headers.remove(HttpHeaderNames.TRAILER);
+    headers.remove(HttpHeaderNames.UPGRADE);
   }
 
   @Override

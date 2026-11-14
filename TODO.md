@@ -21,9 +21,6 @@ comments in the code; an entry from the code names the class and method it is ab
 - [ ] `DownstreamHandler.completeWithError`: the response may have been sent already; drop the
   upstream connection
 - [ ] `DownstreamHandler.channelInactive`: track and log if the close was unexpected
-- [ ] `DownstreamHandler.write`: sanitize response headers. `Keep-Alive` and `Connection` are
-  removed; the other hop-by-hop headers (`Proxy-Connection`, `TE`, `Trailer`, `Upgrade`, those
-  named in `Connection`) are not, see `doc/kubernetes-support/3-gap-analysis.md`
 - [ ] `DownstreamHandler.isSharable`: decide on `@Sharable`, the override does nothing
 
 ## Ingress, HTTP
@@ -106,6 +103,9 @@ comments in the code; an entry from the code names the class and method it is ab
   failure: keep `target/surefire-reports` and `target/failsafe-reports`.
 
 ## Done
+
+- [x] `DownstreamHandler.write`: remove upstream hop-by-hop response headers, including headers
+  named in `Connection`; keep chunked framing for the downstream HTTP codec
 
 - [x] `IpTraitsHandler`: include custom key/value traits in the upstream header, sorted by key;
   `IpTraits.Builder.addLabel` rejects reserved keys and separators, `DetectCrawler` matches the
