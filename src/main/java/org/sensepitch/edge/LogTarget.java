@@ -2,6 +2,7 @@ package org.sensepitch.edge;
 
 import io.netty.channel.Channel;
 import java.lang.System.Logger.Level;
+import java.util.function.Function;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -23,9 +24,32 @@ import org.apache.logging.log4j.Logger;
 /// @author Jens Wilke
 public interface LogTarget {
 
-  /// Target forwarding to the Log4j2 logger with the given name
+  /// Target of the logger with the given name, forwarding to Log4j2 unless replaced, see
+  /// [Factory]
   static LogTarget of(String loggerName) {
-    return new Log4jOutput(LogManager.getLogger(loggerName));
+    return Factory.current.apply(loggerName);
+  }
+
+  /// Creates the targets of all loggers. A logger asks once when it is created, mostly for a
+  /// `static final` field, so the indirection costs nothing when logging. Tests replace the
+  /// factory before the first logger is created, to collect the messages in memory instead of
+  /// passing them through Log4j2.
+  final class Factory {
+
+    private static volatile Function<String, LogTarget> current = Factory::log4j;
+
+    private Factory() {}
+
+    /// The default: a target forwarding to the Log4j2 logger with the given name
+    static LogTarget log4j(String loggerName) {
+      return new Log4jOutput(LogManager.getLogger(loggerName));
+    }
+
+    /// Loggers created from now on get their target from the given factory, existing loggers
+    /// keep theirs
+    static void replace(Function<String, LogTarget> factory) {
+      current = factory;
+    }
   }
 
   static String localChannelId(Channel ch) {

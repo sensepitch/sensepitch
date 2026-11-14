@@ -31,16 +31,23 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /// OTLP/HTTP export of the request log: buffering, batching and retry. The posted bytes are parsed
 /// with the official OTLP message classes, which proves the hand written encoding conforms to the
 /// schema.
 ///
+/// Runs against a real HTTP server and waits for the timers of the sender. It stays a unit test
+/// nevertheless, `./mvnw test` covers everything that is unit testable. See `TODO.md` for the
+/// fake clock that makes these tests fast.
+///
 /// @author Jens Wilke
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
+// alone: captures the log of all threads, the sender logs from its own
+@Isolated
 class OtlpLogDestinationTest {
 
-  @RegisterExtension LogCapture logs = new LogCapture();
+  @RegisterExtension LogCapture logs = LogCapture.ofAllThreads();
 
   /// A received POST and the status it was answered with
   record Received(
@@ -113,25 +120,6 @@ class OtlpLogDestinationTest {
     server.start();
   }
 
-  /// The request of a post, decompressed if the sender compressed it
-  static ExportLogsServiceRequest decode(com.sun.net.httpserver.HttpExchange exchange)
-      throws IOException {
-    return decode(exchange, exchange.getRequestBody().readAllBytes());
-  }
-
-  static ExportLogsServiceRequest decode(com.sun.net.httpserver.HttpExchange exchange, byte[] body)
-      throws IOException {
-    boolean gzip = "gzip".equals(exchange.getRequestHeaders().getFirst("Content-Encoding"));
-    return ExportLogsServiceRequest.parseFrom(gzip ? gunzip(body) : body);
-  }
-
-  static byte[] gunzip(byte[] body) throws IOException {
-    try (java.util.zip.GZIPInputStream in =
-        new java.util.zip.GZIPInputStream(new java.io.ByteArrayInputStream(body))) {
-      return in.readAllBytes();
-    }
-  }
-
   /// The log server comes back on the same port after a restart
   void restartServer() throws IOException {
     server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
@@ -159,10 +147,6 @@ class OtlpLogDestinationTest {
   /// Destination with short retry delays, to keep the tests fast
   OtlpLogDestination fastDestination(OtlpConfig config) {
     return new OtlpLogDestination("otlp", config, new RequestLogMetrics(), 10, 50);
-  }
-
-  static Map<String, AnyValue> attributes(List<KeyValue> keyValues) {
-    return keyValues.stream().collect(Collectors.toMap(KeyValue::getKey, KeyValue::getValue));
   }
 
   static TestRequestLogInfo request(String path) {
@@ -195,18 +179,6 @@ class OtlpLogDestinationTest {
         new MetricsAndMemoryTest.Snapshots(registry.scrape())
             .counter(name, "destination", destination.destination())
             .getValue();
-  }
-
-  /// Waits for a condition the sender reaches asynchronously, e.g. after the response to the last
-  /// batch, which the server sees before the sender
-  static void await(java.util.function.BooleanSupplier condition) throws InterruptedException {
-    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-    while (!condition.getAsBoolean()) {
-      if (System.nanoTime() > deadline) {
-        throw new AssertionError("condition not reached within 10 seconds");
-      }
-      Thread.sleep(5);
-    }
   }
 
   MetricsAndMemoryTest.Snapshots scrape() {
@@ -303,14 +275,6 @@ class OtlpLogDestinationTest {
     assertThat(post.paths()).containsExactly("/plain");
   }
 
-  @Test
-  void unknownCompressionIsRejected() {
-    org.assertj.core.api.Assertions.assertThatThrownBy(
-            () -> fastDestination(config().compression("zstd").build()))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("Request log destination otlp: compression must be gzip or none, not zstd");
-  }
-
   /// Bytes of the successful request bodies the server received
   long sentBodyBytes() {
     long bytes = 0;
@@ -379,44 +343,6 @@ class OtlpLogDestinationTest {
             attributes.get("http.request.header.accept-language").getArrayValue().getValuesList())
         .extracting(AnyValue::getStringValue)
         .containsExactly("en");
-  }
-
-  /// Exactly the attributes the field definition emits, nothing lost or added in the encoding
-  @Test
-  void attributesMatchTheFieldDefinition() throws Exception {
-    TestRequestLogInfo info =
-        TestRequestLogInfo.of(HttpMethod.POST, 502)
-            .withClientAddress("2001:db8::1")
-            .withTls("TLSv1.3")
-            .withError(new IllegalStateException("gone"));
-    LogRecord record = LogRecord.parseFrom(OtlpRequestLogSink.encode(info));
-    RequestLogFieldsWriterTest.RecordingSink expected = RequestLogFieldsWriterTest.fields(info);
-    assertThat(record.getAttributesList())
-        .extracting(KeyValue::getKey)
-        .containsExactlyElementsOf(expected.fields.keySet());
-    assertThat(attributes(record.getAttributesList()).get("client.address").getStringValue())
-        .isEqualTo("2001:db8:0:0:0:0:0:1");
-    assertThat(record.getSeverityText()).isEqualTo("WARN");
-    assertThat(record.getSeverityNumberValue()).isEqualTo(13);
-  }
-
-  /// The sampled headers is encoded as a string array attribute
-  @Test
-  void sampleHeaders() throws Exception {
-    TestRequestLogInfo info = TestRequestLogInfo.of(HttpMethod.GET, 200);
-    info.request().headers().add("Accept", "*/*");
-    ProtobufWriter out = new ProtobufWriter(1024);
-    new OtlpRequestLogSink(1).encode(out, info);
-    LogRecord record = LogRecord.parseFrom(out.toByteArray());
-    AnyValue sampled =
-        attributes(record.getAttributesList()).get("sensepitch.request.sample_headers");
-    assertThat(sampled.getArrayValue().getValuesList())
-        .extracting(AnyValue::getStringValue)
-        .containsExactly("host: example.com", "Accept: */*");
-    destination =
-        new OtlpLogDestination(
-            "otlp", config().flushIntervalMillis(60_000).build(), new RequestLogMetrics(), 27);
-    assertThat(destination.sampleHeadersInterval()).isEqualTo(27);
   }
 
   /// Records of a thread are buffered and sent together
@@ -1035,6 +961,52 @@ class OtlpLogDestinationTest {
     assertThat(destination.droppedCount()).isEqualTo(dropped);
   }
 
+  @Test
+  void unknownCompressionIsRejected() {
+    assertThatThrownBy(() -> new OtlpLogDestination("otlp", config().compression("zstd").build()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Request log destination otlp: compression must be gzip or none, not zstd");
+  }
+
+  /// Exactly the attributes the field definition emits, nothing lost or added in the encoding
+  @Test
+  void attributesMatchTheFieldDefinition() throws Exception {
+    TestRequestLogInfo info =
+        TestRequestLogInfo.of(HttpMethod.POST, 502)
+            .withClientAddress("2001:db8::1")
+            .withTls("TLSv1.3")
+            .withError(new IllegalStateException("gone"));
+    LogRecord record = LogRecord.parseFrom(OtlpRequestLogSink.encode(info));
+    RequestLogFieldsWriterTest.RecordingSink expected = RequestLogFieldsWriterTest.fields(info);
+    assertThat(record.getAttributesList())
+        .extracting(KeyValue::getKey)
+        .containsExactlyElementsOf(expected.fields.keySet());
+    assertThat(attributes(record.getAttributesList()).get("client.address").getStringValue())
+        .isEqualTo("2001:db8:0:0:0:0:0:1");
+    assertThat(record.getSeverityText()).isEqualTo("WARN");
+    assertThat(record.getSeverityNumberValue()).isEqualTo(13);
+  }
+
+  /// The sampled headers is encoded as a string array attribute
+  @Test
+  void sampleHeaders() throws Exception {
+    TestRequestLogInfo info = TestRequestLogInfo.of(HttpMethod.GET, 200);
+    info.request().headers().add("Accept", "*/*");
+    ProtobufWriter out = new ProtobufWriter(1024);
+    new OtlpRequestLogSink(1).encode(out, info);
+    LogRecord record = LogRecord.parseFrom(out.toByteArray());
+    AnyValue sampled =
+        attributes(record.getAttributesList()).get("sensepitch.request.sample_headers");
+    assertThat(sampled.getArrayValue().getValuesList())
+        .extracting(AnyValue::getStringValue)
+        .containsExactly("host: example.com", "Accept: */*");
+    OtlpLogDestination destination =
+        new OtlpLogDestination(
+            "otlp", config().flushIntervalMillis(60_000).build(), new RequestLogMetrics(), 27);
+    assertThat(destination.sampleHeadersInterval()).isEqualTo(27);
+    destination.finish();
+  }
+
   /// The buffer limit defaults to its minimum, two batches per event loop, without a warning. A
   /// larger value is kept.
   @Test
@@ -1147,5 +1119,42 @@ class OtlpLogDestinationTest {
                 .getAttributesList());
     assertThat(configured.get("service.name").getStringValue()).isEqualTo("edge-eu");
     assertThat(configured.get("service.instance.id").getStringValue()).isEqualTo("edge-1");
+  }
+
+  // helpers, also used by other tests that run a log server
+
+  /// The request of a post, decompressed if the sender compressed it
+  static ExportLogsServiceRequest decode(com.sun.net.httpserver.HttpExchange exchange)
+      throws IOException {
+    return decode(exchange, exchange.getRequestBody().readAllBytes());
+  }
+
+  static ExportLogsServiceRequest decode(com.sun.net.httpserver.HttpExchange exchange, byte[] body)
+      throws IOException {
+    boolean gzip = "gzip".equals(exchange.getRequestHeaders().getFirst("Content-Encoding"));
+    return ExportLogsServiceRequest.parseFrom(gzip ? gunzip(body) : body);
+  }
+
+  static byte[] gunzip(byte[] body) throws IOException {
+    try (java.util.zip.GZIPInputStream in =
+        new java.util.zip.GZIPInputStream(new java.io.ByteArrayInputStream(body))) {
+      return in.readAllBytes();
+    }
+  }
+
+  static Map<String, AnyValue> attributes(List<KeyValue> keyValues) {
+    return keyValues.stream().collect(Collectors.toMap(KeyValue::getKey, KeyValue::getValue));
+  }
+
+  /// Waits for a condition the sender reaches asynchronously, e.g. after the response to the last
+  /// batch, which the server sees before the sender
+  static void await(java.util.function.BooleanSupplier condition) throws InterruptedException {
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+    while (!condition.getAsBoolean()) {
+      if (System.nanoTime() > deadline) {
+        throw new AssertionError("condition not reached within 10 seconds");
+      }
+      Thread.sleep(5);
+    }
   }
 }

@@ -27,6 +27,10 @@
     <maven.build.timestamp.format>yyyyMMddHHmmssSSS</maven.build.timestamp.format>
     <!-- overwritten by jacoco prepare-agent; empty default keeps surefire working when jacoco is skipped -->
     <jacocoArgLine></jacocoArgLine>
+    <!-- ./mvnw test runs the unit test classes concurrently in one JVM, the methods of a class
+         in order, with as many threads as CPU cores. Classes depending on JVM wide state carry
+         @Isolated and run alone. Sequential: -Dtest.parallel=false -->
+    <test.parallel>true</test.parallel>
   </properties>
 
   <dependencies>
@@ -327,6 +331,13 @@
         <configuration>
           <argLine>@{jacocoArgLine} -javaagent:${project.build.directory}/byte-buddy-agent.jar
             --enable-native-access=ALL-UNNAMED -XX:NativeMemoryTracking=summary</argLine>
+          <properties>
+            <configurationParameters>
+              junit.jupiter.execution.parallel.enabled = ${test.parallel}
+              junit.jupiter.execution.parallel.mode.default = same_thread
+              junit.jupiter.execution.parallel.mode.classes.default = concurrent
+            </configurationParameters>
+          </properties>
           <systemPropertyVariables>
             <!-- JUL to Log4j2, so it is silent and capturable like everything else -->
             <java.util.logging.manager>org.apache.logging.log4j.jul.LogManager</java.util.logging.manager>

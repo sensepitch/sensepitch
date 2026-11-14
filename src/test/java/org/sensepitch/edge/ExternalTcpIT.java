@@ -28,11 +28,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /// Boots the proxy on a real TCP port with TLS.
 ///
 /// @author Raid Thabet
 @Timeout(value = 40, unit = TimeUnit.SECONDS)
+// alone: captures the log of all threads, the proxy logs from its event loops
+@Isolated
 class ExternalTcpIT {
 
   private final short ALWAYS_CLOSED_PORT = 1;
@@ -41,7 +44,7 @@ class ExternalTcpIT {
   private int port;
   private final RequestLogCapture requestLog = new RequestLogCapture();
 
-  @RegisterExtension LogCapture logs = new LogCapture();
+  @RegisterExtension LogCapture logs = LogCapture.ofAllThreads();
 
   /// Plain HTTP upstream, records the `traceparent` header of each request it receives
   private HttpServer upstream;

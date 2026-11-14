@@ -187,7 +187,7 @@ class ConfigReloadTest {
             .build();
     assertThat(reload(missingCert)).isFalse();
     assertThat(logs.errors())
-        .extracting(e -> e.getMessage().getFormattedMessage())
+        .extracting(LogCapture.Entry::message)
         .anyMatch(m -> m.contains("unknown upstream ref: missing"))
         .allMatch(m -> m.startsWith("Configuration rejected"))
         .hasSize(2);

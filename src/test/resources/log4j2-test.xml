@@ -2,15 +2,15 @@
 <!--
   Test logging. Takes precedence over the production log4j2.xml because of the "-test" suffix.
 
-  There is deliberately no appender, so the test run stays silent. Tests that want to assert on
-  log output register the LogCapture extension, which attaches an in-memory appender to the root
-  logger for the duration of the test.
+  There is deliberately no appender, so the test run stays silent.
 
-  The proxy's own loggers are at TRACE, so every test also runs the trace code, which in production
-  is only active with log4j2-trace.xml. Nothing is written, since there is no appender. LogCapture
-  captures INFO and above, trace output is not asserted on.
+  The proxy's own loggers do not write to Log4j2 in tests: they write to the in-memory LogSink,
+  which tests read with the LogCapture extension. Trace is always enabled there, so every test
+  runs the trace code, but only INFO and above is kept. What arrives here is Netty, JUL and other
+  libraries, and the tests of the Log4j2 forwarding itself, which use Log4jCapture.
 
-  For debugging, temporarily add the console appender reference below to the root logger.
+  For debugging, temporarily add the console appender reference below to the root logger: the
+  LogSink then passes every record on to Log4j2 as well, with the levels configured here.
 -->
 <Configuration xmlns="https://logging.apache.org/xml/ns"
                xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"

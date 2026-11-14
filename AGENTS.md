@@ -24,10 +24,15 @@
   Javadoc build with delombok, and the format check. Each part can be skipped on its own:
   `-Djacoco.skip`, `-Dmaven.javadoc.skip -Dlombok.delombok.skip`, `-Dspotless.check.skip`.
   Before a commit run the full `./mvnw verify`.
-- The tests run in one JVM, one class after the other. Do not add surefire forks: every test JVM
-  repeats about 2 s of warm-up (class loading, OpenSSL, crawler lists), which eats the gain even
-  with many cores. Running classes concurrently in one JVM needs `LogCapture` to stop listening on
-  the root logger first, a capturing test would see the log lines of the others.
+- `./mvnw test` runs the unit test classes concurrently in one JVM (JUnit parallel execution, set
+  on surefire in `pom.xml`): the methods of a class in order, as many threads as CPU cores.
+  Sequential: `-Dtest.parallel=false`. Integration tests (failsafe) and IDE runs are sequential.
+- A test class that depends on JVM wide state gets `@Isolated` with a `// alone:` reason, it then
+  runs while no other class does. `LogCapture.ofAllThreads()` and `Log4jCapture` refuse to work
+  without it. Keep new tests free of shared state instead where possible: `new LogCapture()` is
+  per thread, ports come from the OS, files go to `@TempDir`.
+- Do not add surefire forks: every test JVM repeats about 2 s of warm-up (class loading, OpenSSL,
+  crawler lists), which eats the gain even with many cores, and does not help on one CPU.
 - Serenity's `SerenityTestExecutionListener` must stay active for all tests: without it a failing
   `@Step` no longer fails its test. Serenity analyses the stack on every step call, so check many
   values inside one step instead of calling a step in a loop.
@@ -73,8 +78,15 @@
 - When a plain JUnit test duplicates a BDD test, keep the BDD test as the unit test and move the
   JUnit one to `*IT` (runs with `verify` only). Port scenarios the BDD test lacks first, and let both
   class docs reference each other, naming the BDD test as the place for new scenarios.
+- `./mvnw test` is the full smoke test: the unit tests alone cover everything that is unit
+  testable. `./mvnw verify` with the integration tests and the JaCoCo floor is the final check,
+  it must not be the only place where code of ours is executed. So do not move a test to `*IT` to
+  make `./mvnw test` faster when that takes coverage away from the unit tests; make the test fast
+  instead (fake clock, no real timers, see `TODO.md`). Check with `./mvnw clean test jacoco:report`
+  and `target/site/jacoco/jacoco.csv` before and after.
 - Tests that mainly exercise the JDK, Netty or other libraries rather than our code (e.g. real TLS
-  handshakes, GC or RSS behaviour) belong in `*IT`, so `./mvnw test` stays fast.
+  handshakes, GC or RSS behaviour) belong in `*IT`, so `./mvnw test` stays fast. An `*IT` may
+  repeat what a unit test covers against the real thing, it does not replace the unit test.
 
 ## Commit & Pull Request Guidelines
 - Recent commits use short, imperative summaries (e.g., “update crawlers”, “fix concurrency issues”).
@@ -119,7 +131,12 @@
 - Diagnostic logs go through `ProxyLogger` → Log4j2 → standard error (`src/main/resources/log4j2.xml`);
   the request log is written directly to standard out. Never use `System.out`/`System.err` elsewhere.
 - Tests use `src/test/resources/log4j2-test.xml`, which has no appender, so test runs are silent.
-  Assert on log output with the `LogCapture` JUnit extension; capture the request log by passing a
-  `RequestLogCapture` (a `RequestLogOutput`) to `Proxy` or the request logger.
-- Tests do not assert on trace output, it is no acceptance criterion. The proxy's loggers run at
-  `TRACE` in tests only so the trace code is covered; `LogCapture` captures `INFO` and above.
+  In tests the `ProxyLogger`s do not write to Log4j2 but to the in-memory `LogSink` (installed by
+  a JUnit `LauncherSessionListener` via `LogTarget.Factory`), which stores the records per logging
+  thread. Assert on log output with the `LogCapture` JUnit extension: `new LogCapture()` sees what
+  the test's own thread logged, `LogCapture.ofAllThreads()` is for code logging from its own
+  threads (event loops, senders, writers) and also sees other tests. `Log4jCapture` is only for
+  tests of the way into Log4j2 itself (Netty, JUL, `LogTarget.Log4jOutput`). Capture the request
+  log by passing a `RequestLogCapture` (a `RequestLogOutput`) to `Proxy` or the request logger.
+- Tests do not assert on trace output, it is no acceptance criterion. Trace is enabled in tests
+  only so the trace code is covered; `LogCapture` captures `INFO` and above.

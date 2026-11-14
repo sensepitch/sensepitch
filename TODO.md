@@ -219,13 +219,66 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
   reformat of about 40 files / 930 lines, lambda bodies hug the call (`.forEach(t -> {`) and indent
   less. P3: verify formatter/tool compatibility first. Done in its own commit, `formatJavadoc`
   stays off so the `///` comments remain untouched.
-- [ ] Serenity: use it properly or remove it. No `@Step` is recorded (4.3.4 and 5.4.2, also not with
-  `@Steps` injection), so it produces no useful report. Its cost: `SerenityTestExecutionListener`
-  runs for every test, needs the byte-buddy agent (`-javaagent` copy step) and
-  `net.bytebuddy.nexus.disabled` to avoid a `sun.misc.Unsafe` warning, 5.x writes ~1000 report
-  files (4 MB) to `target/serenity-reports`, and `./mvnw clean verify` takes ~38 s instead of
-  ~29.5 s without it (+30 %). Removing it touches 7 test classes (`@ExtendWith`, ~21 `@Step`).
-  - P2: choose whether useful reports justify the runtime and maintenance cost.
+- [ ] Serenity: a flag to turn off its reporting, for maximum test speed. Decided 2026-11-14:
+  Serenity stays, for the BDD step chains (`@Step`, `*BDDTest`). What is not needed in a normal
+  run is the reporting: once the first Serenity class ran, `SerenityTestExecutionListener` records
+  every test, also the plain JUnit ones, writes ~1150 JSON/XML files to `target/serenity-reports`
+  and generates the reports at the end of the run (~2.4 s, with a classpath scan). Measured
+  2026-11-14 for the unit tests without JaCoCo, sequential: 18.7 s with the listener, 11.8 s
+  without. The build never aggregates these files into an HTML report.
+  - What does not work: deactivating the listener
+    (`junit.platform.execution.listeners.deactivate`), then a failing `@Step` no longer fails its
+    test. An empty `output.formats` is rejected ("No valid output format has been defined").
+    Running the Serenity classes last (a `ClassOrderer`) saved under a second, the reports are
+    still written for every test of the plan.
+  - Not found yet: a supported Serenity setting that keeps the step failure handling but skips
+    recording and report generation. Options: ask upstream / read `ReportService` and
+    `BaseStepListener` for a switch; a no-op reporter if the reporter list is pluggable; or an own
+    listener/extension that only rethrows step failures. Whatever is chosen must keep failing
+    steps failing, in `@Test` and `@ParameterizedTest`, see the entry below.
+  - P2: default off for speed, reports on demand (e.g. `-Dserenity.reports`). Also still needed
+    for Serenity: the byte-buddy agent (`-javaagent` copy step) and `net.bytebuddy.nexus.disabled`.
+- [ ] Serenity swallows `@Step` failures in `@ParameterizedTest`: a failing assertion inside a step
+  passes silently when the test method is parameterized (found 2026-11-14, Serenity 5.4.2 with
+  JUnit 6.1.3, sequential and parallel alike, also on the commit before parallel execution). In a
+  plain `@Test` the same failure is reported. Reproduce: in `AdmissionChecksumBDDTest` change
+  `then_creation_time_is` to expect `millis + 1`, `creationTimeIsReturned` still passes all 6
+  cases. Affected, 9 parameterized tests in 6 classes: `AdmissionChecksumBDDTest` (2),
+  `DeflectorMethodsBDDTest` (2), `IpTraitsLabelsBDDTest` (2), `DownstreamHeadersBDDTest` (1),
+  `ResponseTimeoutBDDTest` (1), `ProxyRejectedConfigBDDTest` (1). Related: without the
+  `SerenityTestExecutionListener` no step failure is reported at all, so it cannot be deactivated.
+  - P1: these tests currently verify nothing through their steps. Find the cause in Serenity's
+    JUnit integration, or as fallback keep the assertions out of `@Step` methods or loop over the
+    values inside one `@Test`. Serenity stays, see the entry above, so this needs a fix.
+    Add a guard afterwards, e.g. one deliberately failing parameterized step that must fail.
+- [ ] Timing related tests: fake clock and a scheduler the test moves forward, then back into
+  the test scope. Today these tests wait on real timers and for completions on other threads,
+  which makes them slow, load sensitive, and forces `LogCapture.ofAllThreads()` with `@Isolated`.
+  The pattern exists in cache2k (simulated clock with a scheduler that advances) and should be
+  taken from there; `CircuitBreaker` already takes a `Ticker` and `CircuitBreakerBDDTest` drives
+  it with a mock.
+  - Seams needed in `HttpBatchSender` (under the 100% coverage rule): the timer, now
+    `CompletableFuture.delayedExecutor` in `scheduleFlush` and `scheduleProbe`; the clock, now
+    `System.nanoTime()` for the age of a batch; and the transport, now `httpClient.sendAsync` in
+    `post`, so a test completes a request itself with a status, a `Retry-After` or an
+    `IOException`. Production defaults stay as they are, no config change.
+  - Candidates: `OtlpLogDestinationTest` (3.6 s and `@Isolated`; 27 of its 34 tests run against a
+    log server, about 20 of them test sender logic: retry, give up, outage, buffer limit,
+    breaker probes, aging, slow start, concurrency limit), `ReloadableRequestLoggerTest` (2.2 s, waits for the
+    production retry backoff of 1 s), `RequestLoggerFactoryTest`, `HttpBatchSenderTest`,
+    `AsyncRequestLogWriterTest`, `ConfigFileWatcherTest`, and the durations in `ProxyShutdownIT`.
+  - The tests stay in the test scope meanwhile, see the coverage rule in `AGENTS.md`. Moving
+    `OtlpLogDestinationTest`'s 27 server tests to an `*IT` was tried 2026-11-14 and undone: it
+    saved about 4 s in `./mvnw test`, but the unit tests alone lost coverage, lines 95.1 % ->
+    94.5 %, branches 89.8 % -> 89.0 % (`HttpBatchSender` +20 lines and +11 branches missed,
+    `ThreadBatcher`, `OtlpBatchPayload`, `OtlpLogDestination`, `OtlpConfig`).
+  - On the fake clock a test needs no `@Isolated` any more. Keep a few real ones in addition, as
+    `*IT`: the wire format (headers, content type, gzip, body parsed by the OTLP classes), a
+    refused connection, and one multi threaded end to end run. They may only repeat what a unit
+    test covers.
+  - Write the converted tests as step chains (`*BDDTest`), with plain `@Test` methods as long as
+    the parameterized step gap above is open.
+  - P2.
 - [ ] Flaky build: one of six `./mvnw clean verify` runs failed (2026-11-13, after the graceful
   shutdown), the failing test is unknown, the log was not kept. Suspects are the timing based
   tests: `ProxyShutdownIT` (duration bounds), `ShadedJarIT.sigtermSendsTheRequestLogAndExits`
