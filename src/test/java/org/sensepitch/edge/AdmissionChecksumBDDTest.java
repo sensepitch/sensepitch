@@ -5,7 +5,6 @@ import static org.sensepitch.edge.DefaultAdmissionTokenGenerator.*;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.stream.IntStream;
 import net.serenitybdd.annotations.Step;
 import net.serenitybdd.annotations.Steps;
 import net.serenitybdd.junit5.SerenityJUnit5Extension;
@@ -23,8 +22,7 @@ class AdmissionChecksumBDDTest {
 
   @Test
   void existingEncoderRemainsCompatible() {
-    IntStream.range(0, 256)
-        .forEach(seed -> steps.given_a_token_from_the_existing_encoder(seed).then_token_is_valid());
+    steps.then_tokens_from_the_existing_encoder_are_valid_for_seeds(256);
   }
 
   @Test
@@ -74,18 +72,28 @@ class AdmissionChecksumBDDTest {
 
     @Step
     public ChecksumSteps given_a_token_from_the_existing_encoder(int seed, long seconds) {
+      createToken(seed, seconds);
+      return this;
+    }
+
+    /// Sets [#token] and [#hash]. Not a step, so a step checking many tokens stays one step:
+    /// Serenity analyses the stack trace on every step call, 256 tokens as given/then steps
+    /// took more than a second.
+    private void createToken(int seed, long seconds) {
       byte[] mixed = ByteBuffer.allocate(MIXED_BYTES).putInt(seed).array();
       String uniqueId = calculateTimeChars(seconds) + encodeUniqueId(mixed);
       hash =
           ChallengeGenerationAndVerification.sha256(
               (uniqueId + "secret").getBytes(StandardCharsets.ISO_8859_1));
       token = 'X' + uniqueId + encodeChecksum(hash);
-      return this;
     }
 
     @Step
-    public ChecksumSteps then_token_is_valid() {
-      assertThat(generator.checkAdmission(token)).as("token %s", token).isGreaterThan(0);
+    public ChecksumSteps then_tokens_from_the_existing_encoder_are_valid_for_seeds(int seeds) {
+      for (int seed = 0; seed < seeds; seed++) {
+        createToken(seed, 123);
+        assertThat(generator.checkAdmission(token)).as("token %s", token).isGreaterThan(0);
+      }
       return this;
     }
 

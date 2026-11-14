@@ -19,6 +19,18 @@
   `GzipCompressor`, ...) is held at 100% line and
   branch coverage by a class rule. A gap is a design question: remove the stray error handling,
   validate earlier, or test the case; do not lower the rule.
+- `./mvnw verify -Dfast` (profile `fast` in `pom.xml`) is the quick loop: it compiles, runs all unit
+  and integration tests and builds the fat JAR, but skips coverage (agent, report, floor), the
+  Javadoc build with delombok, and the format check. Each part can be skipped on its own:
+  `-Djacoco.skip`, `-Dmaven.javadoc.skip -Dlombok.delombok.skip`, `-Dspotless.check.skip`.
+  Before a commit run the full `./mvnw verify`.
+- The tests run in one JVM, one class after the other. Do not add surefire forks: every test JVM
+  repeats about 2 s of warm-up (class loading, OpenSSL, crawler lists), which eats the gain even
+  with many cores. Running classes concurrently in one JVM needs `LogCapture` to stop listening on
+  the root logger first, a capturing test would see the log lines of the others.
+- Serenity's `SerenityTestExecutionListener` must stay active for all tests: without it a failing
+  `@Step` no longer fails its test. Serenity analyses the stack on every step call, so check many
+  values inside one step instead of calling a step in a loop.
 - `./mvnw lombok:delombok javadoc:javadoc` renders the API docs into `target/reports/apidocs` and
   fails on doc errors. Delombok is bound to `verify`, so standalone javadoc needs it named explicitly.
 - `.mvn/jvm.config` runs Maven's own JVM with `-XX:TieredStopAtLevel=1` (C1 only): Maven, javac and
@@ -109,3 +121,5 @@
 - Tests use `src/test/resources/log4j2-test.xml`, which has no appender, so test runs are silent.
   Assert on log output with the `LogCapture` JUnit extension; capture the request log by passing a
   `RequestLogCapture` (a `RequestLogOutput`) to `Proxy` or the request logger.
+- Tests do not assert on trace output, it is no acceptance criterion. The proxy's loggers run at
+  `TRACE` in tests only so the trace code is covered; `LogCapture` captures `INFO` and above.

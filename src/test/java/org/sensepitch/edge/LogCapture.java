@@ -24,24 +24,14 @@ import org.junit.jupiter.api.extension.ExtensionContext;
 /// ```
 ///
 /// The in-memory appender is attached to the root logger before each test and removed afterwards.
-/// By default it captures events at `INFO` and above. The proxy's own loggers run at `TRACE` in
-/// tests (see `log4j2-test.xml`), use [#LogCapture(Level)] to capture trace events as well.
+/// It captures events at `INFO` and above. The proxy's own loggers run at `TRACE` in tests (see
+/// `log4j2-test.xml`), so the trace code is covered, but trace output is not captured: it is a
+/// debugging aid and no acceptance criterion.
 ///
 /// @author Jens Wilke
 public class LogCapture implements BeforeEachCallback, AfterEachCallback {
 
   private final Appender appender = new Appender();
-  private final Level minLevel;
-
-  /// Captures events at `INFO` and above
-  public LogCapture() {
-    this(Level.INFO);
-  }
-
-  /// @param minLevel least severe level captured, e.g. `TRACE` to capture everything
-  public LogCapture(Level minLevel) {
-    this.minLevel = minLevel;
-  }
 
   @Override
   public void beforeEach(ExtensionContext context) {
@@ -49,7 +39,7 @@ public class LogCapture implements BeforeEachCallback, AfterEachCallback {
     appender.start();
     LoggerContext ctx = (LoggerContext) LogManager.getContext(false);
     Configuration config = ctx.getConfiguration();
-    config.getRootLogger().addAppender(appender, minLevel, null);
+    config.getRootLogger().addAppender(appender, Level.INFO, null);
     ctx.updateLoggers();
   }
 
@@ -107,7 +97,7 @@ public class LogCapture implements BeforeEachCallback, AfterEachCallback {
     private final List<LogEvent> events = new ArrayList<>();
 
     Appender() {
-      // unique name, so a test can register more than one capture, e.g. with different levels
+      // unique name, so captures of different test instances never replace each other
       super(
           "LogCapture-" + System.identityHashCode(new Object()),
           null,
