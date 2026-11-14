@@ -142,7 +142,11 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
     if (loggingHandler.isRequestReceived() && !loggingHandler.isResponseStarted()) {
       // The exception is recorded in the request log. It is not sent to the client, it may reveal
       // internal addresses, and a line break in its message would make the status line invalid.
-      completeWithError(ctx, HttpResponseStatus.BAD_GATEWAY);
+      completeWithError(
+          ctx,
+          cause instanceof IngressTimeoutHandler.UpstreamResponseTimeoutException
+              ? HttpResponseStatus.GATEWAY_TIMEOUT
+              : HttpResponseStatus.BAD_GATEWAY);
       return;
     }
     // log if impossible to send normal response
