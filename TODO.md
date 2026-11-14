@@ -225,7 +225,9 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
   listener off was not tried.
   - P3: decide whether to make the reports useful or drop the report mode and the agent.
 - [ ] Timing related tests: fake clock and a scheduler the test moves forward, then back into
-  the test scope. Today these tests wait on real timers and for completions on other threads,
+  the test scope. Measurements and what was tried are in
+  [doc/design/test-speed.md](doc/design/test-speed.md).
+  Today these tests wait on real timers and for completions on other threads,
   which makes them slow, load sensitive, and forces `LogCapture.ofAllThreads()` with `@Isolated`.
   The pattern exists in cache2k (simulated clock with a scheduler that advances) and should be
   taken from there; `CircuitBreaker` already takes a `Ticker` and `CircuitBreakerBDDTest` drives
