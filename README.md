@@ -223,6 +223,7 @@ Requests handled by the deflector protection, by `ingress` (the requested host, 
 
 - `passed`: valid admission cookie, the request goes to the upstream
 - `bypassed`: no admission cookie, but a configured bypass or a detected crawler lets it through
+- `method_rejected`: method other than GET without admission or bypass; empty 403 response
 - `challenge_sent`: the challenge page was sent
 - `answer_accepted`: correct challenge answer, the admission cookie was issued
 - `answer_rejected`: wrong or incomplete answer
@@ -314,6 +315,10 @@ Example Paypal
 - post uri: POST /module/paypal/webhookhandler
 - user agent: PayPal/AUHR-1.0-1
 - IP: 173.0.81.140
+
+Without admission cookie or bypass, the deflector answers only GET with the challenge page. Any
+other method, e.g. a webhook POST, gets an empty 403 and counts as `method_rejected`, so webhooks
+need a bypass.
 
 
 ## Headers sent to the upstream
@@ -767,7 +772,7 @@ Attributes without a semantic convention:
 | `sensepitch.request.outcome` | why the request ended, always present, see below |
 | `sensepitch.upstream.status` | status of the upstream response when the edge replaced it with a fallback page |
 | `sensepitch.config.id` | short hash of the configuration active when the request started. The same configuration has the same id on every node with the same edge version, a reload with changes gives a new id |
-| `sensepitch.protection.outcome` | deflector outcome: `passed`, `bypassed`, `challenge_sent`, `answer_accepted`, `answer_rejected`, the label values of `sensepitch_deflector_requests_total` |
+| `sensepitch.protection.outcome` | deflector outcome: `passed`, `bypassed`, `method_rejected`, `challenge_sent`, `answer_accepted`, `answer_rejected`, the label values of `sensepitch_deflector_requests_total` |
 | `sensepitch.upstream.name`, `sensepitch.upstream.target` | the upstream that served the request: its name in the configuration, e.g. `upstreams.backend` or `sites.example.com.paths./api/*.upstream`, and its configured `host:port`. A static response has its path as name, e.g. `sites.example.com.response`, and no target. Absent when the edge answered itself, e.g. with a challenge |
 | `sensepitch.client.asn` | autonomous system number of the client address |
 | `sensepitch.ip_traits` | traits of the client address, e.g. `asn=64496, country=DE, crawler=...` |
@@ -791,7 +796,7 @@ to see at a glance whether the edge, the upstream or the client is involved:
 | Value | Meaning |
 |---|---|
 | `completed` | the upstream or a static response route answered, the response was sent |
-| `edge_response` | no upstream was selected, the edge answered itself: challenge, unserviced host, no site matched |
+| `edge_response` | no upstream was selected, the edge answered itself: challenge, rejected method, unserviced host, no site matched |
 | `fallback` | the upstream answered 500 or 503 and the fallback page was sent instead, see `sensepitch.upstream.status` |
 | `upstream_connect_failed` | the connection to the upstream failed (502) |
 | `upstream_write_failed` | forwarding the request to the upstream failed (502) |

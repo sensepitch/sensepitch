@@ -30,15 +30,8 @@
         }
         var url = baseUrl + (baseUrl.indexOf("?") === -1 ? "?" : "&") + qs.join("&");
 
-        // 1) try sendBeacon (best for background/unload)
-        if (navigator.sendBeacon) {
-            var body = qs.join("&");
-            if (navigator.sendBeacon(baseUrl + "?" + body, new Blob([body], { type: "application/x-www-form-urlencoded;charset=UTF-8" }))) {
-                return;
-            }
-        }
-
-        // 2) fallback: XHR
+        // The unadmitted challenge endpoints accept GET only. This reports the initial
+        // hidden-tab state, so XHR is sufficient; sendBeacon would always send POST.
         try {
             var xhr = new XMLHttpRequest();
             xhr.open("GET", url, true);
@@ -47,7 +40,7 @@
             return;
         } catch (e) {}
 
-        // 3) fallback: image ping
+        // Fallback: image ping
         try {
             var img = new Image();
             img.src = url;

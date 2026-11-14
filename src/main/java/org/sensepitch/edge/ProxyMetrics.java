@@ -52,6 +52,8 @@ public class ProxyMetrics implements HasMultipleMetrics {
     PASSED,
     /// No admission cookie, but bypass configured or crawler detected, request passed on
     BYPASSED,
+    /// Method other than GET, without admission or bypass, refused with an empty 403
+    METHOD_REJECTED,
     /// Challenge page sent
     CHALLENGE_SENT,
     /// Correct challenge answer, admission cookie issued
