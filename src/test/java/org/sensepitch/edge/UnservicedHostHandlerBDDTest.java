@@ -13,7 +13,6 @@ import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.*;
 import java.util.Set;
 import net.serenitybdd.annotations.Step;
-import net.serenitybdd.annotations.Steps;
 import net.serenitybdd.junit5.SerenityJUnit5Extension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,7 +32,7 @@ class UnservicedHostHandlerBDDTest {
   static final HttpResponseStatus STATUS_308_PERMANENT_REDIRECT =
       HttpResponseStatus.PERMANENT_REDIRECT;
 
-  @Steps UnservicedSteps steps;
+  final UnservicedSteps steps = new UnservicedSteps();
 
   @Test
   void allowedHost_passesThrough() {
