@@ -11,7 +11,7 @@ import java.net.InetAddress;
 ///
 /// @author Jens Wilke
 /// @see <a href="https://ipinfo.io/lite">IP info lite</a>
-public class IpInfoCountryAndAsnLookup implements IpTraitsLookup {
+public class IpInfoCountryAndAsnLookup implements IpTraitsCollector {
 
   private static final ProxyLogger LOG = ProxyLogger.get(IpInfoCountryAndAsnLookup.class);
 
@@ -28,7 +28,7 @@ public class IpInfoCountryAndAsnLookup implements IpTraitsLookup {
   }
 
   @Override
-  public void lookup(IpTraits.Builder builder, InetAddress address) throws Exception {
+  public void collect(IpTraits.Builder builder, InetAddress address) throws Exception {
     // var map = reader.get(address, Map.class);
     // output example: {continent=Europe, country=Belgium, country_code=BE, as_domain=google.com,
     // continent_code=EU, asn=AS15169, as_name=Google LLC}

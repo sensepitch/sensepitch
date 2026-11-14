@@ -330,6 +330,19 @@ a client cannot pretend to be a crawler or human traffic.
 | `Sp-Ip-Traits`, `Sp-Country`, `Sp-Asn` | traits of the client address, if the IP lookup knows it |
 | `Sp-Ja4`, `Sp-Ja4-Raw` | JA4 TLS fingerprint, if enabled, the raw one only if configured |
 
+`Sp-Ip-Traits` is a comma-and-space-separated list of `key=value` pairs. Known built-in traits
+appear first in the order `asn`, `country`, `crawler`; unknown traits are omitted. Custom labels
+provided by an IP traits collector follow in key order, for example
+`asn=64496, country=DE, network=hosting, risk=low`. This adds custom labels to the header, so
+upstreams that parse it should accept additional keys. When a client IP is available but no traits
+are known, the header is empty. `Sp-Country` and `Sp-Asn` carry the corresponding built-in
+values separately when known.
+
+Custom labels are added through `IpTraits.Builder.addLabel`. Keys `asn`, `country` and `crawler`
+are reserved. Keys and values must be nonempty visible ASCII without whitespace, commas or `=`;
+a later label with the same key replaces the earlier value. Crawler IP bypass requires the
+built-in `crawler` trait; mentioning `crawler` in a custom label does not trigger it.
+
 Before, these headers were named `X-Sensepitch-Ja4`, `X-Sensepitch-Ja4-Raw`,
 `X-Sensepitch-Ip-Traits`, `X-Sensepitch-Country`, `X-Sensepitch-Asn`,
 `X-Senseptich-Admission-Bypass` and `sensepitch-token`. `Sp-Traffic-Type` replaces

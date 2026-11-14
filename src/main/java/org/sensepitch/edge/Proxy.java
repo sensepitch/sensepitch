@@ -474,8 +474,9 @@ public class Proxy implements ProxyContext {
         new RequestLoggingHandler(metrics, requestLogger, trustTraceparent, configIds));
     pipeline.addLast(new IngressTimeoutHandler(connectionConfig, metrics));
     pipeline.addLast(new HttpServerKeepAliveHandler());
-    pipeline.addLast(new IpTraitsHandler(() -> state.get().ipTraitsLookup()));
+    pipeline.addLast(new IpTraitsHandler(state.get().ipTraitsLookup()));
     pipeline.addLast(ja4HeaderHandler);
+    // Resolve these per request so reloads apply to existing keep-alive connections.
     pipeline.addLast(new UnservicedHost.Handler(() -> state.get().unservicedHost()));
     pipeline.addLast("siteSelector", new SiteSelectorHandler(() -> state.get().siteSelector()));
     pipeline.addLast("fallback", dummy404Handler);

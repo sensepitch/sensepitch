@@ -34,6 +34,8 @@
 - Lombok is enabled; `lombok.config` sets the `Builder` class name. `toBuilder` can't be enabled
   globally, so config records declare `@Builder(toBuilder = true)` explicitly.
 - Keep class and method names descriptive and consistent with existing `*Config`, `*Handler`, and `*Lookup` patterns.
+- Use named reusable constants for no-op implementations and immutable empty values.
+- Read concurrent state once per method invocation when multiple values must come from the same snapshot.
 - Order methods so a class reads top down: entry points first, a factored-out helper that is not
   called from outside right after the method(s) calling it. Group the methods of larger classes by
   role (e.g. the API for callers, the end/lifecycle, timers, sending) with a short `//` section

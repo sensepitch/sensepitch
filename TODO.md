@@ -65,7 +65,6 @@ comments in the code; an entry from the code names the class and method it is ab
 - [ ] Admission performance: `DefaultAdmissionTokenGenerator` encodes the computed checksum to
   compare it, decoding the received one and comparing bytes is cheaper
 - [ ] improve bypass matching (maybe ASN, geo)
-- [ ] `IpTraitsHandler`: add key/value traits
 - [ ] `TrieIpLabelLookup`: consolidate into `IpTraitsLookup`
 - [ ] naming: the deflector is one component of the protection system, next to cookie gates and
   the bypass. Decide whether to rename the metric `sensepitch_deflector_requests_total` to
@@ -107,6 +106,10 @@ comments in the code; an entry from the code names the class and method it is ab
   failure: keep `target/surefire-reports` and `target/failsafe-reports`.
 
 ## Done
+
+- [x] `IpTraitsHandler`: include custom key/value traits in the upstream header, sorted by key;
+  `IpTraits.Builder.addLabel` rejects reserved keys and separators, `DetectCrawler` matches the
+  `crawler` key exactly instead of a substring
 
 - [x] remove the commented-out debug log lines (`ForwardHandler`, `IngressTimeoutHandler`,
   `IpTraitsHandler`, `RequestLoggingHandler`) and the commented-out Netty `LoggingHandler`

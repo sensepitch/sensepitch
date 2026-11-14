@@ -16,7 +16,7 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
 
   private static final ProxyLogger LOG = ProxyLogger.get(CombinedIpTraitsLookup.class);
 
-  private final List<IpTraitsLookup> ipAttributesLookups;
+  private final List<IpTraitsCollector> ipAttributesLookups;
   private final IpLabelLookup ipLabelLookup;
 
   public CombinedIpTraitsLookup(IpLookupConfig ipLookupConfig) throws IOException {
@@ -25,15 +25,15 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
 
   /// @param ipAttributesLookups queried in order for each address, a later one overwrites what an
   ///   earlier one found. Tests pass fakes here instead of databases.
-  CombinedIpTraitsLookup(List<IpTraitsLookup> ipAttributesLookups) throws IOException {
+  CombinedIpTraitsLookup(List<IpTraitsCollector> ipAttributesLookups) throws IOException {
     this.ipAttributesLookups = List.copyOf(ipAttributesLookups);
     ipLabelLookup = readCrawlerIpLists();
     LOG.info("IP lookup nodes: " + ((TrieIpLabelLookup) ipLabelLookup).getNodeCount());
   }
 
   /// Opens the databases configured
-  private static List<IpTraitsLookup> databaseLookups(IpLookupConfig cfg) throws IOException {
-    List<IpTraitsLookup> lookups = new ArrayList<>();
+  private static List<IpTraitsCollector> databaseLookups(IpLookupConfig cfg) throws IOException {
+    List<IpTraitsCollector> lookups = new ArrayList<>();
     if (cfg.geoIp2() != null) {
       if (cfg.geoIp2().asnDbPath() != null) {
         lookups.add(asnTraits(new GeoIp2AsnLookup(cfg.geoIp2().asnDbPath())));
@@ -82,7 +82,7 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
   }
 
   /// Sets the ASN, if found
-  static IpTraitsLookup asnTraits(AsnLookup asnLookup) {
+  static IpTraitsCollector asnTraits(AsnLookup asnLookup) {
     return (builder, address) -> {
       long asn = asnLookup.lookupAsn(address);
       if (asn >= 0) {
@@ -92,7 +92,7 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
   }
 
   /// Sets the country, if found
-  static IpTraitsLookup countryTraits(CountryLookup countryLookup) {
+  static IpTraitsCollector countryTraits(CountryLookup countryLookup) {
     return (builder, address) -> {
       var country = countryLookup.lookupCountry(address);
       if (country != null) {
@@ -106,10 +106,11 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
   }
 
   @Override
-  public void lookup(IpTraits.Builder builder, InetAddress address) {
-    for (IpTraitsLookup db : ipAttributesLookups) {
+  public IpTraits lookup(InetAddress address) {
+    var builder = IpTraits.builder();
+    for (IpTraitsCollector db : ipAttributesLookups) {
       try {
-        db.lookup(builder, address);
+        db.collect(builder, address);
       } catch (Exception e) {
         lookupException(e);
       }
@@ -129,5 +130,6 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
         }
       }
     }
+    return builder.build();
   }
 }

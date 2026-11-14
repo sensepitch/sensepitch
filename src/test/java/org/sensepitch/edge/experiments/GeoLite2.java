@@ -43,9 +43,7 @@ public class GeoLite2 {
 
   private void lookup(String address) throws Exception {
     InetAddress ip = InetAddress.getByName(address);
-    IpTraits.Builder builder = IpTraits.builder();
-    traitsLookup.lookup(builder, ip);
-    IpTraits traits = builder.build();
+    IpTraits traits = traitsLookup.lookup(ip);
     System.out.println(address + " " + traits);
   }
 }
