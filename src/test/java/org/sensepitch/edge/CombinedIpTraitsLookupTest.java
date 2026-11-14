@@ -103,8 +103,6 @@ public class CombinedIpTraitsLookupTest {
   }
 
   private static IpTraits lookup(CombinedIpTraitsLookup lookup, String address) throws IOException {
-    var builder = IpTraits.builder();
-    lookup.lookup(builder, InetAddress.getByName(address));
-    return builder.build();
+    return lookup.lookup(InetAddress.getByName(address));
   }
 }

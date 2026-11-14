@@ -12,6 +12,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /// @author Jens Wilke
 public class DetectCrawlerTest {
@@ -41,6 +43,23 @@ public class DetectCrawlerTest {
     assertThat(request.headers().get(Deflector.TRAFFIC_TYPE_HEADER))
         .isEqualTo(Deflector.TRAFFIC_BOT);
     assertThat(request.headers().get(BypassCheck.HEADER)).isEqualTo("crawler-ip-match");
+  }
+
+  /// Custom IP labels share the traits header, only the built-in `crawler` key counts.
+  @ParameterizedTest
+  @CsvSource(
+      delimiter = '|',
+      nullValues = "null",
+      value = {
+        "crawler=google:googlebot | true",
+        "asn=14618, crawler=amazon:amazonbot, network=hosting | true",
+        "null | false",
+        "asn=64496, network=crawler-farm | false",
+        "asn=64496, crawler-hint=yes | false",
+        "my-crawler=yes | false"
+      })
+  public void crawlerTraitMatchesTheKeyOnly(String traits, boolean expected) {
+    assertThat(DetectCrawler.hasCrawlerTrait(traits)).isEqualTo(expected);
   }
 
   private static boolean checkBypass(DetectCrawler detectCrawler, String userAgent) {

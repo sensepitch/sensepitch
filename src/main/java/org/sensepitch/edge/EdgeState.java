@@ -98,7 +98,7 @@ record EdgeState(
 
   private static IpTraitsLookup buildIpTraitsLookup(IpLookupConfig cfg) {
     if (cfg == null) {
-      return (builder, address) -> {};
+      return IpTraitsLookup.NONE;
     }
     try {
       return new CombinedIpTraitsLookup(cfg);

@@ -94,8 +94,7 @@ public class DetectCrawler implements BypassCheck {
       request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_BOT);
       return true;
     }
-    String ipLabels = IpTraitsHandler.extract(request);
-    if (ipLabels != null && ipLabels.contains("crawler")) {
+    if (hasCrawlerTrait(IpTraitsHandler.extract(request))) {
       BypassCheck.setBypassReason(request, REASON_CRAWLER_IP_MATCH);
       request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_BOT);
       return true;
@@ -111,5 +110,11 @@ public class DetectCrawler implements BypassCheck {
       }
     }
     return false;
+  }
+
+  /// Whether `Sp-Ip-Traits` holds the built-in `crawler` trait. Matches the key exactly, so a
+  /// custom label mentioning "crawler" in its key or value does not grant a bypass.
+  static boolean hasCrawlerTrait(String traits) {
+    return traits != null && (traits.startsWith("crawler=") || traits.contains(", crawler="));
   }
 }

@@ -24,13 +24,13 @@ public class IpTraitsHandlerTest {
 
   List<InetAddress> lookedUp = new ArrayList<>();
 
-  EmbeddedChannel channel(SocketAddress remote, IpTraitsLookup lookup) {
-    IpTraitsLookup recording =
+  EmbeddedChannel channel(SocketAddress remote, IpTraitsCollector lookup) {
+    IpTraitsCollector recording =
         (builder, address) -> {
           lookedUp.add(address);
-          lookup.lookup(builder, address);
+          lookup.collect(builder, address);
         };
-    return new EmbeddedChannel(new IpTraitsHandler(recording)) {
+    return new EmbeddedChannel(new IpTraitsHandler(IpTraitsLookup.fromCollector(recording))) {
       @Override
       protected SocketAddress remoteAddress0() {
         return remote;
@@ -97,7 +97,9 @@ public class IpTraitsHandlerTest {
 
   @Test
   public void noInetAddressNoLookup() {
-    EmbeddedChannel channel = new EmbeddedChannel(new IpTraitsHandler((b, a) -> lookedUp.add(a)));
+    EmbeddedChannel channel =
+        new EmbeddedChannel(
+            new IpTraitsHandler(IpTraitsLookup.fromCollector((b, a) -> lookedUp.add(a))));
     HttpRequest request = read(channel, request());
     assertThat(IpTraitsHandler.extract(request)).isNull();
     assertThat(lookedUp).isEmpty();
@@ -106,8 +108,8 @@ public class IpTraitsHandlerTest {
   /// Headers sent by the client are replaced or removed, so a client cannot pass as a crawler.
   @Test
   public void clientSuppliedHeadersAreNotForwarded() {
-    for (IpTraitsLookup lookup :
-        new IpTraitsLookup[] {(b, a) -> {}, (b, a) -> b.asn(1).isoCountry("DE")}) {
+    for (IpTraitsCollector lookup :
+        new IpTraitsCollector[] {(b, a) -> {}, (b, a) -> b.asn(1).isoCountry("DE")}) {
       HttpRequest forged = request();
       forged.headers().set(IpTraitsHandler.TRAITS_HEADER, "crawler=google:googlebot");
       forged.headers().set(IpTraitsHandler.COUNTRY_HEADER, "US");
@@ -126,7 +128,8 @@ public class IpTraitsHandlerTest {
     }
     HttpRequest forged = request();
     forged.headers().set(IpTraitsHandler.TRAITS_HEADER, "crawler=google:googlebot");
-    EmbeddedChannel noAddress = new EmbeddedChannel(new IpTraitsHandler((b, a) -> {}));
+    EmbeddedChannel noAddress =
+        new EmbeddedChannel(new IpTraitsHandler(IpTraitsLookup.fromCollector((b, a) -> {})));
     assertThat(IpTraitsHandler.extract(read(noAddress, forged))).isNull();
   }
 }
