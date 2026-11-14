@@ -5,6 +5,8 @@
 - `src/main/resources/` holds static assets and data (crawler lists, challenge assets, HTML/CSS/JS).
 - `src/test/java/org/sensepitch/edge/` contains JUnit 5 and Serenity BDD tests; `src/test/resources/` holds test configs and TLS fixtures.
 - `performance-test/` includes benchmarking setup and notes.
+- `doc/design/` holds the design documents, one per topic, see "Design Documents" below.
+  `doc/kubernetes-support/` is a numbered plan for one feature.
 - `pom.xml` is the Maven build definition; `mvnw`/`mvnw.cmd` are the recommended entry points.
 
 ## Build, Test, and Development Commands
@@ -24,6 +26,8 @@
   Javadoc build with delombok, and the format check. Each part can be skipped on its own:
   `-Djacoco.skip`, `-Dmaven.javadoc.skip -Dlombok.delombok.skip`, `-Dspotless.check.skip`.
   Before a commit run the full `./mvnw verify`.
+- How the tests are run and why (parallel execution, isolation, log capture, Serenity, what was
+  tried and dropped) is in `doc/design/test-speed.md`. Update it when the test setup changes.
 - `./mvnw test` runs the unit test classes concurrently in one JVM (JUnit parallel execution, set
   on surefire in `pom.xml`): the methods of a class in order, as many threads as CPU cores.
   Sequential: `-Dtest.parallel=false`. Integration tests (failsafe) and IDE runs are sequential.
@@ -91,6 +95,29 @@
 - Tests that mainly exercise the JDK, Netty or other libraries rather than our code (e.g. real TLS
   handshakes, GC or RSS behaviour) belong in `*IT`, so `./mvnw test` stays fast. An `*IT` may
   repeat what a unit test covers against the real thing, it does not replace the unit test.
+
+## Design Documents
+
+- A design document in `doc/design/<topic>.md` records why something is built the way it is and
+  what was compared. The behaviour itself is described in the class docs, do not repeat it.
+  Examples: `circuit-breaker.md`, `request-log.md`, `test-speed.md`.
+- Structure, in this order; leave out a section that has nothing to say:
+  1. Title and an introduction: which classes or which part of the build it covers, with links
+     to the sources, and what the document is for.
+  2. `## Purpose and scope`: the problem, and the rules or constraints that bound the design.
+  3. `## Overview`, optional: the parts and how they work together, or the numbers at a glance.
+  4. `## Design decisions`: one `###` section per decision, the heading states the decision
+     (e.g. "No sender thread"), the text gives the reason and the consequence.
+  5. What was compared or rejected: `## Implementations investigated` for other projects that
+     were read, `## Alternatives considered` for approaches that were tried or dropped, each with
+     the reason or the measurement that decided it.
+  6. `## Limitations`: what the design does not do or does not guarantee.
+  7. `## Planned improvements`: short, the entries themselves live in `TODO.md`.
+- State where facts come from: a measurement with date, machine and how it was taken, a library
+  with its version, and say when something is inferred and not verified.
+- Link sources relative to the document (`../../src/main/java/...`), wrap at 100 columns.
+- Keep the document current: a change that overturns a decision or a number updates the document
+  in the same commit. `TODO.md` links to the design document instead of repeating it.
 
 ## Commit & Pull Request Guidelines
 - Recent commits use short, imperative summaries (e.g., “update crawlers”, “fix concurrency issues”).
