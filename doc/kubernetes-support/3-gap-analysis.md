@@ -1,7 +1,8 @@
 # Gap Analysis: Existing Edge versus Gateway API
 
-This compares the current code (state of commit `4336764`) with what
-`2-gateway-api-scope.md` needs. Source paths are relative to
+This compares the current code (state of commit `4336764`, runtime rows updated 2026-11-14)
+with what `2-gateway-api-scope.md` needs. The next steps are tracked in `TODO.md`, section
+"Kubernetes". Source paths are relative to
 `src/main/java/org/sensepitch/edge/`.
 
 ## Configuration model
@@ -15,7 +16,7 @@ This compares the current code (state of commit `4336764`) with what
 | Header match | Only cookie-name overrides (`RoutingOverrideConfig.whenCookie`) | Exact header matching |
 | Filters | `ResponseConfig` can redirect (`location`, `status`) and set cookies | `RequestHeaderModifier`; full `RequestRedirect` (scheme, host, port, path, status) |
 | Backends | `UpstreamConfig`: one `target` `host[:port]` | Multiple endpoints, weights, invalid-backend marker |
-| TLS | `SslConfig(keyPath, certPath)`, `snis`, Let's Encrypt directory | Inline PEM from the snapshot; certificate swap at runtime |
+| TLS | `SslConfig(keyPath, certPath)`, `snis`, Let's Encrypt directory; a reload replaces the certificates | Inline PEM from the snapshot; a changed certificate file alone triggers no reload (cert-manager renewal) |
 | Unknown host | `UnservicedHost`: 400 or redirect | 404 for no matching route in Gateway API mode |
 
 The config loader (`Main`, `config/RecordConstructor`, `EnvInjector`) builds immutable
@@ -26,12 +27,12 @@ same loader can read JSON snapshots.
 
 | Area | Existing | Gap |
 |---|---|---|
-| Reconfiguration | None. `Proxy` builds `SiteSelector`, SNI mapping, known hosts, `UnservicedHost` once into `final` fields | Immutable snapshot object behind an `AtomicReference`, read per request; delegating SNI `Mapping` |
-| Validation | Exceptions in record and `SiteSelector` constructors | Reusable: build and validate a snapshot before swapping it, report errors |
-| Metrics | `PrometheusMetricsBridge` starts its HTTP server inside the `Proxy` constructor | Move to `Main` so a rebuild does not register twice |
+| Reconfiguration | Done: `EdgeState` (routing, SNI mapping, certificates, IP lookup) behind an `AtomicReference`, swapped on reload; triggered by `ConfigFileWatcher` or `POST /reload` on the admin endpoint | Listener changes still need a restart (`listen` is restart-only); the snapshot comes from a file, not from the controller |
+| Validation | Done: a reload builds and validates the complete state before the swap and rejects an invalid one with the reason, the active state stays | Report errors to the controller (acknowledgements, Gateway status) |
+| Metrics | Done: `MetricsServer` and collectors are created once per `Proxy`; a reload swaps the state and registers nothing twice | — |
 | Crawler DB | `DetectCrawler` parses the TSV on each `Deflector` construction | Cache it across rebuilds |
 | Upstream connections | No pooling (pool code disabled in `DefaultUpstream`), DNS via Netty `Bootstrap` | Endpoint selection by weight; pooling optional |
-| Health | No health or readiness endpoint | `/healthz`, `/readyz` on an opt-in admin port |
+| Health | Admin endpoint (`AdminServer`, opt-in, loopback by default) with `POST /reload` only | `/healthz`, `/readyz` on the admin port |
 | Shutdown | Done: SIGTERM closes the listener, drains the connections, then the request log, within `shutdownTimeoutMillis` (see README) | Not ready on SIGTERM, once a readiness endpoint exists |
 | Client IP | TCP peer, `X-Forwarded-For` set; no PROXY protocol | PROXY protocol v1/v2 per listener; incoming `X-Forwarded-For` / `-Proto` accepted only from trusted proxy CIDRs (load balancer terminating TLS) |
 | Bind address | One `listen.address` for all listeners | Bind address per listener, so one node can serve several IPs (one IP per Gateway in HostNetwork mode) |
