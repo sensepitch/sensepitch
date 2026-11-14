@@ -845,6 +845,11 @@ Tracing costs a level check per trace call. For maximum performance,
 `SENSEPITCH_EDGE_DISABLE_TRACE=true` removes the trace code completely, a configured trace level
 then has no effect. The former variable `SENSEPITCH_EDGE_LOG_LEVEL` is no longer supported.
 
+## Build verification
+
+The integration tests run with `./mvnw verify` and require Node.js 22 or newer on `PATH` for
+the challenge JavaScript suite. See [its test README](src/test/javascript/README.md).
+
 ## Local testing
 
 ````

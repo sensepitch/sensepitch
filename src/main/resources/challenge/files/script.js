@@ -195,12 +195,12 @@
                 var data = utf8Bytes(str);
                 var p = subtle.digest({ name: 'SHA-256' }, data);
                 if (typeof p.then === 'function') {
-                    p.then(function (buf) { cb(null, toHex(new Uint8Array(buf))); },
+                    p.then(function (buf) { cb(null, toHex(new Uint8Array(buf)), 'native'); },
                         function (err) { cb(err || new Error('digest failed')); });
                     return;
                 }
                 // old msCrypto: use events (already async)
-                p.oncomplete = function (e) { cb(null, toHex(new Uint8Array(e.target.result))); };
+                p.oncomplete = function (e) { cb(null, toHex(new Uint8Array(e.target.result)), 'native'); };
                 p.onerror = function () { cb(new Error('digest failed')); };
                 return;
             }
@@ -208,7 +208,7 @@
 
         // Shim path (pure JS) — force async delivery to avoid stack growth:
         setTimeout(function () {
-            cb(null, sha256HexSync(str));
+            cb(null, sha256HexSync(str), 'shim');
         }, 0);
     }
 
@@ -222,9 +222,9 @@
                 if (maxIterations > 0 && nonce >= maxIterations) {
                     return done(new Error('max iterations exceeded'));
                 }
-                sha256Hex(CHALLENGE + nonce, function (err, hex) {
+                sha256Hex(CHALLENGE + nonce, function (err, hex, method) {
                     if (!err && hex && hex.indexOf(TARGET_PREFIX) === 0) {
-                        return done(null, nonce);
+                        return done(null, nonce, method);
                     }
                     nonce++;
                     iterations++;
@@ -298,15 +298,25 @@
         var gate = document.getElementById('human-gate');
         if (gate) gate.remove();
 
-        // Solve PoW, then canvas, then request
-        runPoW(function (err, nonce) {
+        // Measure only the PoW run, including asynchronous digest and cooperative yield time.
+        // Prefer a monotonic clock so wall-clock corrections cannot distort the duration.
+        var now = (self.performance && typeof self.performance.now === 'function')
+            ? function () { return self.performance.now(); }
+            : function () { return new Date().getTime(); };
+        var calculationStarted = now();
+        runPoW(function (err, nonce, method) {
             if (err) {
                 status.textContent = 'Verification failed. Please refresh.';
                 return;
             }
+            var durationMs = Math.max(0, now() - calculationStarted);
+            var completedAt = new Date().getTime();
             status.textContent = 'Requesting access…';
             var qs = 'challenge=' + encodeURIComponent(CHALLENGE)
-                + '&nonce=' + encodeURIComponent(nonce);
+                + '&nonce=' + encodeURIComponent(nonce)
+                + '&completedAt=' + encodeURIComponent(completedAt)
+                + '&durationMs=' + encodeURIComponent(durationMs)
+                + '&method=' + encodeURIComponent(method);
             httpGetWithCreds(ENDPOINT + '?' + qs, function (_err, ok) {
                 if (ok) {
                     status.textContent = 'Verified! Passing on…';

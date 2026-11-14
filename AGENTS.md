@@ -11,6 +11,7 @@
 - `./mvnw clean package` builds the project and produces a shaded JAR at `target/sensepitch-edge-*-with-dependencies.jar`.
 - `./mvnw test` runs the JUnit/Serenity test suite via Surefire.
 - `./mvnw spotless:check` verifies formatting; `./mvnw spotless:apply` auto-formats Java sources.
+- `./mvnw verify` requires Node.js 22 or newer on `PATH` for the challenge JavaScript integration test.
 - `./mvnw verify` runs the whole gate: tests, `spotless:check`, the Javadoc build, and the JaCoCo
   coverage floor (`jacoco-check` in `pom.xml`, unit and integration tests combined). Raise the floor
   when coverage improves. The generic request log posting (`HttpBatchSender`, `CircuitBreaker`,
