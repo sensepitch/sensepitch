@@ -702,6 +702,25 @@
 
   <profiles>
     <profile>
+      <!-- ./mvnw verify -Dfast: compiles, runs all unit and integration tests and builds the fat
+           JAR, but leaves out what is not needed to see whether the code works: coverage
+           (agent, report and floor), the Javadoc build with its delombok, and the format check.
+           For the inner loop only, the full gate before a commit is ./mvnw verify.
+           Each part can also be skipped on its own, e.g. -Djacoco.skip -->
+      <id>fast</id>
+      <activation>
+        <property>
+          <name>fast</name>
+        </property>
+      </activation>
+      <properties>
+        <jacoco.skip>true</jacoco.skip>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
+        <lombok.delombok.skip>true</lombok.delombok.skip>
+        <spotless.check.skip>true</spotless.check.skip>
+      </properties>
+    </profile>
+    <profile>
       <!-- VS Code and Eclipse (m2e) compile into their own directory, so their background builds
            never overwrite the classes of a Maven build in target/ -->
       <id>m2e</id>

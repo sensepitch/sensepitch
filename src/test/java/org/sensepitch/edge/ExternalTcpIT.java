@@ -50,7 +50,6 @@ class ExternalTcpIT {
 
   @BeforeEach
   void startProxy() throws Exception {
-    port = freePort();
     upstream = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     upstream.createContext(
         "/",
@@ -63,6 +62,9 @@ class ExternalTcpIT {
           exchange.close();
         });
     upstream.start();
+    // probed after the helper servers have their ports: probed earlier, one of them could be
+    // given the port just released, the proxy then fails to bind and the test talks to the helper
+    port = freePort();
 
     ProxyConfig config =
         ProxyConfig.builder()

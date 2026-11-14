@@ -42,6 +42,7 @@ class ProxyShutdownIT {
 
   private final RequestLogCapture requestLog = new RequestLogCapture();
   private final CountDownLatch upstreamGotRequest = new CountDownLatch(1);
+  private final CountDownLatch testOver = new CountDownLatch(1);
   private final AtomicInteger otlpRecords = new AtomicInteger();
 
   private volatile long upstreamDelayMillis;
@@ -52,14 +53,15 @@ class ProxyShutdownIT {
   private int port;
 
   void startProxy(long shutdownTimeoutMillis, long drainTimeoutMillis) throws Exception {
-    port = freePort();
     upstream = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     upstream.createContext(
         "/",
         exchange -> {
           upstreamGotRequest.countDown();
           try {
-            Thread.sleep(upstreamDelayMillis);
+            // the delay ends early when the test is over, otherwise stopping the upstream
+            // waits for the rest of it
+            testOver.await(upstreamDelayMillis, TimeUnit.MILLISECONDS);
           } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
           }
@@ -83,6 +85,9 @@ class ProxyShutdownIT {
           exchange.close();
         });
     logServer.start();
+    // probed after the helper servers have their ports: probed earlier, one of them could be
+    // given the port just released, the proxy then fails to bind and the test talks to the helper
+    port = freePort();
     ProtectionConfig noProtection = ProtectionConfig.builder().disable(true).build();
     config =
         ProxyConfig.builder()
@@ -153,6 +158,7 @@ class ProxyShutdownIT {
     if (proxy != null) {
       proxy.shutdown();
     }
+    testOver.countDown();
     if (upstream != null) {
       upstream.stop(0);
     }
