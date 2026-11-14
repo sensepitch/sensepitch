@@ -41,8 +41,6 @@ comments in the code; an entry from the code names the class and method it is ab
 
 - [ ] bypass config should be in the protection and not in the protection providers => we need a
   proper API for the protection provider
-- [ ] block requests that are not GET and POST if not admitted or crawler bypassed;
-  `DeflectorHandler` answers any other method with the challenge page
 - [ ] Integrate https://github.com/cruftex/GoodBots
 - [ ] Perplexity, https://docs.perplexity.ai/guides/bots: the user agent is in `crawlers.tsv`,
   the IP ranges are not in `crawler-ips/` yet
@@ -98,6 +96,10 @@ comments in the code; an entry from the code names the class and method it is ab
   failure: keep `target/surefire-reports` and `target/failsafe-reports`.
 
 ## Done
+
+- [x] refuse methods other than GET without admission or bypass with an empty 403;
+  count and log the deflector outcome as `method_rejected`. Challenge telemetry uses GET
+  (XHR with an image fallback) instead of `sendBeacon`, which always sends POST
 
 - [x] Admission performance: decode the received checksum and compare hash bytes instead of
   Base62-encoding the computed checksum in `DefaultAdmissionTokenGenerator.checkAdmission`

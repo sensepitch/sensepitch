@@ -39,6 +39,16 @@ public class DeflectorHandler implements ProtectionPlugin {
       metrics.countDeflectorRequest(request, DeflectorOutcome.BYPASSED);
       report(ctx, DeflectorOutcome.BYPASSED);
       return false;
+    } else if (!request.method().equals(HttpMethod.GET)) {
+      // the challenge and its endpoints need GET only, other methods get no challenge page
+      request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_UNKNOWN);
+      metrics.countDeflectorRequest(request, DeflectorOutcome.METHOD_REJECTED);
+      report(ctx, DeflectorOutcome.METHOD_REJECTED);
+      FullHttpResponse response =
+          new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.FORBIDDEN);
+      response.headers().set(HttpHeaderNames.CONTENT_LENGTH, 0);
+      response.headers().set(HttpHeaderNames.CACHE_CONTROL, "no-store");
+      ctx.writeAndFlush(response);
     } else if (request.uri().startsWith(Deflector.CHALLENGE_STEP_URL)) {
       // this is just for progress reporting and debugging
       request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_UNKNOWN);
@@ -52,12 +62,10 @@ public class DeflectorHandler implements ProtectionPlugin {
       response.headers().set(HttpHeaderNames.PRAGMA, "no-cache");
       response.headers().set(HttpHeaderNames.EXPIRES, "0");
       ctx.writeAndFlush(response);
-    } else if (request.method() == HttpMethod.GET
-        && request.uri().startsWith(Deflector.CHALLENGE_RESOURCES_URL)) {
+    } else if (request.uri().startsWith(Deflector.CHALLENGE_RESOURCES_URL)) {
       request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_UNKNOWN);
       deflector.outputChallengeResources(ctx, request);
-    } else if (request.method() == HttpMethod.GET
-        && request.uri().startsWith(Deflector.CHALLENGE_ANSWER_URL)) {
+    } else if (request.uri().startsWith(Deflector.CHALLENGE_ANSWER_URL)) {
       request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_HUMAN);
       // reported before responding, the request is logged when the response is written
       boolean correct = deflector.verifyChallengeAnswer(request);
