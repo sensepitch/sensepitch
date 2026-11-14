@@ -56,8 +56,6 @@ comments in the code; an entry from the code names the class and method it is ab
 - [ ] Admission performance: skip validation for keep-alive connections
 - [ ] Admission performance: deliver the challenge via cookie and serve static HTML
   (`Deflector.outputChallengeHtml` renders the page per request, only the challenge changes)
-- [ ] Admission performance: `DefaultAdmissionTokenGenerator` encodes the computed checksum to
-  compare it, decoding the received one and comparing bytes is cheaper
 - [ ] improve bypass matching (maybe ASN, geo)
 - [ ] `TrieIpLabelLookup`: consolidate into `IpTraitsLookup`
 - [ ] naming: the deflector is one component of the protection system, next to cookie gates and
@@ -100,6 +98,9 @@ comments in the code; an entry from the code names the class and method it is ab
   failure: keep `target/surefire-reports` and `target/failsafe-reports`.
 
 ## Done
+
+- [x] Admission performance: decode the received checksum and compare hash bytes instead of
+  Base62-encoding the computed checksum in `DefaultAdmissionTokenGenerator.checkAdmission`
 
 - [x] `IngressTimeoutHandler` response timeout: fire `UpstreamResponseTimeoutException` to close
   the upstream, let `ExceptionHandler` send the 504 once, and wait for the write before closing

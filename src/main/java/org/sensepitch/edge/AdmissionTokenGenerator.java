@@ -11,6 +11,6 @@ public interface AdmissionTokenGenerator {
   /// Check whether admission is valid. This is done for every incoming request and should be fast.
   /// Interface is prepared to indicate admission expiry.
   ///
-  /// @return `ADMISSION_OK` if valid, or `ADMISSION_INVALID`
+  /// @return the creation time of the token in epoch milliseconds if valid, or 0 if invalid
   long checkAdmission(String token);
 }
