@@ -124,13 +124,8 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
             @Override
             public void fire() {
               RequestLoggingHandler.reportOutcome(ctx, RequestOutcome.UPSTREAM_TIMEOUT);
-              FullHttpResponse response =
-                  new DefaultFullHttpResponse(
-                      HttpVersion.HTTP_1_1, HttpResponseStatus.GATEWAY_TIMEOUT);
-              response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
-              ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+              // The exception closes the upstream; ExceptionHandler sends and logs the 504.
               ctx.fireExceptionCaught(new UpstreamResponseTimeoutException());
-              // throw new ClientTimeoutHandler.UpstreamResponseTimeoutException();
             }
           };
     } else {

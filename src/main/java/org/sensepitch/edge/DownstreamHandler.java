@@ -149,7 +149,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
             future -> {
               assert ctx.executor().inEventLoop();
               if (future.isSuccess()) {
-                upstreamChannelFuture.resultNow().write(request);
+                future.resultNow().write(request);
                 if (contentExpected) {
                   ctx.channel().config().setAutoRead(true);
                 }
@@ -231,7 +231,13 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       // there is no connection pool, so the upstream connection is closed after each response,
       // also if the upstream would keep it alive. The reference is cleared here to ensure no more
       // throttling is done.
-      upstreamChannelFuture.resultNow().close();
+      upstreamChannelFuture.addListener(
+          (FutureListener<Channel>)
+              future -> {
+                if (future.isSuccess()) {
+                  future.resultNow().close();
+                }
+              });
       upstreamChannelFuture = null;
     }
     super.write(ctx, msg, promise);

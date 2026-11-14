@@ -33,9 +33,6 @@ comments in the code; an entry from the code names the class and method it is ab
 - [ ] unify timeout with keep alive handler: `IngressTimeoutHandler` only works with
   `HttpKeepAliveHandler` next; corner case when the ingress still sends while the upstream is
   responding (could answer with `Connection: close`)
-- [ ] `IngressTimeoutHandler` response timeout: it writes a 504 *and* fires
-  `UpstreamResponseTimeoutException`, decide which one
-- [ ] `ExceptionHandler`: a timeout gets a 502 like any other error, should it get its own status?
 - [ ] `RequestLoggingHandler.write` / `log`: on a write error, switch the response, log a
   different status code, or log content length 0?
 - [ ] `SiteSelector`: support wildcard hosts (rejected at config load for now)
@@ -103,6 +100,10 @@ comments in the code; an entry from the code names the class and method it is ab
   failure: keep `target/surefire-reports` and `target/failsafe-reports`.
 
 ## Done
+
+- [x] `IngressTimeoutHandler` response timeout: fire `UpstreamResponseTimeoutException` to close
+  the upstream, let `ExceptionHandler` send the 504 once, and wait for the write before closing
+- [x] `ExceptionHandler`: respond to `UpstreamResponseTimeoutException` with 504 instead of 502
 
 - [x] `DownstreamHandler.write`: remove upstream hop-by-hop response headers, including headers
   named in `Connection`; keep chunked framing for the downstream HTTP codec
