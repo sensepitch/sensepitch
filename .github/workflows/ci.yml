@@ -24,6 +24,11 @@ jobs:
         java-version: ${{ matrix.java-version }}
         distribution: 'temurin'
 
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+
 # Switch off caching, .m2 on our self hosted worker nodes
 # stays between jobs
 #         
