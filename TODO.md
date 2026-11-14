@@ -219,38 +219,11 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
   reformat of about 40 files / 930 lines, lambda bodies hug the call (`.forEach(t -> {`) and indent
   less. P3: verify formatter/tool compatibility first. Done in its own commit, `formatJavadoc`
   stays off so the `///` comments remain untouched.
-- [ ] Serenity: a flag to turn off its reporting, for maximum test speed. Decided 2026-11-14:
-  Serenity stays, for the BDD step chains (`@Step`, `*BDDTest`). What is not needed in a normal
-  run is the reporting: once the first Serenity class ran, `SerenityTestExecutionListener` records
-  every test, also the plain JUnit ones, writes ~1150 JSON/XML files to `target/serenity-reports`
-  and generates the reports at the end of the run (~2.4 s, with a classpath scan). Measured
-  2026-11-14 for the unit tests without JaCoCo, sequential: 18.7 s with the listener, 11.8 s
-  without. The build never aggregates these files into an HTML report.
-  - What does not work: deactivating the listener
-    (`junit.platform.execution.listeners.deactivate`), then a failing `@Step` no longer fails its
-    test. An empty `output.formats` is rejected ("No valid output format has been defined").
-    Running the Serenity classes last (a `ClassOrderer`) saved under a second, the reports are
-    still written for every test of the plan.
-  - Not found yet: a supported Serenity setting that keeps the step failure handling but skips
-    recording and report generation. Options: ask upstream / read `ReportService` and
-    `BaseStepListener` for a switch; a no-op reporter if the reporter list is pluggable; or an own
-    listener/extension that only rethrows step failures. Whatever is chosen must keep failing
-    steps failing, in `@Test` and `@ParameterizedTest`, see the entry below.
-  - P2: default off for speed, reports on demand (e.g. `-Dserenity.reports`). Also still needed
-    for Serenity: the byte-buddy agent (`-javaagent` copy step) and `net.bytebuddy.nexus.disabled`.
-- [ ] Serenity swallows `@Step` failures in `@ParameterizedTest`: a failing assertion inside a step
-  passes silently when the test method is parameterized (found 2026-11-14, Serenity 5.4.2 with
-  JUnit 6.1.3, sequential and parallel alike, also on the commit before parallel execution). In a
-  plain `@Test` the same failure is reported. Reproduce: in `AdmissionChecksumBDDTest` change
-  `then_creation_time_is` to expect `millis + 1`, `creationTimeIsReturned` still passes all 6
-  cases. Affected, 9 parameterized tests in 6 classes: `AdmissionChecksumBDDTest` (2),
-  `DeflectorMethodsBDDTest` (2), `IpTraitsLabelsBDDTest` (2), `DownstreamHeadersBDDTest` (1),
-  `ResponseTimeoutBDDTest` (1), `ProxyRejectedConfigBDDTest` (1). Related: without the
-  `SerenityTestExecutionListener` no step failure is reported at all, so it cannot be deactivated.
-  - P1: these tests currently verify nothing through their steps. Find the cause in Serenity's
-    JUnit integration, or as fallback keep the assertions out of `@Step` methods or loop over the
-    values inside one `@Test`. Serenity stays, see the entry above, so this needs a fix.
-    Add a guard afterwards, e.g. one deliberately failing parameterized step that must fail.
+- [ ] Serenity reports (`-Dserenity.reports`) are of little use: no step is recorded for any
+  class, the reports list tests only. The byte-buddy agent (`-javaagent` copy step) and
+  `net.bytebuddy.nexus.disabled` are kept for that mode; whether they are needed with the
+  listener off was not tried.
+  - P3: decide whether to make the reports useful or drop the report mode and the agent.
 - [ ] Timing related tests: fake clock and a scheduler the test moves forward, then back into
   the test scope. Today these tests wait on real timers and for completions on other threads,
   which makes them slow, load sensitive, and forces `LogCapture.ofAllThreads()` with `@Isolated`.
@@ -276,8 +249,7 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
     `*IT`: the wire format (headers, content type, gzip, body parsed by the OTLP classes), a
     refused connection, and one multi threaded end to end run. They may only repeat what a unit
     test covers.
-  - Write the converted tests as step chains (`*BDDTest`), with plain `@Test` methods as long as
-    the parameterized step gap above is open.
+  - Write the converted tests as step chains (`*BDDTest`).
   - P2.
 - [ ] Flaky build: one of six `./mvnw clean verify` runs failed (2026-11-13, after the graceful
   shutdown), the failing test is unknown, the log was not kept. Suspects are the timing based
@@ -287,6 +259,26 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
   - P2: preserve both report directories in CI before attempting a speculative fix.
 
 ## Done
+
+- [x] Serenity: reporting off by default, `-Dserenity.reports` switches it on (2026-11-14).
+  Serenity stays for the BDD step chains. The `pom.xml` deactivates
+  `SerenityTestExecutionListener`, so no test is recorded and nothing is written to
+  `target/serenity-reports` (1163 files otherwise). Measured in one session, parallel unit tests
+  with JaCoCo: test phase 13.3 s and 14.6 s with reports, 9.6 s and 9.5 s without; full
+  `./mvnw clean verify` about 33 s. Not solved by a Serenity setting, there is none: an empty
+  `output.formats` is rejected, and running the Serenity classes last saved under a second.
+- [x] Failing `@Step` passed silently (2026-11-14). Cause: a step object injected with `@Steps`
+  is a Serenity proxy that records a failure and returns normally;
+  `SerenityJUnit5Extension.afterEach` rethrows it only if the listener started a test outcome
+  whose name matches the method, which is never the case for a `@ParameterizedTest`, and not at
+  all without the listener. Affected were the three classes using `@Steps`
+  (`AdmissionChecksumBDDTest`, `CircuitBreakerBDDTest`, `UnservicedHostHandlerBDDTest`), in
+  practice the 2 parameterized tests of `AdmissionChecksumBDDTest`; the other parameterized BDD
+  tests created their step objects with `new` and were never affected (an earlier version of
+  this entry listed 6 classes, which was wrong). Fix: step objects are created with `new`
+  everywhere, `SerenityUsageTest` fails on an injected one. Checked by breaking steps in plain
+  and parameterized tests, with reports off and on.
+
 
 - [x] refuse methods other than GET without admission or bypass with an empty 403;
   count and log the deflector outcome as `method_rejected`. Challenge telemetry uses GET

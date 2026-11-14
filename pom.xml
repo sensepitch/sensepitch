@@ -31,6 +31,12 @@
          in order, with as many threads as CPU cores. Classes depending on JVM wide state carry
          @Isolated and run alone. Sequential: -Dtest.parallel=false -->
     <test.parallel>true</test.parallel>
+    <!-- JUnit platform listeners that are not loaded: Serenity's reporting. Its listener records
+         every test, writes about 1150 files to target/serenity-reports and generates reports at
+         the end of the run, about a third of the unit test time. The step chains do not need
+         it: step objects are created with new, so a failing step throws at once, see
+         SerenityUsageTest. Reports on demand: -Dserenity.reports -->
+    <test.deactivatedListeners>net.serenitybdd.junit5.SerenityTestExecutionListener</test.deactivatedListeners>
   </properties>
 
   <dependencies>
@@ -345,6 +351,7 @@
                  AgentBuilder, whose nexus initialization calls sun.misc.Unsafe and prints a
                  warning. Serenity records no steps here, so the nexus is not needed -->
             <net.bytebuddy.nexus.disabled>true</net.bytebuddy.nexus.disabled>
+            <junit.platform.execution.listeners.deactivate>${test.deactivatedListeners}</junit.platform.execution.listeners.deactivate>
           </systemPropertyVariables>
         </configuration>
     </plugin>
@@ -360,6 +367,7 @@
             <java.util.logging.manager>org.apache.logging.log4j.jul.LogManager</java.util.logging.manager>
             <!-- see surefire -->
             <net.bytebuddy.nexus.disabled>true</net.bytebuddy.nexus.disabled>
+            <junit.platform.execution.listeners.deactivate>${test.deactivatedListeners}</junit.platform.execution.listeners.deactivate>
             <!-- the fat JAR built by shade in the package phase, launched by ShadedJarIT -->
             <shadedJar>${project.build.directory}/${project.build.finalName}-with-dependencies.jar</shadedJar>
           </systemPropertyVariables>
@@ -729,6 +737,18 @@
         <maven.javadoc.skip>true</maven.javadoc.skip>
         <lombok.delombok.skip>true</lombok.delombok.skip>
         <spotless.check.skip>true</spotless.check.skip>
+      </properties>
+    </profile>
+    <profile>
+      <!-- ./mvnw test -Dserenity.reports: Serenity records the tests in target/serenity-reports -->
+      <id>serenity-reports</id>
+      <activation>
+        <property>
+          <name>serenity.reports</name>
+        </property>
+      </activation>
+      <properties>
+        <test.deactivatedListeners>none</test.deactivatedListeners>
       </properties>
     </profile>
     <profile>

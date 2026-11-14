@@ -6,7 +6,6 @@ import static org.sensepitch.edge.DefaultAdmissionTokenGenerator.*;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import net.serenitybdd.annotations.Step;
-import net.serenitybdd.annotations.Steps;
 import net.serenitybdd.junit5.SerenityJUnit5Extension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,7 +17,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 @ExtendWith(SerenityJUnit5Extension.class)
 class AdmissionChecksumBDDTest {
 
-  @Steps ChecksumSteps steps;
+  final ChecksumSteps steps = new ChecksumSteps();
 
   @Test
   void existingEncoderRemainsCompatible() {

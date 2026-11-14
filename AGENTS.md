@@ -33,9 +33,13 @@
   per thread, ports come from the OS, files go to `@TempDir`.
 - Do not add surefire forks: every test JVM repeats about 2 s of warm-up (class loading, OpenSSL,
   crawler lists), which eats the gain even with many cores, and does not help on one CPU.
-- Serenity's `SerenityTestExecutionListener` must stay active for all tests: without it a failing
-  `@Step` no longer fails its test. Serenity analyses the stack on every step call, so check many
-  values inside one step instead of calling a step in a loop.
+- Serenity is used for the step chains only, its reporting is off: the `pom.xml` deactivates
+  `SerenityTestExecutionListener` (`test.deactivatedListeners`), which saves about a third of the
+  unit test time. `-Dserenity.reports` switches it on and writes `target/serenity-reports`.
+- Create step objects with `new`, never inject them with `@Steps`: an injected step object is a
+  proxy that swallows a failing assertion unless the listener runs, and for parameterized tests
+  even then. With `new`, `@Step` is a marker for the reader and a failing step throws at once.
+  `SerenityUsageTest` guards this.
 - `./mvnw lombok:delombok javadoc:javadoc` renders the API docs into `target/reports/apidocs` and
   fails on doc errors. Delombok is bound to `verify`, so standalone javadoc needs it named explicitly.
 - `.mvn/jvm.config` runs Maven's own JVM with `-XX:TieredStopAtLevel=1` (C1 only): Maven, javac and

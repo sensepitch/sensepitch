@@ -12,7 +12,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import net.serenitybdd.annotations.Step;
-import net.serenitybdd.annotations.Steps;
 import net.serenitybdd.junit5.SerenityJUnit5Extension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,7 +24,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 @ExtendWith(SerenityJUnit5Extension.class)
 class CircuitBreakerBDDTest {
 
-  @Steps BreakerSteps steps;
+  final BreakerSteps steps = new BreakerSteps();
 
   @Test
   void closed_grantsRequests() {
