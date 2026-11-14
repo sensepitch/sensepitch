@@ -63,16 +63,49 @@ public class DefaultAdmissionTokenGenerator implements AdmissionTokenGenerator {
     }
     int offset = TIME_CHARS + MIXED_CHARS + 1;
     String uniqueId = token.substring(1, offset);
-    String receivedChecksum = token.substring(offset, offset + CHECKSUM_CHARS);
     byte[] sha256 =
         ChallengeGenerationAndVerification.sha256(
             (uniqueId + secret).getBytes(StandardCharsets.ISO_8859_1));
-    String checkSum = encodeChecksum(sha256);
-    if (!checkSum.equals(receivedChecksum)) {
+    if (!checksumMatches(token, offset, sha256)) {
       return 0;
     }
-    return decodeLittleEndianToLong(token.substring(1, TIME_CHARS + 1), ENCODING_RADIX)
-        & 0x0ffffffff * 1000 + MILLIS_START_TIME;
+    long seconds = decodeLittleEndianToLong(token.substring(1, TIME_CHARS + 1), ENCODING_RADIX);
+    return (seconds & 0xffffffffL) * 1000 + MILLIS_START_TIME;
+  }
+
+  /// Validate the received checksum without allocating a Base62 encoding of the computed hash.
+  /// Reject non-alphabet characters and excess high bits so malformed encodings cannot alias a
+  /// valid checksum.
+  private static boolean checksumMatches(String token, int offset, byte[] sha256) {
+    long checksum = 0;
+    for (int i = offset + CHECKSUM_CHARS - 1; i >= offset; i--) {
+      int digit = digitValue(token.charAt(i));
+      if (digit < 0) {
+        return false;
+      }
+      checksum = checksum * ENCODING_RADIX + digit;
+    }
+    for (int i = CHECKSUM_BYTES - 1; i >= 0; i--) {
+      if ((checksum & 0xff) != (sha256[i] & 0xff)) {
+        return false;
+      }
+      checksum >>>= 8;
+    }
+    return checksum == 0;
+  }
+
+  /// Map a character of [#ALPHABET] to its digit value, shared by the checksum and time decoding.
+  ///
+  /// @return the digit value, or -1 if the character is not part of the alphabet
+  private static int digitValue(char c) {
+    if (c >= '0' && c <= '9') {
+      return c - '0';
+    } else if (c >= 'A' && c <= 'Z') {
+      return c - 'A' + 10;
+    } else if (c >= 'a' && c <= 'z') {
+      return c - 'a' + 36;
+    }
+    return -1;
   }
 
   public static long calculateCurrentSecondsTime32bits() {
@@ -119,17 +152,7 @@ public class DefaultAdmissionTokenGenerator implements AdmissionTokenGenerator {
     long result = 0L;
     char[] chars = str.toCharArray();
     for (int i = chars.length - 1; i >= 0; i--) {
-      result *= radix;
-      int c = chars[i];
-      int value;
-      if (c > 'a') {
-        value = c - 'a' + 36;
-      } else if (c > 'A') {
-        value = c - 'A' + 10;
-      } else {
-        value = c - '0';
-      }
-      result += value;
+      result = result * radix + digitValue(chars[i]);
     }
     return result;
   }
