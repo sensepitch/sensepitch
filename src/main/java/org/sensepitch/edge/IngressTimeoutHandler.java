@@ -118,7 +118,6 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
       idle = false;
     }
     if (!responding && msg instanceof LastHttpContent) {
-      // LOG.info("awaiting response");
       task.cancel();
       task =
           new TimeoutTask(ctx, config.responseTimeoutSeconds()) {
@@ -147,7 +146,6 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
   public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
       throws Exception {
     if (!responding) {
-      // LOG.info("responding");
       responding = true;
       var response = (HttpResponse) msg;
       // If keep alive is not supported by the client and by the type of response we are sending,
@@ -193,7 +191,6 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
                   }
                   if (msg instanceof LastHttpContent && keepAlive) {
                     idle = true;
-                    // LOG.info("awaiting another request");
                     task.cancel();
                     task =
                         new TimeoutTask(ctx, config.readTimeoutSeconds()) {

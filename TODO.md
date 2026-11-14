@@ -81,8 +81,6 @@ comments in the code; an entry from the code names the class and method it is ab
   (`DownstreamHandler.channelRead`); today they are in the request log only
 - [ ] `ProxyMetrics`: one `sensepitch_edge_server_live` per ingress, to drill down per ingress
   and know how many servers it has
-- [ ] remove the commented-out debug log lines (`ForwardHandler`, `IngressTimeoutHandler`,
-  `IpTraitsHandler`, `RequestLoggingHandler`)
 
 ## Configuration, operations
 
@@ -110,6 +108,10 @@ comments in the code; an entry from the code names the class and method it is ab
 
 ## Done
 
+- [x] remove the commented-out debug log lines (`ForwardHandler`, `IngressTimeoutHandler`,
+  `IpTraitsHandler`, `RequestLoggingHandler`) and the commented-out Netty `LoggingHandler`
+  (`Proxy.addHttpHandlers`)
+
 Checked against the code when moving the list here, 2026-11-13:
 
 - [x] config: stop / complain if option is unknown (`RecordConstructor`, "Unknown parameter")
@@ -124,7 +126,7 @@ Checked against the code when moving the list here, 2026-11-13:
   see `ProxyLogger`)
 - [x] standard logging target (Log4j2 to standard error, the request log to standard out)
 - [x] cleanup debugging code / use Netty logger (`ProxyLogger` on Log4j2, no `System.out`; the
-  commented-out lines are listed above)
+  leftover commented-out lines were removed later, see the first entry)
 - [x] obsolete: Logging: Netty LoggingHandler seems not to respect the origin class (not used)
 - [x] minimal POC with transparent passthrough
 - [x] expose statistics counters

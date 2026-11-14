@@ -470,7 +470,6 @@ public class Proxy implements ProxyContext {
     pipeline.addLast(STRIP_EDGE_HEADERS_HANDLER);
     // logger sits between codec and rest so it sees header modifications
     // from timeout and keep alive below
-    // pipeline.addLast(new LoggingHandler(LogLevel.INFO, ByteBufFormat.SIMPLE));
     pipeline.addLast(
         new RequestLoggingHandler(metrics, requestLogger, trustTraceparent, configIds));
     pipeline.addLast(new IngressTimeoutHandler(connectionConfig, metrics));

@@ -34,10 +34,8 @@ public class IpTraitsHandler extends ChannelInboundHandlerAdapter {
 
   @Override
   public void channelActive(ChannelHandlerContext ctx) throws Exception {
-    // Debug.INSTANCE.trace(ctx.channel(), "IpTraitsHandler channelActive");
     if (ctx.channel().remoteAddress() instanceof InetSocketAddress) {
       InetAddress address = ((InetSocketAddress) ctx.channel().remoteAddress()).getAddress();
-      // Debug.INSTANCE.trace(ctx.channel(), "remoteAddress: " + address.getHostAddress());
       var builder = IpTraits.builder();
       ipTraitsLookup.get().lookup(builder, address);
       var attributes = ipTraits = builder.build();
@@ -64,7 +62,6 @@ public class IpTraitsHandler extends ChannelInboundHandlerAdapter {
         collectTraits.append(attributes.crawlerName());
       }
       traits = collectTraits.toString();
-      // Debug.INSTANCE.trace(ctx.channel(), "trais: " + traits);
     }
     super.channelActive(ctx);
   }
