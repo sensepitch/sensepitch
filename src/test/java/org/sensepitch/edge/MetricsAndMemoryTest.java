@@ -29,6 +29,7 @@ import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /// Test our understanding of the JVM memory metrics w.r.t. to the Netty byte buffers.
 ///
@@ -42,6 +43,8 @@ import org.junit.jupiter.api.Test;
 /// JVM, run as integration tests in [JvmMemoryMetricsIT].
 ///
 /// @author Jens Wilke
+// alone: asserts on memory counters of the whole JVM
+@Isolated
 class MetricsAndMemoryTest {
 
   PrometheusRegistry reg = new PrometheusRegistry();

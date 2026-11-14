@@ -1,21 +1,12 @@
 package org.sensepitch.edge;
 
-import java.util.ArrayList;
+import java.lang.System.Logger.Level;
 import java.util.List;
-import org.apache.logging.log4j.Level;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.core.LogEvent;
-import org.apache.logging.log4j.core.LoggerContext;
-import org.apache.logging.log4j.core.appender.AbstractAppender;
-import org.apache.logging.log4j.core.config.Configuration;
-import org.apache.logging.log4j.core.config.LoggerConfig;
-import org.apache.logging.log4j.core.config.Property;
-import org.junit.jupiter.api.extension.AfterEachCallback;
 import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
+import org.junit.jupiter.api.parallel.Isolated;
 
-/// Collects Log4j2 events in memory for the duration of a test, so tests can assert on log
-/// output. This covers [ProxyLogger], Netty and JUL, since all of them end up in Log4j2.
+/// The messages the [ProxyLogger]s logged during a test, so tests can assert on log output.
 ///
 /// Register as a field:
 ///
@@ -23,96 +14,114 @@ import org.junit.jupiter.api.extension.ExtensionContext;
 /// @RegisterExtension LogCapture logs = new LogCapture();
 /// ```
 ///
-/// The in-memory appender is attached to the root logger before each test and removed afterwards.
-/// It captures events at `INFO` and above. The proxy's own loggers run at `TRACE` in tests (see
-/// `log4j2-test.xml`), so the trace code is covered, but trace output is not captured: it is a
-/// debugging aid and no acceptance criterion.
+/// In tests the loggers write to the [LogSink], which keeps the records per logging thread. A
+/// capture shows the records of the test's own thread and forgets the earlier ones before each
+/// test. Tests running in other threads at the same time do not show up.
+///
+/// Code under test that logs from its own threads, e.g. event loops of a started [Proxy] or the
+/// sender of a request log destination, needs [#ofAllThreads()]. Such a capture also sees what
+/// other tests log, so its test class must be `@Isolated`: it then runs while no other class
+/// does.
+///
+/// Only `INFO` and above is captured, see [LogSink]. Messages of Netty, JUL and other libraries
+/// do not pass the proxy's loggers, [Log4jCapture] sees them.
 ///
 /// @author Jens Wilke
-public class LogCapture implements BeforeEachCallback, AfterEachCallback {
+public class LogCapture implements BeforeEachCallback {
 
-  private final Appender appender = new Appender();
+  private final boolean allThreads;
+
+  /// Captures what the thread of the test logs
+  public LogCapture() {
+    this(false);
+  }
+
+  private LogCapture(boolean allThreads) {
+    this.allThreads = allThreads;
+  }
+
+  /// Captures what any thread logs, see the class doc for the consequence. The test class must
+  /// be `@Isolated`, which is checked.
+  public static LogCapture ofAllThreads() {
+    return new LogCapture(true);
+  }
+
+  /// A captured record
+  public record Entry(String source, LogInfo info) {
+
+    /// The message as it is logged, without the throwable
+    public String message() {
+      return LogTarget.format(info);
+    }
+
+    public Throwable error() {
+      return info.error();
+    }
+  }
 
   @Override
   public void beforeEach(ExtensionContext context) {
+    if (!LogSink.installed()) {
+      throw new IllegalStateException(
+          "LogSink is not installed, see META-INF/services in the test resources");
+    }
+    if (allThreads) {
+      requireIsolated(context, "LogCapture.ofAllThreads()");
+    }
     clear();
-    appender.start();
-    LoggerContext ctx = (LoggerContext) LogManager.getContext(false);
-    Configuration config = ctx.getConfiguration();
-    config.getRootLogger().addAppender(appender, Level.INFO, null);
-    ctx.updateLoggers();
   }
 
-  @Override
-  public void afterEach(ExtensionContext context) {
-    LoggerContext ctx = (LoggerContext) LogManager.getContext(false);
-    LoggerConfig root = ctx.getConfiguration().getRootLogger();
-    root.removeAppender(appender.getName());
-    ctx.updateLoggers();
-    appender.stop();
+  /// Fails a test class that reads JVM wide state without `@Isolated`: run concurrently with
+  /// other classes, it would see their log lines.
+  static void requireIsolated(ExtensionContext context, String what) {
+    if (!context.getRequiredTestClass().isAnnotationPresent(Isolated.class)) {
+      throw new IllegalStateException(
+          what
+              + " sees the log of other tests, annotate "
+              + context.getRequiredTestClass().getSimpleName()
+              + " with @Isolated");
+    }
   }
 
-  /// Discards the events collected so far
+  /// Discards the records collected so far
   public void clear() {
-    synchronized (appender.events) {
-      appender.events.clear();
+    if (allThreads) {
+      LogSink.clearAllThreads();
+    } else {
+      LogSink.clearCurrentThread();
     }
   }
 
-  /// Snapshot of the collected events
-  public List<LogEvent> events() {
-    synchronized (appender.events) {
-      return new ArrayList<>(appender.events);
-    }
+  /// Snapshot of the collected records
+  public List<Entry> entries() {
+    List<LogSink.Entry> entries =
+        allThreads ? LogSink.entriesOfAllThreads() : LogSink.entriesOfCurrentThread();
+    return entries.stream().map(e -> new Entry(e.source(), e.info())).toList();
   }
 
-  /// Formatted messages of all collected events
+  /// Messages of all collected records
   public List<String> messages() {
-    return events().stream().map(e -> e.getMessage().getFormattedMessage()).toList();
+    return entries().stream().map(Entry::message).toList();
   }
 
-  /// Formatted messages of events from loggers whose name starts with the prefix
+  /// Messages from loggers whose name starts with the prefix
   public List<String> messages(String loggerPrefix) {
-    return events().stream()
-        .filter(e -> e.getLoggerName().startsWith(loggerPrefix))
-        .map(e -> e.getMessage().getFormattedMessage())
+    return entries().stream()
+        .filter(e -> e.source().startsWith(loggerPrefix))
+        .map(Entry::message)
         .toList();
   }
 
-  /// Formatted messages of events from the logger used by [ProxyLogger#get(Class)]
+  /// Messages from the logger used by [ProxyLogger#get(Class)]
   public List<String> messages(Class<?> source) {
-    return events().stream()
-        .filter(e -> e.getLoggerName().equals(source.getName()))
-        .map(e -> e.getMessage().getFormattedMessage())
+    return entries().stream()
+        .filter(e -> e.source().equals(source.getName()))
+        .map(Entry::message)
         .toList();
   }
 
-  /// Events at level `ERROR` or more severe
-  public List<LogEvent> errors() {
-    return events().stream().filter(e -> e.getLevel().isMoreSpecificThan(Level.ERROR)).toList();
-  }
-
-  private static class Appender extends AbstractAppender {
-
-    private final List<LogEvent> events = new ArrayList<>();
-
-    Appender() {
-      // unique name, so captures of different test instances never replace each other
-      super(
-          "LogCapture-" + System.identityHashCode(new Object()),
-          null,
-          null,
-          true,
-          Property.EMPTY_ARRAY);
-    }
-
-    @Override
-    public void append(LogEvent event) {
-      // the event object may be reused by Log4j2, so keep an immutable copy
-      LogEvent copy = event.toImmutable();
-      synchronized (events) {
-        events.add(copy);
-      }
-    }
+  /// Records at level `ERROR`
+  public List<Entry> errors() {
+    return entries().stream().filter(e -> e.info().level() == Level.ERROR).toList();
   }
 }

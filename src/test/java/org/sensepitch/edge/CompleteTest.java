@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.DefaultHttpContent;
@@ -424,10 +425,12 @@ class CompleteTest {
         req.headers().set(HttpHeaderNames.HOST, host);
       }
       headers.forEach((name, value) -> req.headers().set(name, value));
-      HttpContent emptyChunk = new DefaultHttpContent(ingressChannel.alloc().buffer(1).clear());
+      // unpooled: the reference count is checked at the end of the test. A released pooled
+      // buffer may be handed out again meanwhile, also to a test running in another thread,
+      // and would then look like a leak.
+      HttpContent emptyChunk = new DefaultHttpContent(Unpooled.buffer(1));
       referenceCounted.add(emptyChunk);
-      LastHttpContent emptyLastContent =
-          new DefaultLastHttpContent(ingressChannel.alloc().buffer(1).clear());
+      LastHttpContent emptyLastContent = new DefaultLastHttpContent(Unpooled.buffer(1));
       referenceCounted.add(emptyLastContent);
       ingressChannel.writeInbound(req, emptyChunk, emptyLastContent);
       Object msg = ingressChannel.readOutbound();

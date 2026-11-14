@@ -12,8 +12,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /// @author Jens Wilke
+// alone: captures the log of all threads, the watcher logs from its own
+@Isolated
 class ConfigFileWatcherTest {
 
   @TempDir Path dir;
@@ -31,7 +34,7 @@ class ConfigFileWatcherTest {
     Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
   }
 
-  @RegisterExtension LogCapture logs = new LogCapture();
+  @RegisterExtension LogCapture logs = LogCapture.ofAllThreads();
 
   final List<String> loaded = new CopyOnWriteArrayList<>();
 

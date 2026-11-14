@@ -12,12 +12,15 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /// @author Jens Wilke
 @Timeout(value = 10, unit = TimeUnit.SECONDS)
+// alone: captures the log of all threads, the writer logs from its own
+@Isolated
 public class AsyncRequestLogWriterTest {
 
-  @RegisterExtension LogCapture logs = new LogCapture();
+  @RegisterExtension LogCapture logs = LogCapture.ofAllThreads();
 
   @Test
   public void linesAreWrittenInOrderAndCloseWritesOutEverything() {

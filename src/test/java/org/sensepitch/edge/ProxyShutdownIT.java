@@ -28,6 +28,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /// Graceful shutdown on a real TCP port: the listener closes, requests in flight complete with
 /// `Connection: close`, idle connections close at once, and the request log is sent before the
@@ -36,9 +37,11 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 ///
 /// @author Jens Wilke
 @Timeout(value = 40, unit = TimeUnit.SECONDS)
+// alone: captures the log of all threads, the proxy logs from its event loops
+@Isolated
 class ProxyShutdownIT {
 
-  @RegisterExtension LogCapture logs = new LogCapture();
+  @RegisterExtension LogCapture logs = LogCapture.ofAllThreads();
 
   private final RequestLogCapture requestLog = new RequestLogCapture();
   private final CountDownLatch upstreamGotRequest = new CountDownLatch(1);
