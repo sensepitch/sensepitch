@@ -1,6 +1,7 @@
 package org.sensepitch.edge;
 
 import io.prometheus.metrics.core.datapoints.CounterDataPoint;
+import io.prometheus.metrics.core.datapoints.DistributionDataPoint;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.URI;
@@ -51,7 +52,8 @@ import java.util.concurrent.atomic.AtomicLong;
 /// reaches `maxConcurrentRequests`, and a log server that just came back is not flooded by a
 /// fleet of proxies. Other failures, e.g. status 400, cannot succeed by retrying: the
 /// batch is dropped and counted in `sensepitch_request_log_export_failed_total`, the breaker
-/// stays closed.
+/// stays closed. The duration of every request, whatever its outcome, is recorded in
+/// `sensepitch_request_log_post_duration_seconds`, so a slow log server shows before it fails.
 ///
 /// The breaker is asked when a batch arrives while nothing waits, and when the sender dispatches
 /// after a completion, a flush or the backoff. So its `not_permitted` calls, see
@@ -137,6 +139,8 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   /// [CircuitBreakerMetrics]; the `name` is the destination
   static final String BREAKER_COMPONENT = "requestLog";
 
+  private static final double NANOS_PER_SECOND = TimeUnit.SECONDS.toNanos(1);
+
   // the class of the destination, e.g. OtlpLogDestination
   private final ProxyLogger log = ProxyLogger.get(getClass());
   private final String name;
@@ -159,6 +163,7 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   private final CounterDataPoint exportRetries;
   private final CounterDataPoint sentRecords;
   private final CounterDataPoint sentBytes;
+  private final DistributionDataPoint postDuration;
   private final HttpClient httpClient;
 
   /// Compress the bodies, see [GzipCompressor]
@@ -225,6 +230,7 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
     exportRetries = metrics.exportRetries.labelValues(name);
     sentRecords = metrics.sentRecords.labelValues(name);
     sentBytes = metrics.sentBytes.labelValues(name);
+    postDuration = metrics.postDuration.labelValues(name);
     // a probe that reports nothing is replaced once its request timed out
     endpoint =
         new Endpoint(
@@ -553,7 +559,9 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
         compressor);
   }
 
-  /// Sends the request and completes the post with its outcome
+  /// Sends the request and completes the post with its outcome and duration. The duration is
+  /// that of the request alone, without the compression before and without the time the post
+  /// waited.
   ///
   /// @param wireBytes the length of the body, for the metrics
   /// @param compressor holds the body, returned to the pool when the request completed, `null`
@@ -561,6 +569,7 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   private void post(
       Post<B> post, HttpRequest.BodyPublisher body, long wireBytes, GzipCompressor compressor) {
     HttpRequest request = requestTemplate.copy().POST(body).build();
+    long start = System.nanoTime();
     httpClient
         .sendAsync(request, HttpResponse.BodyHandlers.discarding())
         .whenComplete(
@@ -571,6 +580,7 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
               complete(
                   post,
                   wireBytes,
+                  System.nanoTime() - start,
                   failure != null
                       ? failure(failure)
                       : result(response.statusCode(), Backoff.retryAfterMillis(response)));
@@ -618,7 +628,9 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   /// it for a retry, and updates the breaker and the window. Then sends what is next.
   ///
   /// @param wireBytes length of the request body, compressed if enabled
-  private void complete(Post<B> post, long wireBytes, Result result) {
+  /// @param durationNanos time the request took, for the latency metric
+  private void complete(Post<B> post, long wireBytes, long durationNanos, Result result) {
+    postDuration.observe(durationNanos / NANOS_PER_SECOND);
     synchronized (this) {
       CircuitBreaker.State before = null;
       int failures = 0;

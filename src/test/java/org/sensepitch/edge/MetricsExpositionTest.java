@@ -116,6 +116,8 @@ class MetricsExpositionTest {
     requestLogMetrics.exportFailed.labelValues("otlp").inc();
     requestLogMetrics.sentRecords.labelValues("otlp").inc(5);
     requestLogMetrics.sentBytes.labelValues("otlp").inc(1234);
+    requestLogMetrics.postDuration.labelValues("otlp").observe(0.02);
+    requestLogMetrics.postDuration.labelValues("otlp").observe(10.004);
     // an outage and its recovery, with a mock ticker
     MockTicker ticker = Ticker.newMockTicker();
     CircuitBreaker breaker =

@@ -263,6 +263,13 @@ batches waiting to be sent. A rising `buffered_bytes` shows an outage being brid
 Records an OTLP destination sent successfully, and the bytes of their requests as on the wire,
 i.e. compressed. Together with `dropped_total` this gives the share of records lost.
 
+### `sensepitch_request_log_post_duration_seconds{destination="..."}`
+
+Histogram of the duration of the requests an OTLP destination posts, from sending the request to
+its response or failure, whatever the outcome. A slow log server shows here before its requests
+time out (`otlp.timeoutMillis`, default 10 s) and the circuit breaker opens. The time a batch
+waits before it is sent and the compression are not included.
+
 ### Circuit breaker metrics: `sensepitch_circuitbreaker_*{component="...",name="..."}`
 
 Every remote the proxy protects with a circuit breaker reports the same metrics, with two labels:

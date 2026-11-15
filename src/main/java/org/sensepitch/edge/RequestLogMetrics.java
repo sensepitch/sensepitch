@@ -2,7 +2,9 @@ package org.sensepitch.edge;
 
 import io.prometheus.metrics.core.metrics.Counter;
 import io.prometheus.metrics.core.metrics.GaugeWithCallback;
+import io.prometheus.metrics.core.metrics.Histogram;
 import io.prometheus.metrics.model.registry.Collector;
+import io.prometheus.metrics.model.snapshots.Unit;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,6 +18,9 @@ import java.util.function.Consumer;
 public class RequestLogMetrics implements HasMultipleMetrics {
 
   static final String DESTINATION_LABEL = "destination";
+
+  /// Upper bounds of [#postDuration] in seconds
+  private static final double[] POST_DURATION_BUCKETS = {0.03, 0.1, 0.25, 0.5, 1, 2.5, 5};
 
   /// Something that holds request log records before writing them, for the queue length metric
   public interface QueueSource {
@@ -61,6 +66,20 @@ public class RequestLogMetrics implements HasMultipleMetrics {
           .name("sensepitch_request_log_sent_bytes")
           .help("Bytes of request log records sent successfully, as on the wire, i.e. compressed")
           .labelNames(DESTINATION_LABEL)
+          .build();
+
+  /// Duration of the posts of a destination, whatever their outcome, see [HttpBatchSender]. A
+  /// slow log server shows here before its requests time out and the breaker opens. The buckets
+  /// cover 30 ms to 5 s; slower requests, including the default 10 s timeout, fall into `+Inf`.
+  final Histogram postDuration =
+      Histogram.builder()
+          .name("sensepitch_request_log_post_duration_seconds")
+          .help(
+              "Duration of the requests posting request log records, from sending the request to "
+                  + "its response or failure, timeouts included")
+          .unit(Unit.SECONDS)
+          .labelNames(DESTINATION_LABEL)
+          .classicUpperBounds(POST_DURATION_BUCKETS)
           .build();
 
   /// The breakers of the destinations that post, e.g. OTLP, named `requestLog.<destination>`
@@ -126,6 +145,7 @@ public class RequestLogMetrics implements HasMultipleMetrics {
     consumer.accept(exportRetries);
     consumer.accept(sentRecords);
     consumer.accept(sentBytes);
+    consumer.accept(postDuration);
     circuitBreakers.registerCollectors(consumer);
     consumer.accept(bufferedBytes);
     consumer.accept(queued);

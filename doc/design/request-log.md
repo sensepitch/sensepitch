@@ -212,6 +212,7 @@ Per destination, label `destination`:
 | `sensepitch_request_log_export_failed_total` | batches given up, retrying cannot succeed |
 | `sensepitch_request_log_export_retries_total` | failed attempts that are retried |
 | `sensepitch_request_log_sent_records_total`, `_sent_bytes_total` | sent successfully; bytes as on the wire |
+| `sensepitch_request_log_post_duration_seconds` | histogram of the request duration of the posts, any outcome (OTLP) |
 | `sensepitch_request_log_buffered_bytes` | bytes waiting to be sent (OTLP) |
 | `sensepitch_request_log_queued` | records waiting (stdout queue, OTLP batches) |
 
@@ -324,8 +325,6 @@ Known limits of the current implementation, checked against the code on 2026-11-
 - **Shutdown report.** "request log not drained after N ms" prints the configured drain budget;
   the real time is longer when the connections finished early. Loops that do not terminate in time,
   e.g. a stuck handler, show only as unsent records.
-- **No latency metric for posts.** A slow log server shows only once requests time out and the
-  breaker opens.
 - **Fixed limits.** The backoff bounds (1 s to 30 s) and the stdout queue size are constants.
 
 ## Planned improvements
@@ -335,8 +334,8 @@ section "Request log", item 3 (the backoff part) under "Circuit breaker"; item 6
 
 1. **Shutdown report wording.** Print the elapsed time of the drain phase, and name loops that did
    not terminate. Small.
-2. **Post latency.** A histogram of the post duration per destination, to see a slow log server
-   before it fails.
+2. **Post latency.** Done: `sensepitch_request_log_post_duration_seconds`, a histogram of the
+   post duration per destination, to see a slow log server before it fails.
 3. **Configurable backoff and stdout queue size,** with the current values as defaults. The
    backoff is tracked in TODO.md under "Circuit breaker".
 4. **Compression executor and level.** A small bounded executor instead of the common pool, and

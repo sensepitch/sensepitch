@@ -203,6 +203,19 @@ sensepitch_request_log_export_failed_total{destination="otlp"} 1.0
 # TYPE sensepitch_request_log_export_retries counter
 # HELP sensepitch_request_log_export_retries Failed attempts to send a batch of request log records that are retried
 sensepitch_request_log_export_retries_total{destination="otlp"} 1.0
+# TYPE sensepitch_request_log_post_duration_seconds histogram
+# UNIT sensepitch_request_log_post_duration_seconds seconds
+# HELP sensepitch_request_log_post_duration_seconds Duration of the requests posting request log records, from sending the request to its response or failure, timeouts included
+sensepitch_request_log_post_duration_seconds_bucket{destination="otlp",le="0.03"} 1
+sensepitch_request_log_post_duration_seconds_bucket{destination="otlp",le="0.1"} 1
+sensepitch_request_log_post_duration_seconds_bucket{destination="otlp",le="0.25"} 1
+sensepitch_request_log_post_duration_seconds_bucket{destination="otlp",le="0.5"} 1
+sensepitch_request_log_post_duration_seconds_bucket{destination="otlp",le="1.0"} 1
+sensepitch_request_log_post_duration_seconds_bucket{destination="otlp",le="2.5"} 1
+sensepitch_request_log_post_duration_seconds_bucket{destination="otlp",le="5.0"} 1
+sensepitch_request_log_post_duration_seconds_bucket{destination="otlp",le="+Inf"} 2
+sensepitch_request_log_post_duration_seconds_count{destination="otlp"} 2
+sensepitch_request_log_post_duration_seconds_sum{destination="otlp"} 10.024
 # TYPE sensepitch_request_log_queued gauge
 # HELP sensepitch_request_log_queued Request log records waiting to be written
 sensepitch_request_log_queued{destination="otlp"} 3.0
