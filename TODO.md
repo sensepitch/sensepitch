@@ -143,10 +143,6 @@ breaker.
   not the elapsed time, and a loop that did not terminate (e.g. a stuck handler) shows only as
   unsent records (`Proxy.shutdownOnce`)
   - P2: small; print the elapsed time of the phase and name the loops still running.
-- [ ] post latency: a histogram of the OTLP post duration per destination; today a slow log server
-  shows only once requests time out and the breaker opens
-  - P2: choose buckets around the request timeout (default 10 s); record in
-    `HttpBatchSender.complete`, cached data point per destination.
 - [ ] compression budget: gzip runs on the common pool at a fixed level (`BEST_SPEED`)
   - P3: a small bounded executor and `otlp.compressionLevel`; zstd once the target log servers
     accept it. Measure CPU per MiB first.
@@ -253,15 +249,21 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
     test covers.
   - Write the converted tests as step chains (`*BDDTest`).
   - P2.
-- [ ] Flaky build: one of six `./mvnw clean verify` runs failed (2026-11-13, after the graceful
-  shutdown), the failing test is unknown, the log was not kept. Suspects are the timing based
-  tests: `ProxyShutdownIT` (duration bounds), `ShadedJarIT.sigtermSendsTheRequestLogAndExits`
-  (exit within 4 s), `OtlpLogDestinationTest` and `ReloadableRequestLoggerTest` (awaits). Next
-  failure: keep `target/surefire-reports` and `target/failsafe-reports`.
+- [x] Flaky build: `OtlpLogDestinationTest.outageLosesNothing` timed out on machines with 2 CPUs
+  (2026-11-15). Root cause: `maxBufferedBytes` default (2×event_loops×batchBytes) was 512 KiB on
+  2 CPUs, smaller than the 1000-record backlog the test builds; records were dropped and the count
+  was never reached. Fix: set `maxBufferedBytes(64 MiB)` explicitly in that test. 3 of 3 runs pass
+  in 0.9 s. `ReloadableRequestLoggerTest`, `ProxyShutdownIT`,
+  `ShadedJarIT.sigtermSendsTheRequestLogAndExits` are not investigated yet.
   - P2: preserve both report directories in CI before attempting a speculative fix.
 
 ## Done
 
+- [x] request log post latency: a histogram of the OTLP post duration per destination; today a slow log server
+  shows only once requests time out and the breaker opens (2026-11-15).
+  `sensepitch_request_log_post_duration_seconds{destination}`, buckets 30 ms–5 s;
+  recorded in `HttpBatchSender.complete`. See branch
+  `hermes/otlp-post-latency-histogram`.
 - [x] Serenity: reporting off by default, `-Dserenity.reports` switches it on (2026-11-14).
   Serenity stays for the BDD step chains. The `pom.xml` deactivates
   `SerenityTestExecutionListener`, so no test is recorded and nothing is written to

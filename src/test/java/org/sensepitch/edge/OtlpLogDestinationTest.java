@@ -13,6 +13,7 @@ import io.opentelemetry.proto.logs.v1.LogRecord;
 import io.opentelemetry.proto.logs.v1.ResourceLogs;
 import io.opentelemetry.proto.logs.v1.ScopeLogs;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
+import io.prometheus.metrics.model.snapshots.HistogramSnapshot;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
@@ -223,6 +224,18 @@ class OtlpLogDestinationTest {
     assertThat(breakerCounter("calls", "kind", "failed")).isOne();
     assertThat(breakerCounter("calls", "kind", "ignored")).isZero();
     assertThat(breakerCounter("errors", "error", "http_503")).isOne();
+    HistogramSnapshot.HistogramDataPointSnapshot postDuration =
+        (HistogramSnapshot.HistogramDataPointSnapshot)
+            scrape()
+                .datapoint(
+                    "sensepitch_request_log_post_duration_seconds",
+                    "destination",
+                    destination.destination());
+    assertThat(postDuration.getCount()).as("the failed and the successful post").isEqualTo(2);
+    assertThat(postDuration.getSum())
+        .as("seconds, both posts within the test run")
+        .isPositive()
+        .isLessThan((System.currentTimeMillis() - start + 1) / 1000.0);
     assertThat(breakerCounter("transitions", "from", "closed", "to", "open", "reason", "http_503"))
         .isOne();
     assertThat(
@@ -382,10 +395,15 @@ class OtlpLogDestinationTest {
   @Test
   void outageLosesNothing() throws Exception {
     status = 503;
-    // one request at a time, so the batches arrive in order
+    // one request at a time, so the batches arrive in order. The whole backlog must fit: the
+    // default limit depends on the number of processors, with two of them records were dropped
     destination =
         fastDestination(
-            config().batchBytes(OtlpConfig.MIN_BATCH_BYTES).maxConcurrentRequests(1).build());
+            config()
+                .batchBytes(OtlpConfig.MIN_BATCH_BYTES)
+                .maxBufferedBytes(64 * 1024 * 1024)
+                .maxConcurrentRequests(1)
+                .build());
     OtlpRequestLogger logger = new OtlpRequestLogger(destination);
     int total = 1_000;
     for (int i = 0; i < total / 2; i++) {
