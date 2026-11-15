@@ -171,6 +171,41 @@ class CircuitBreakerBDDTest {
         .then_the_failures_are(0);
   }
 
+  /// A probe answered with a status a retry cannot fix closes the breaker, the server is up. Before,
+  /// the breaker stayed half open and refused the next probe until the probe timeout.
+  @Test
+  void ignoredProbe_closes() {
+    steps
+        .given_a_breaker()
+        .when_a_request_fails()
+        .when_time_passes_millis(500)
+        .then_a_request_is_granted()
+        .then_the_events_are(
+            "call failed",
+            "error http_503",
+            "closed to open: http_503",
+            "open to half_open: backoff_over")
+        .when_a_request_fails_ignored()
+        .then_the_events_are("call ignored", "error http_400", "half_open to closed: recovered")
+        .then_the_state_is(CircuitBreaker.State.CLOSED)
+        .then_the_failures_are(0)
+        .then_the_trip_and_restart_times_are_millis(
+            BreakerSteps.START_MILLIS, BreakerSteps.START_MILLIS + 500)
+        .then_requests_are_granted(3);
+  }
+
+  /// An ignored result of a request in flight when the breaker opened closes it too, as a success
+  /// does
+  @Test
+  void ignoredWhileOpen_closes() {
+    steps
+        .given_a_breaker()
+        .when_a_request_fails()
+        .when_a_request_fails_ignored()
+        .then_the_state_is(CircuitBreaker.State.CLOSED)
+        .then_a_request_is_granted();
+  }
+
   /// Another thread closes the breaker while this one waits for its lock, after it saw the open
   /// state. Reproduced with a clock that closes the breaker when read inside the lock.
   @Test

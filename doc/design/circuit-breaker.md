@@ -91,8 +91,8 @@ times per proxy, or wait too long after a short hiccup.
 ### One probe at a time, replaced after a timeout
 
 When the backoff is over, `tryAcquire()` grants exactly one request, the probe, and moves to
-`HALF_OPEN`. Its success closes the breaker, its failure opens it again with the next, doubled
-backoff. If the probe reports nothing within the probe timeout, the next caller gets a new probe,
+`HALF_OPEN`. Its success closes the breaker, as does an ignored failure (see below), its failure
+opens it again with the next, doubled backoff. If the probe reports nothing within the probe timeout, the next caller gets a new probe,
 so a lost completion cannot keep the breaker half open forever. The sender sets the probe timeout
 to its request timeout plus 1 s, so a probe is only replaced when it must have timed out.
 
@@ -115,7 +115,11 @@ success is real evidence that the server is back, and a late failure only costs 
 
 The breaker has no rule engine. The caller reports `onSuccess()`, `onFailure(retryAfter, error)`
 for a failure a retry may fix, or `onIgnored(error)` for a failure it cannot fix, e.g. a 400: that
-batch is dropped and the breaker stays closed. This is resilience4j's "ignored" and Armeria's
+batch is dropped and the breaker does not open. An open or half open breaker closes, as on a
+success: the server answered, so it is up. Only releasing the probe would cost one more round
+trip, which then most likely succeeds, before the sender returns to its slow start. Up to
+2026-11-15 an ignored probe changed no state and held the probe slot until the probe timeout,
+11 s with the default request timeout. Otherwise this is resilience4j's "ignored" and Armeria's
 `ignore()` decision, without the configuration surface; the one rule set the sender needs is in
 `HttpBatchSender.result` and `HttpBatchSender.failure`.
 
@@ -158,9 +162,8 @@ another clock.
 The breaker reports to an `Events` interface: each call with its kind, each error code, and each
 transition with its reason (the error code for a trip, `backoff_over`, `recovered`). This mirrors
 Armeria's `CircuitBreakerListener`. The events of a state change are delivered with the lock
-held, so an implementation must not call back into the breaker. An ignored failure changes no
-state and is reported without the lock. The sender logs only the
-transitions (start of an outage, recovery), everything else is counted.
+held, so an implementation must not call back into the breaker; all events are, since an ignored
+failure may close the breaker too. The sender logs only the transitions (start of an outage, recovery), everything else is counted.
 
 ### What is not in the breaker
 
@@ -218,10 +221,6 @@ Known limits of the current implementation, checked against the code on 2026-11-
 - **Not suited for upstreams yet.** It opens on the first retryable failure. An upstream under
   load fails one connection at a time, e.g. a single reset among hundreds of requests per second;
   opening on that would refuse all traffic for the backoff.
-- **An ignored probe holds the probe slot.** If the probe ends in a failure that is ignored, e.g. a
-  status 400, `onIgnored` changes no state: the breaker stays `HALF_OPEN` and refuses the next
-  probe until the probe timeout is over, 11 s with the default request timeout of 10 s. The server
-  did answer, so this only delays the recovery.
 - **Slow responses do not count.** A response within the request timeout is a success, however
   slow. Only the timeout itself is a failure. There is no slow call rate as in resilience4j.
 - **Results of old requests decide the probe.** A result of a request sent before the breaker
@@ -254,15 +253,12 @@ In order of priority, all tracked in [TODO.md](../../TODO.md), sections "Circuit
    request log sender keeps the current policy, a threshold of one. The backoff, `Retry-After`,
    the single probe and the metrics stay as they are; the window counts may become gauges like
    Armeria's `requests{result}`.
-2. **Release the probe on an ignored result.** In `HALF_OPEN`, `onIgnored` ends the probe, so the
-   next request may probe at once. An alternative is to close the breaker: the server answered, if
-   only with an error a retry cannot fix.
-3. **Configurable backoff.** Initial and maximum delay as options of a destination, later of an
+2. **Configurable backoff.** Initial and maximum delay as options of a destination, later of an
    upstream, with the current values as defaults.
-4. **Slow calls for upstreams.** Count a response slower than a threshold as a failure, as
+3. **Slow calls for upstreams.** Count a response slower than a threshold as a failure, as
    resilience4j's slow call rate, once upstream latency targets are known.
-5. **Several endpoints.** One breaker per endpoint of a destination or upstream, see the
+4. **Several endpoints.** One breaker per endpoint of a destination or upstream, see the
    `Endpoint` record in `HttpBatchSender` and "multiple servers per upstream" in TODO.md.
-6. **Manual control.** Force a breaker open, e.g. to take a log server or upstream out for
+5. **Manual control.** Force a breaker open, e.g. to take a log server or upstream out for
    maintenance, through the admin server.
-7. **`Retry-After` as an HTTP date.** Small; until then a date is ignored and the backoff applies.
+6. **`Retry-After` as an HTTP date.** Small; until then a date is ignored and the backoff applies.
