@@ -30,10 +30,16 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   private static final ProxyLogger DEBUG = ProxyLogger.get(DownstreamHandler.class);
 
   private final Upstream upstream;
+
+  /// The upstream connection of the active exchange, `null` when no exchange is active. A listener
+  /// compares it with the future it was added to, to tell whether its exchange is still active.
   private Future<Channel> upstreamChannelFuture;
+
   private Runnable flushTask;
 
-  /// This avoids that we sent stray content to upstream when not expected
+  /// The response headers of the active exchange were written to the client, so an error can no
+  /// longer be answered with an error response, see [#completeWithError]
+  private boolean responseStarted;
 
   public DownstreamHandler(Upstream upstream, ProxyMetrics metrics) {
     this.upstream = upstream;
@@ -46,6 +52,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       // content, so a new request while the exchange is active is the only unexpected case
       if (upstreamChannelFuture != null) {
         DEBUG.error(ctx.channel(), "another request is unexpected");
+        ReferenceCountUtil.release(request);
         completeWithError(
             ctx,
             new HttpResponseStatus(
@@ -95,27 +102,50 @@ public class DownstreamHandler extends ChannelDuplexHandler {
                     if (!f.isSuccess()) {
                       ctx.executor()
                           .execute(
-                              () -> {
-                                ctx.pipeline()
-                                    .get(RequestLoggingHandler.class)
-                                    .setException(f.cause());
-                                RequestLoggingHandler.reportOutcome(
-                                    ctx, RequestOutcome.UPSTREAM_WRITE_FAILED);
-                                completeWithError(
-                                    ctx, HttpResponseStatus.valueOf(502, "Upstream write problem"));
-                              });
+                              () ->
+                                  failExchange(
+                                      ctx,
+                                      future,
+                                      f.cause(),
+                                      RequestOutcome.UPSTREAM_WRITE_FAILED,
+                                      HttpResponseStatus.valueOf(502, "Upstream write problem")));
                     }
                   });
     } else {
       // upstream future listener is called within ingress event loop
       assert ctx.executor().inEventLoop();
       ReferenceCountUtil.release(msg);
-      Throwable cause = future.cause();
-      DEBUG.error(ctx.channel(), "unknown upstream connection problem", future.cause());
-      ctx.pipeline().get(RequestLoggingHandler.class).setException(cause);
-      RequestLoggingHandler.reportOutcome(ctx, RequestOutcome.UPSTREAM_CONNECT_FAILED);
-      completeWithError(ctx, HttpResponseStatus.valueOf(502, "Upstream connection problem"));
+      failExchange(
+          ctx,
+          future,
+          future.cause(),
+          RequestOutcome.UPSTREAM_CONNECT_FAILED,
+          HttpResponseStatus.valueOf(502, "Upstream connection problem"));
     }
+  }
+
+  /// Ends the exchange of `exchangeUpstream` after an upstream failure that is reported
+  /// asynchronously. The failure is ignored if the exchange is over already: the response was
+  /// written completely, or another error ended it, e.g. a response timeout. Otherwise the report
+  /// would change the request log of the next request on a keep-alive connection, or a second
+  /// response would be sent.
+  void failExchange(
+      ChannelHandlerContext ctx,
+      Future<Channel> exchangeUpstream,
+      Throwable cause,
+      RequestOutcome outcome,
+      HttpResponseStatus status) {
+    if (upstreamChannelFuture != exchangeUpstream) {
+      DEBUG.trace(ctx.channel(), "upstream failure after the exchange ended: " + cause);
+      return;
+    }
+    DEBUG.error(ctx.channel(), "upstream failure, outcome=" + outcome, cause);
+    RequestLoggingHandler requestLog = RequestLoggingHandler.find(ctx);
+    if (requestLog != null) {
+      requestLog.setException(cause);
+    }
+    RequestLoggingHandler.reportOutcome(ctx, outcome);
+    completeWithError(ctx, status);
   }
 
   // runs in another tread!
@@ -128,10 +158,37 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     }
   }
 
+  /// Ends the active exchange after an error and closes the client connection. The upstream
+  /// connection is dropped, so it sends nothing more to the client. If the response has not
+  /// started, the client gets an error response with `status`. If it has started, the headers and
+  /// maybe a part of the body are out, and a second response would corrupt the stream, so the
+  /// connection is closed without one: the client sees a truncated response, which it can tell
+  /// from a complete one by the content length or the missing last chunk.
   void completeWithError(ChannelHandlerContext ctx, HttpResponseStatus status) {
+    if (upstreamChannelFuture != null) {
+      closeUpstream(upstreamChannelFuture);
+      upstreamChannelFuture = null;
+    }
+    if (responseStarted) {
+      responseStarted = false;
+      ctx.channel().close();
+      return;
+    }
     FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status);
     response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
     ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+  }
+
+  /// Closes the upstream connection of an exchange once it is established, also when it is still
+  /// connecting, since there is no connection pool to return it to
+  private static void closeUpstream(Future<Channel> upstreamChannelFuture) {
+    upstreamChannelFuture.addListener(
+        (FutureListener<Channel>)
+            future -> {
+              if (future.isSuccess()) {
+                future.resultNow().close();
+              }
+            });
   }
 
   /// Send the HTTP request, which may include content, upstream
@@ -226,19 +283,17 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       throws Exception {
     if (msg instanceof HttpResponse response) {
       sanitizeResponseHeaders(response.headers());
+      responseStarted = true;
     }
     if (msg instanceof LastHttpContent) {
       // there is no connection pool, so the upstream connection is closed after each response,
       // also if the upstream would keep it alive. The reference is cleared here to ensure no more
       // throttling is done.
-      upstreamChannelFuture.addListener(
-          (FutureListener<Channel>)
-              future -> {
-                if (future.isSuccess()) {
-                  future.resultNow().close();
-                }
-              });
-      upstreamChannelFuture = null;
+      if (upstreamChannelFuture != null) {
+        closeUpstream(upstreamChannelFuture);
+        upstreamChannelFuture = null;
+      }
+      responseStarted = false;
     }
     super.write(ctx, msg, promise);
   }

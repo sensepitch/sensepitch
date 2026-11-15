@@ -39,10 +39,6 @@ current production needs. Notes below record decisions to make before implementa
   - P3: specify thresholds, recovery probes, per-server versus per-upstream state and retry policy.
   - Keep the backoff, `Retry-After`, single probe and metrics, the request log keeps a threshold
     of one, see [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md).
-- [ ] `DownstreamHandler.completeWithError`: the response may have been sent already; drop the
-  upstream connection
-  - P1: cover failures before and after headers and partial body writes; do not send a second
-    response once one has started.
 - [ ] `DownstreamHandler.channelInactive`: track and log if the close was unexpected
   - P2: define expected closes and avoid duplicate or noisy logs.
 - [ ] `DownstreamHandler.isSharable`: decide on `@Sharable`, the override does nothing
@@ -264,6 +260,22 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
   `sensepitch_request_log_post_duration_seconds{destination}`, buckets 30 ms–5 s;
   recorded in `HttpBatchSender.complete`. See branch
   `hermes/otlp-post-latency-histogram`.
+
+- [x] `DownstreamHandler.completeWithError`: the response may have been sent already; drop the
+  upstream connection (2026-11-15). `completeWithError` now always closes the upstream of the
+  exchange (also one still connecting) and ends the exchange. Before the response has started it
+  answers with the error status as before; once `DownstreamHandler.write` has passed the response
+  headers it closes the client connection without a second response, so the client sees a
+  truncated response (short content length or missing last chunk), and the request log records
+  the reported outcome (e.g. `UPSTREAM_WRITE_FAILED`). Callers: a failed request write upstream,
+  a failed connect, and a second request before the response is complete. The upstream reports
+  the failed write asynchronously, possibly after the response was complete; `failExchange`
+  ignores a failure whose exchange is over (the upstream future is no longer the active one), so
+  it neither sends a second response nor changes the log of the next keep-alive request. Tests:
+  `UpstreamFailureBDDTest` (before the response, after the headers, after a partial body, after
+  the complete response, pipelined request). `ExceptionHandler` already checks
+  `RequestLoggingHandler.isResponseStarted` and was not changed.
+
 - [x] Serenity: reporting off by default, `-Dserenity.reports` switches it on (2026-11-14).
   Serenity stays for the BDD step chains. The `pom.xml` deactivates
   `SerenityTestExecutionListener`, so no test is recorded and nothing is written to
