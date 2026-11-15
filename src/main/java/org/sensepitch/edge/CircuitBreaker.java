@@ -10,7 +10,9 @@ import java.util.concurrent.TimeUnit;
 ///   over. A failure of a request that was still in flight when the breaker opened does not
 ///   count again.
 /// - `HALF_OPEN`: once the backoff is over, [#tryAcquire()] lets exactly one request through as
-///   a probe. Its success closes the breaker, its failure opens it again with a doubled backoff.
+///   a probe. Its success closes the breaker, as does an ignored failure, see
+///   [#onIgnored(String)], since the server answered. Its failure opens it again with a doubled
+///   backoff.
 ///   A probe that reports nothing within the probe timeout lets the next one through, so the
 ///   breaker cannot get stuck.
 ///
@@ -121,8 +123,8 @@ public final class CircuitBreaker {
   /// Asks for permission to send a request.
   ///
   /// @return `true` if the request may be sent; in the half open state it is the probe and must
-  ///   be followed by [#onSuccess()] or [#onFailure(long, String)]. A refusal is reported as
-  ///   [Kind#NOT_PERMITTED].
+  ///   be followed by [#onSuccess()], [#onIgnored(String)] or [#onFailure(long, String)]. A
+  ///   refusal is reported as [Kind#NOT_PERMITTED].
   public boolean tryAcquire() {
     return state == State.CLOSED || tryAcquireSlow();
   }
@@ -162,21 +164,35 @@ public final class CircuitBreaker {
     events.call(Kind.SUCCESSFUL);
     State before = state;
     if (before != State.CLOSED) {
-      state = State.CLOSED;
-      failures = 0;
-      lastRestartMillis = nowMillis();
-      events.transition(before, State.CLOSED, RECOVERED);
+      close(before);
     }
     return before;
   }
 
-  /// A request failed in a way a retry cannot fix, e.g. a status 400. The breaker stays as it is,
-  /// the failure is reported as [Kind#IGNORED].
+  /// A request failed in a way a retry cannot fix, e.g. a status 400, reported as [Kind#IGNORED].
+  /// It does not open the breaker. If the breaker is not closed, it closes as on [#onSuccess()]:
+  /// the server answered, so it is up. Only releasing the probe would let the next probe through
+  /// at once, which then most likely succeeds; closing saves that round and the slow start of the
+  /// caller begins right away.
   ///
   /// @param error short code of the error, see [Events#error(String)]
-  public void onIgnored(String error) {
+  /// @return the state before, not `CLOSED` means the remote recovered
+  public synchronized State onIgnored(String error) {
     events.call(Kind.IGNORED);
     events.error(error);
+    State before = state;
+    if (before != State.CLOSED) {
+      close(before);
+    }
+    return before;
+  }
+
+  /// Closes the breaker after the remote answered, for [#onSuccess()] and [#onIgnored(String)]
+  private void close(State before) {
+    state = State.CLOSED;
+    failures = 0;
+    lastRestartMillis = nowMillis();
+    events.transition(before, State.CLOSED, RECOVERED);
   }
 
   /// A request failed in a way that a later attempt may fix, e.g. a connection error or a status

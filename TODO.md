@@ -49,11 +49,6 @@ current production needs. Notes below record decisions to make before implementa
 Limitations and the reasoning are in [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md);
 the failure threshold for upstreams is under Upstream.
 
-- [ ] `CircuitBreaker.onIgnored`: release the probe. An ignored result of the probe, e.g. a
-  status 400, leaves the breaker `HALF_OPEN`, and the next probe waits for the probe timeout
-  (11 s with the default request timeout)
-  - P2: delays the recovery of the request log only. Decide between releasing the probe and
-    closing the breaker, since the server answered.
 - [ ] configurable backoff: initial and maximum delay (1 s, 30 s) are constants in
   `OtlpLogDestination`
   - P3: options of a destination, later of an upstream, with the current values as defaults.
@@ -276,6 +271,13 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
   the complete response, pipelined request). `ExceptionHandler` already checks
   `RequestLoggingHandler.isResponseStarted` and was not changed.
 
+- [x] `CircuitBreaker.onIgnored` closes an open or half open breaker (2026-11-15). Before, an
+  ignored result of the probe, e.g. a status 400, left the breaker `HALF_OPEN` and the next probe
+  waited for the probe timeout (11 s with the default request timeout). Decided to close rather
+  than only release the probe: the server answered, so it is up, and a released probe would most
+  likely succeed one round trip later anyway. `HttpBatchSender` logs the recovery for a batch
+  given up as for one sent. Covered by `CircuitBreakerBDDTest.ignoredProbe_closes` and
+  `OtlpLogDestinationTest.badRequestOfTheProbeEndsTheOutage`.
 - [x] Serenity: reporting off by default, `-Dserenity.reports` switches it on (2026-11-14).
   Serenity stays for the BDD step chains. The `pom.xml` deactivates
   `SerenityTestExecutionListener`, so no test is recorded and nothing is written to

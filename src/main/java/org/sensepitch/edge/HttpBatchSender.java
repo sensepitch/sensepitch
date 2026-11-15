@@ -633,7 +633,6 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
     postDuration.observe(durationNanos / NANOS_PER_SECOND);
     synchronized (this) {
       CircuitBreaker.State before = null;
-      int failures = 0;
       inFlight--;
       CircuitBreaker breaker = endpoint.breaker();
       switch (result.outcome()) {
@@ -643,49 +642,58 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
           window = Math.min(maxConcurrentRequests, window + 1);
           sentRecords.inc(post.records());
           sentBytes.inc(wireBytes);
-          failures = breaker.failures();
-          before = breaker.onSuccess();
-          if (before != CircuitBreaker.State.CLOSED) {
-            ageReported = false;
-          }
+          int failures = breaker.failures();
+          answered(breaker.onSuccess(), failures);
         }
         case GIVE_UP -> {
           release(post);
           recycle(post);
           exportFailed.inc();
           countDropped(post.records());
-          breaker.onIgnored(result.error());
+          int failures = breaker.failures();
+          // closes an open breaker as well, the server answered
+          answered(breaker.onIgnored(result.error()), failures);
         }
         default -> {
           exportRetries.inc();
           parked.addFirst(post);
           window = 1;
-          failures = breaker.failures();
           before = breaker.onFailure(result.retryAfterMillis(), result.error());
           if (before != CircuitBreaker.State.OPEN) {
             scheduleProbe(breaker.retryDelayNanos());
           }
         }
       }
-      report(result, before, failures);
+      report(result, before);
     }
     dispatch();
   }
 
-  /// Logs the transitions only: the first failure of an outage, the recovery, and the first
-  /// dropped batch; everything else is counted in the metrics
-  private void report(Result result, CircuitBreaker.State before, int failures) {
+  /// Ends an outage when the server answered, with a success or a status a retry cannot fix:
+  /// logs the recovery and lets the next aged batches be logged again
+  ///
+  /// @param before the state of the breaker before the answer
+  /// @param failures failed attempts of the outage
+  private void answered(CircuitBreaker.State before, int failures) {
+    if (before != CircuitBreaker.State.CLOSED) {
+      ageReported = false;
+      log.info(
+          "Request log export to "
+              + endpoint.uri()
+              + " recovered after "
+              + failures
+              + " failed attempts, sending the buffered records");
+    }
+  }
+
+  /// Logs the transitions of failures only: the first failure of an outage and the first dropped
+  /// batch; everything else is counted in the metrics. The recovery is logged by
+  /// [#answered(CircuitBreaker.State, int)].
+  ///
+  /// @param before the state of the breaker before a retryable failure, `null` otherwise
+  private void report(Result result, CircuitBreaker.State before) {
     switch (result.outcome()) {
-      case SENT -> {
-        if (before != CircuitBreaker.State.CLOSED) {
-          log.info(
-              "Request log export to "
-                  + endpoint.uri()
-                  + " recovered after "
-                  + failures
-                  + " failed attempts, sending the buffered records");
-        }
-      }
+      case SENT -> {}
       case GIVE_UP -> {
         if (failureReported.compareAndSet(false, true)) {
           log.error(

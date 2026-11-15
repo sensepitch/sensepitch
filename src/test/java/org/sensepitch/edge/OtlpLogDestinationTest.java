@@ -938,6 +938,31 @@ class OtlpLogDestinationTest {
     assertThat(next.paths()).containsExactly("/good");
   }
 
+  /// A probe answered with a status that retrying cannot fix ends the outage: the server is up,
+  /// the next batch goes out at once instead of after the probe timeout
+  @Test
+  void badRequestOfTheProbeEndsTheOutage() throws Exception {
+    answers.add(new Answer(503, null));
+    answers.add(new Answer(400, null));
+    destination = fastDestination(config().build());
+    OtlpRequestLogger logger = new OtlpRequestLogger(destination);
+    logger.logRequest(request("/a"));
+    assertThat(received.take().status()).isEqualTo(503);
+    assertThat(received.take().status()).as("the probe").isEqualTo(400);
+    await(() -> counter("sensepitch_request_log_export_failed") == 1);
+    logger.logRequest(request("/b"));
+    Received next = received.poll(2, TimeUnit.SECONDS);
+    assertThat(next).as("sent without waiting for the probe timeout").isNotNull();
+    assertThat(next.status()).isEqualTo(200);
+    assertThat(next.paths()).containsExactly("/b");
+    assertThat(
+            breakerCounter(
+                "transitions", "from", "half_open", "to", "closed", "reason", "recovered"))
+        .isOne();
+    assertThat(logs.messages(OtlpLogDestination.class))
+        .anySatisfy(m -> assertThat(m).contains("recovered after 1 failed attempts"));
+  }
+
   /// A batch given up is logged once, further ones are only counted
   @Test
   void givingUpIsLoggedOnce() throws Exception {
