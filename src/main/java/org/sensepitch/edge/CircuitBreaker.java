@@ -1,6 +1,7 @@
 package org.sensepitch.edge;
 
 import io.netty.util.concurrent.Ticker;
+import java.time.InstantSource;
 import java.util.concurrent.TimeUnit;
 
 /// Stops requests to a remote that failed, and lets a single probe through after a backoff.
@@ -30,9 +31,9 @@ import java.util.concurrent.TimeUnit;
 /// [CircuitBreakerMetrics]. The breaker keeps the wall clock times of its start, its last trip and
 /// its last restart for them.
 ///
-/// All times come from one [Ticker], so a test controls them with a mock ticker. The wall clock
-/// times are the wall clock time at the start plus the ticker time passed since, they do not
-/// follow later steps of the system clock, which does not matter for the metrics.
+/// The durations, the backoff and the probe timeout, come from a [Ticker]; the wall clock times
+/// for the metrics come from the system clock, so they match the timestamps of the logs. A test
+/// controls both, see [#CircuitBreaker(Backoff, long, Events, Ticker, InstantSource)].
 ///
 /// @author Jens Wilke
 public final class CircuitBreaker {
@@ -80,10 +81,11 @@ public final class CircuitBreaker {
   private final Backoff backoff;
   private final long probeTimeoutNanos;
   private final Ticker ticker;
-  private final long startMillis;
 
-  /// Ticker time of the start, the origin of the wall clock times, see [#nowMillis()]
-  private final long startNanos;
+  /// Wall clock, for the start, trip and restart times
+  private final InstantSource wallClock;
+
+  private final long startMillis;
 
   private final Events events;
 
@@ -108,20 +110,24 @@ public final class CircuitBreaker {
   ///   least the request timeout
   /// @param events receives what the breaker does, e.g. [CircuitBreakerMetrics#events(String, String)]
   public CircuitBreaker(Backoff backoff, long probeTimeoutMillis, Events events) {
-    this(backoff, probeTimeoutMillis, events, Ticker.systemTicker(), System.currentTimeMillis());
+    this(backoff, probeTimeoutMillis, events, Ticker.systemTicker(), InstantSource.system());
   }
 
-  /// With a ticker and a start time, for tests
+  /// With a ticker and a wall clock, for tests
   ///
-  /// @param startMillis wall clock time of the start, the ticker time passed since is added
+  /// @param wallClock read at the start, a trip and a restart
   CircuitBreaker(
-      Backoff backoff, long probeTimeoutMillis, Events events, Ticker ticker, long startMillis) {
+      Backoff backoff,
+      long probeTimeoutMillis,
+      Events events,
+      Ticker ticker,
+      InstantSource wallClock) {
     this.backoff = backoff;
     this.events = events;
     this.probeTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(probeTimeoutMillis);
     this.ticker = ticker;
-    this.startMillis = startMillis;
-    this.startNanos = ticker.nanoTime();
+    this.wallClock = wallClock;
+    this.startMillis = wallClock.millis();
   }
 
   /// Asks for permission to send a request.
@@ -201,7 +207,7 @@ public final class CircuitBreaker {
   private void close(State before) {
     state = State.CLOSED;
     failures = 0;
-    lastRestartMillis = nowMillis();
+    lastRestartMillis = wallClock.millis();
     events.transition(before, State.CLOSED, RECOVERED);
   }
 
@@ -229,7 +235,7 @@ public final class CircuitBreaker {
       retryAtNanos = now + TimeUnit.MILLISECONDS.toNanos(delayMillis);
       state = State.OPEN;
       if (before == State.CLOSED) {
-        lastTripMillis = nowMillis();
+        lastTripMillis = wallClock.millis();
       }
       events.transition(before, State.OPEN, error);
       return before;
@@ -282,10 +288,5 @@ public final class CircuitBreaker {
     synchronized (lock) {
       return lastRestartMillis;
     }
-  }
-
-  /// Wall clock time from the ticker, for the trip and restart times
-  private long nowMillis() {
-    return startMillis + TimeUnit.NANOSECONDS.toMillis(ticker.nanoTime() - startNanos);
   }
 }

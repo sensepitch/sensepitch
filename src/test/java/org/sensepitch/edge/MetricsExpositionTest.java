@@ -16,6 +16,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
@@ -126,7 +127,10 @@ class MetricsExpositionTest {
             5_000,
             requestLogMetrics.circuitBreakers.events("requestLog", "otlp"),
             ticker,
-            1_700_000_000_000L);
+            () ->
+                Instant.ofEpochMilli(
+                    1_700_000_000_000L
+                        + (ticker.nanoTime() - ticker.initialNanoTime()) / 1_000_000));
     requestLogMetrics.circuitBreakers.add("requestLog", "otlp", breaker);
     ticker.advanceMillis(1_000);
     breaker.onFailure(0, "http_503");
