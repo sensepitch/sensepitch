@@ -105,11 +105,11 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
     if (!sslHandshakeComplete) {
       String phase = "handshake";
       if (isSslDecoderException(cause)) {
-        metrics.ingressErrorCounter.labelValues(phase, "ssl").inc();
+        metrics.countIngressError(ctx, phase, "ssl");
       } else if (connectionReset) {
-        metrics.ingressErrorCounter.labelValues(phase, "reset").inc();
+        metrics.countIngressError(ctx, phase, "reset");
       } else {
-        metrics.ingressErrorCounter.labelValues(phase, "other").inc();
+        metrics.countIngressError(ctx, phase, "other");
         LOG.downstreamError(ctx.channel(), "handshake error", cause);
       }
       completeAndClose(ctx);
@@ -131,11 +131,15 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
     }
     // for connection reset we don't log or respond, just count
     if (connectionReset) {
-      metrics.ingressErrorCounter.labelValues(phase, "reset").inc();
+      metrics.countIngressError(ctx, phase, "reset");
       completeAndClose(ctx);
       return;
     }
-    metrics.ingressErrorCounter.labelValues(phase, "other").inc();
+    // our own timeouts are no unexpected error, keep them apart from "other"
+    boolean timeout =
+        cause instanceof IngressTimeoutHandler.UpstreamResponseTimeoutException
+            || cause instanceof IngressTimeoutHandler.WriteTimeoutException;
+    metrics.countIngressError(ctx, phase, timeout ? "timeout" : "other");
     // a more specific outcome, e.g. a timeout, was reported before the exception, it wins
     loggingHandler.setOutcome(RequestOutcome.EDGE_ERROR);
     // send a proper response if possible, log via standard request log

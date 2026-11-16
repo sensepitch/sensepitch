@@ -75,7 +75,7 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
         new TimeoutTask(ctx, config.readTimeoutSeconds()) {
           @Override
           public void fire() {
-            proxyMetrics.ingressReceiveTimeoutFirstRequest.inc();
+            proxyMetrics.countReceiveTimeout(ctx, "first_request");
             RequestLoggingHandler.reportOutcome(ctx, RequestOutcome.REQUEST_TIMEOUT);
             FullHttpResponse response =
                 new DefaultFullHttpResponse(
@@ -191,7 +191,7 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
                         new TimeoutTask(ctx, config.readTimeoutSeconds()) {
                           @Override
                           public void fire() {
-                            proxyMetrics.ingressReceiveTimeoutKeepAlive.inc();
+                            proxyMetrics.countReceiveTimeout(ctx, "keep_alive");
                             RequestLoggingHandler.reportOutcome(
                                 ctx, RequestOutcome.REQUEST_TIMEOUT);
                             FullHttpResponse response =

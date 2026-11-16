@@ -48,8 +48,7 @@ sensepitch_ingress_connections_closed_total 1.0
 # TYPE sensepitch_ingress_connections_opened_total counter
 sensepitch_ingress_connections_opened_total 2.0
 # TYPE sensepitch_ingress_receive_timeout_total counter
-sensepitch_ingress_receive_timeout_total{phase="first_request"} 0.0
-sensepitch_ingress_receive_timeout_total{phase="keep_alive"} 2.0
+sensepitch_ingress_receive_timeout_total{ingress="nil_host",phase="keep_alive"} 2.0
 # HELP sensepitch_ingress_request_duration_seconds HTTP total duration of the request from established connection to response received
 # TYPE sensepitch_ingress_request_duration_seconds histogram
 sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="0.002"} 1
@@ -87,7 +86,7 @@ sensepitch_ingress_request_duration_seconds_bucket{ingress="example.com",method=
 sensepitch_ingress_request_duration_seconds_count{ingress="example.com",method="POST",status_code="404"} 1
 sensepitch_ingress_request_duration_seconds_sum{ingress="example.com",method="POST",status_code="404"} 3.0E-6
 # TYPE sensepitch_ingress_request_errors_total counter
-sensepitch_ingress_request_errors_total{phase="upstream",type="connect"} 1.0
+sensepitch_ingress_request_errors_total{ingress="example.com",phase="upstream",type="connect"} 1.0
 # TYPE sensepitch_ingress_request_flavor_count_total counter
 sensepitch_ingress_request_flavor_count_total{country="DE",flavor="human"} 1.0
 sensepitch_ingress_request_flavor_count_total{country="unknown",flavor="unknown"} 1.0
@@ -115,16 +114,16 @@ sensepitch_ingress_request_size_bytes_count{ingress="example.com"} 2
 sensepitch_ingress_request_size_bytes_sum{ingress="example.com"} 100.0
 # HELP sensepitch_ingress_requests_aborted_total The response could not be sent to the client, e.g. when the connection is reset
 # TYPE sensepitch_ingress_requests_aborted_total counter
-sensepitch_ingress_requests_aborted_total 1.0
+sensepitch_ingress_requests_aborted_total{ingress="example.com"} 1.0
 # HELP sensepitch_ingress_requests_completed_total Increments once the response was received by the client
 # TYPE sensepitch_ingress_requests_completed_total counter
-sensepitch_ingress_requests_completed_total 3.0
+sensepitch_ingress_requests_completed_total{ingress="example.com"} 3.0
 # HELP sensepitch_ingress_requests_in_flight Number of requests currently in flight
 # TYPE sensepitch_ingress_requests_in_flight gauge
-sensepitch_ingress_requests_in_flight 1.0
+sensepitch_ingress_requests_in_flight{ingress="example.com"} 1.0
 # HELP sensepitch_ingress_requests_started_total Increments as soon as an HTTP header from a client is received
 # TYPE sensepitch_ingress_requests_started_total counter
-sensepitch_ingress_requests_started_total 5.0
+sensepitch_ingress_requests_started_total{ingress="example.com"} 5.0
 # HELP sensepitch_ingress_response_duration_seconds HTTP request response duration in seconds, from request received to first byte of response, not effected by client connectivity
 # TYPE sensepitch_ingress_response_duration_seconds histogram
 sensepitch_ingress_response_duration_seconds_bucket{ingress="example.com",method="GET",status_code="200",le="0.002"} 1

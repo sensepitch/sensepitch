@@ -84,12 +84,16 @@ class MetricsExpositionTest {
 
     ProxyMetrics proxyMetrics = new ProxyMetrics();
     proxyMetrics.registerCollectors(registry::register);
-    proxyMetrics.ingressRequestsStarted.add(5);
-    proxyMetrics.ingressRequestsCompleted.add(3);
-    proxyMetrics.ingressRequestsAborted.add(1);
-    proxyMetrics.ingressErrorCounter.labelValues("upstream", "connect").inc();
-    proxyMetrics.ingressReceiveTimeoutKeepAlive.inc(2);
     HttpRequest deflected = TestRequestLogInfo.of(HttpMethod.GET, 200).request();
+    for (int i = 0; i < 5; i++) {
+      proxyMetrics.countRequestStarted(deflected);
+    }
+    for (int i = 0; i < 3; i++) {
+      proxyMetrics.countRequestCompleted(deflected);
+    }
+    proxyMetrics.countRequestAborted(deflected);
+    proxyMetrics.ingressErrorCounter.labelValues("example.com", "upstream", "connect").inc();
+    proxyMetrics.ingressReceiveTimeoutCounter.labelValues("nil_host", "keep_alive").inc(2);
     proxyMetrics.countDeflectorRequest(deflected, ProxyMetrics.DeflectorOutcome.CHALLENGE_SENT);
     proxyMetrics.countDeflectorRequest(deflected, ProxyMetrics.DeflectorOutcome.CHALLENGE_SENT);
     proxyMetrics.countDeflectorRequest(deflected, ProxyMetrics.DeflectorOutcome.PASSED);

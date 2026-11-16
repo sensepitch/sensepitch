@@ -321,6 +321,8 @@ class OtlpLogDestinationTest {
     TestRequestLogInfo info =
         TestRequestLogInfo.of(HttpMethod.GET, 200).withClientAddress("192.0.2.7");
     info.request().headers().set(HttpHeaderNames.ACCEPT_LANGUAGE, "en");
+    // path and query are written as ranges of the URI
+    info.request().setUri("/search?q=edge");
     new OtlpRequestLogger(destination).logRequest(info);
     Received post = received.take();
     assertThat(post.contentType()).isEqualTo("application/x-protobuf");
@@ -341,7 +343,7 @@ class OtlpLogDestinationTest {
     assertThat(record.getSeverityNumberValue()).isEqualTo(9);
     assertThat(record.getSeverityText()).isEqualTo("INFO");
     assertThat(record.getEventName()).isEqualTo(SensepitchLogFields.EVENT_NAME_VALUE);
-    assertThat(record.getBody().getStringValue()).isEqualTo("GET / 200");
+    assertThat(record.getBody().getStringValue()).isEqualTo("GET /search?q=edge 200");
     assertThat(HexFormat.of().formatHex(record.getTraceId().toByteArray()))
         .isEqualTo(TestRequestLogInfo.TRACE_ID);
     assertThat(HexFormat.of().formatHex(record.getSpanId().toByteArray()))
@@ -350,6 +352,8 @@ class OtlpLogDestinationTest {
 
     Map<String, AnyValue> attributes = attributes(record.getAttributesList());
     assertThat(attributes.get("client.address").getStringValue()).isEqualTo("192.0.2.7");
+    assertThat(attributes.get("url.path").getStringValue()).isEqualTo("/search");
+    assertThat(attributes.get("url.query").getStringValue()).isEqualTo("q=edge");
     assertThat(attributes.get("http.response.status_code").getIntValue()).isEqualTo(200);
     assertThat(attributes.get("sensepitch.request.cookie_present").getBoolValue()).isFalse();
     assertThat(

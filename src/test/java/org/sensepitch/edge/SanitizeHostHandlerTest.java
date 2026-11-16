@@ -3,6 +3,7 @@ package org.sensepitch.edge;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.sensepitch.edge.SanitizeHostHandler.MISSING_HOST;
+import static org.sensepitch.edge.SanitizeHostHandler.NIL_HOST;
 import static org.sensepitch.edge.SanitizeHostHandler.UNKNOWN_HOST;
 
 import io.netty.channel.embedded.EmbeddedChannel;
@@ -11,6 +12,7 @@ import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpVersion;
+import io.netty.handler.ssl.SniCompletionEvent;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -40,6 +42,26 @@ class SanitizeHostHandlerTest {
     HttpRequest result = pass(request(HttpMethod.GET, hosts));
     assertThat(result.headers().getAll(HttpHeaderNames.HOST)).hasSize(1);
     return result.headers().get(HttpHeaderNames.HOST);
+  }
+
+  /// The TLS server name of the connection, sanitized like the host header when asked for
+  @Test
+  void serverName() {
+    assertThat(serverName(null)).isEqualTo(NIL_HOST);
+    assertThat(serverName(new SniCompletionEvent((String) null))).isEqualTo(MISSING_HOST);
+    assertThat(serverName(new SniCompletionEvent("Example.COM"))).isEqualTo("example.com");
+    assertThat(serverName(new SniCompletionEvent("other.com"))).isEqualTo(UNKNOWN_HOST);
+  }
+
+  /// Server name of a connection that received the event, or none if `null`
+  String serverName(SniCompletionEvent event) {
+    EmbeddedChannel channel = new EmbeddedChannel(handler);
+    if (event != null) {
+      channel.pipeline().fireUserEventTriggered(event);
+    }
+    String name = handler.serverName(channel);
+    channel.finishAndReleaseAll();
+    return name;
   }
 
   @Test

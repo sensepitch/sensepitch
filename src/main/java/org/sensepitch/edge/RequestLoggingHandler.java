@@ -145,8 +145,8 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
     if (msg instanceof HttpRequest) {
-      metrics.ingressRequestsStarted.increment();
       request = (HttpRequest) msg;
+      metrics.countRequestStarted(request);
       requestStartTime = System.currentTimeMillis();
       requestStartTimeNanos = ticker.nanoTime();
       response = null;
@@ -213,7 +213,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
               if (request == null) {
                 return;
               }
-              metrics.ingressRequestsCompleted.increment();
+              metrics.countRequestCompleted(request);
               setException(future.cause());
               log(ctx);
             });
@@ -357,7 +357,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   @Override
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     if (request != null) {
-      metrics.ingressRequestsAborted.increment();
+      metrics.countRequestAborted(request);
       contentBytes = 0;
       response = ABORTED_RESPONSE;
       setOutcome(RequestOutcome.CLIENT_ABORTED);
