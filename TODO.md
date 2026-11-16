@@ -9,6 +9,7 @@ current production needs. Notes below record decisions to make before implementa
 
 ## Evergreen
 
+- [ ] Scrutinise the todos listed here and suggest removals or lower prio for things that have no visible effect to the operator
 - [ ] Check on GitHub CI actions and add a TODO or fix right away if something is broken
 - [ ] Improve code according to styling rules
   - Ongoing review principle; record concrete inconsistencies as separate tasks.
@@ -148,10 +149,9 @@ Decisions, alternatives and limitations are in
 [doc/design/request-log.md](doc/design/request-log.md); the configurable backoff is under Circuit
 breaker.
 
-- [ ] shutdown report: "request log not drained after N ms" prints the configured drain budget,
-  not the elapsed time, and a loop that did not terminate (e.g. a stuck handler) shows only as
-  unsent records (`Proxy.shutdownOnce`)
-  - P2: small; print the elapsed time of the phase and name the loops still running.
+- [x] shutdown report: print elapsed phase times and report a still-running event loop group
+  (`Proxy.shutdownOnce`). Naming the stuck loops was dropped, see
+  [doc/design/request-log.md](doc/design/request-log.md).
 - [ ] compression budget: gzip runs on the common pool at a fixed level (`BEST_SPEED`)
   - P3: a small bounded executor and `otlp.compressionLevel`; zstd once the target log servers
     accept it. Measure CPU per MiB first.

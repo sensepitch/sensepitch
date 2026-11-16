@@ -238,9 +238,8 @@ class ProxyShutdownIT {
         .anySatisfy(
             m ->
                 assertThat(m)
-                    .contains(
-                        "requests still in flight after 1000 ms, total 1, by upstream"
-                            + " {sites.upstream.com.upstream=1}"));
+                    .contains("requests still in flight after")
+                    .contains("ms, total 1, by upstream {sites.upstream.com.upstream=1}"));
   }
 
   /// With the log server down, the shutdown ends at its timeout and reports the records not sent
@@ -259,7 +258,8 @@ class ProxyShutdownIT {
         .anySatisfy(
             m ->
                 assertThat(m)
-                    .contains("request log not drained after 500 ms, unsent records {otlp=1}"));
+                    .contains("request log not drained after")
+                    .contains("ms, unsent records {otlp=1}"));
   }
 
   /// A reload after the shutdown started is rejected, it would create destinations that are

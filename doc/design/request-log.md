@@ -167,8 +167,8 @@ closes the remaining connections, logs their requests as aborted (499) and write
 then wait for the destinations to send everything until `shutdownTimeoutMillis`. The request log
 gets its own budget, by default a third of the total, because the records of the aborted requests
 only exist after the connections are gone. What is left at a deadline is logged at `INFO`: the
-requests in flight per upstream, the unsent records per destination. A reload and the start of
-the shutdown run one at a time.
+requests in flight per upstream, the unsent records per destination, and whether the event loop
+group is still running. A reload and the start of the shutdown run one at a time.
 
 ### Gzip, never on an event loop
 
@@ -287,6 +287,13 @@ loop, including loops that never logged into it. Rejected: it ties the generic s
 group, and loops that never logged would have to be told to send an empty marker. The caller
 already knows when all markers are written; `finish()` is how it says so.
 
+### Naming the event loops that did not end
+
+The shutdown report could list the loops still running instead of only saying that the group is.
+Not done: a loop that does not end is a bug of ours, and its thread name does not tell which
+handler is stuck; a thread dump taken during the shutdown does. The JVM exits right after the
+report, so the name would not help to find the loop either.
+
 ### Compress on the calling thread, or with `GZIPOutputStream`
 
 Compressing inline would block an event loop for milliseconds per full batch. A
@@ -322,9 +329,6 @@ Known limits of the current implementation, checked against the code on 2026-11-
 - **Reload of a changed destination.** Old and new sender run side by side until the old one has
   drained; their metrics share the `destination` label, and the breaker gauges show the new one
   only.
-- **Shutdown report.** "request log not drained after N ms" prints the configured drain budget;
-  the real time is longer when the connections finished early. Loops that do not terminate in time,
-  e.g. a stuck handler, show only as unsent records.
 - **Fixed limits.** The backoff bounds (1 s to 30 s) and the stdout queue size are constants.
 
 ## Planned improvements
@@ -332,8 +336,8 @@ Known limits of the current implementation, checked against the code on 2026-11-
 In rough order of priority. Items 1, 2, 4, 5 and 7 are tracked in [TODO.md](../../TODO.md),
 section "Request log", item 3 (the backoff part) under "Circuit breaker"; item 6 is a proposal.
 
-1. **Shutdown report wording.** Print the elapsed time of the drain phase, and name loops that did
-   not terminate. Small.
+1. **Shutdown report wording.** Done: report elapsed phase times and a still-running event loop
+   group; naming the loops was dropped, see "Alternatives considered".
 2. **Post latency.** Done: `sensepitch_request_log_post_duration_seconds`, a histogram of the
    post duration per destination, to see a slow log server before it fails.
 3. **Configurable backoff and stdout queue size,** with the current values as defaults. The
