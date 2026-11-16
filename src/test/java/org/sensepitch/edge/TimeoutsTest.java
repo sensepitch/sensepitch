@@ -60,7 +60,7 @@ class TimeoutsTest {
           .ticker(ticker)
           .handlers(
               new FakeSslHandler(),
-              new RequestLoggingHandler(new ProxyMetrics(), requestLog),
+              new RequestLoggingHandler(proxyMetrics, requestLog),
               new IngressTimeoutHandler(cfg, proxyMetrics),
               new HttpServerKeepAliveHandler(),
               new DownstreamHandler(new MockUpstream(), proxyMetrics),
@@ -181,6 +181,18 @@ class TimeoutsTest {
         .asString()
         .contains("GET /no-response HTTP/1.1 504");
     assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.UPSTREAM_TIMEOUT);
+    assertOutcomeCount(RequestOutcome.UPSTREAM_TIMEOUT, 1);
+  }
+
+  /// The metric counts the outcome of the request log, see [ProxyMetrics#countRequestOutcome]. The
+  /// requests have no host header, there is no [SanitizeHostHandler] in the pipeline.
+  void assertOutcomeCount(RequestOutcome outcome, long expected) {
+    assertThat(
+            proxyMetrics
+                .requestOutcomeCounter
+                .labelValues(SanitizeHostHandler.MISSING_HOST, outcome.value())
+                .getLongValue())
+        .isEqualTo(expected);
   }
 
   @Test
@@ -229,6 +241,7 @@ class TimeoutsTest {
         .contains("DOWNSTREAM ERROR phase=responding");
     // logged when the connection closes, the timeout was reported first
     assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.RESPONSE_WRITE_TIMEOUT);
+    assertOutcomeCount(RequestOutcome.RESPONSE_WRITE_TIMEOUT, 1);
   }
 
   private void sendRequest(String uri) {

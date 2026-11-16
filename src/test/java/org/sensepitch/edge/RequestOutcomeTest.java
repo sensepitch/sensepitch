@@ -9,6 +9,7 @@ import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.DefaultHttpRequest;
 import io.netty.handler.codec.http.DefaultLastHttpContent;
+import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponseStatus;
@@ -18,6 +19,8 @@ import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.Future;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -54,9 +57,11 @@ class RequestOutcomeTest {
     }
   }
 
+  final ProxyMetrics metrics = new ProxyMetrics();
+
   RequestLoggingHandler loggingHandler() {
     return new RequestLoggingHandler(
-        new ProxyMetrics(),
+        metrics,
         info ->
             logged.add(
                 new Logged(
@@ -140,6 +145,40 @@ class RequestOutcomeTest {
     channel.pipeline().get(RequestLoggingHandler.class).setOutcome(RequestOutcome.UPSTREAM_TIMEOUT);
     channel.close();
     assertThat(logged).extracting(Logged::outcome).containsExactly(RequestOutcome.UPSTREAM_TIMEOUT);
+  }
+
+  /// The metric counts each logged request once, with the outcome of the log: the timeout reported
+  /// first, not the abort when the connection closes
+  @Test
+  void metricCountsTheLoggedOutcome() {
+    channel = new EmbeddedChannel(loggingHandler(), respond(HttpResponseStatus.OK, true));
+    request();
+    request();
+    channel.writeInbound(new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/"));
+    channel.pipeline().get(RequestLoggingHandler.class).setOutcome(RequestOutcome.UPSTREAM_TIMEOUT);
+    channel.close();
+    assertThat(outcomeCounts(SanitizeHostHandler.MISSING_HOST))
+        .isEqualTo(Map.of("completed", 2L, "upstream_timeout", 1L));
+  }
+
+  /// The ingress label is the host header, as set by [SanitizeHostHandler]
+  @Test
+  void metricIngressIsTheHost() {
+    channel = new EmbeddedChannel(loggingHandler(), respond(HttpResponseStatus.OK, true));
+    HttpRequest request = new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/");
+    request.headers().set(HttpHeaderNames.HOST, "example.com");
+    channel.writeInbound(request, new DefaultLastHttpContent());
+    assertThat(outcomeCounts("example.com")).containsEntry("completed", 1L);
+    assertThat(outcomeCounts(SanitizeHostHandler.MISSING_HOST)).isEmpty();
+  }
+
+  /// Count per outcome label value of one ingress, from the collected snapshot
+  Map<String, Long> outcomeCounts(String ingress) {
+    Map<String, Long> counts = new TreeMap<>();
+    metrics.requestOutcomeCounter.collect().getDataPoints().stream()
+        .filter(p -> ingress.equals(p.getLabels().get("ingress")))
+        .forEach(p -> counts.put(p.getLabels().get("outcome"), (long) p.getValue()));
+    return counts;
   }
 
   /// A report arriving after the request was logged does not leak into the next request

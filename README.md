@@ -232,6 +232,17 @@ A high ratio of `challenge_sent` to `answer_accepted` is normal under bot traffi
 `answer_rejected` hint at clients trying to forge answers. Requests for the challenge's scripts and
 styles are not counted.
 
+### `sensepitch_ingress_request_outcomes_total{ingress="...",outcome="..."}`
+
+Every request, counted when it is logged, by `ingress` (the requested host) and `outcome`, the
+value of `sensepitch.request.outcome` in the request log, see [Request outcome](#request-outcome).
+The counts match the request log: one per record. An outcome appears once it happened for the
+ingress.
+
+The share of failed requests is the rate of all outcomes except `completed`, `edge_response` and
+`fallback`, divided by the rate of all outcomes. `upstream_*` points to the upstream,
+`request_timeout`, `response_write_timeout` and `client_aborted` to the client.
+
 ### `sensepitch_ingress_request_flavor_count_total{flavor="...",country="..."}`
 
 Requests by traffic type and client country. `flavor` is the value of the `Sp-Traffic-Type`
@@ -798,7 +809,8 @@ The OTLP export also identifies the edge: the resource has `service.instance.id`
 ### Request outcome
 
 `sensepitch.request.outcome` tells why a request ended. The values are few, so it suits dashboards
-to see at a glance whether the edge, the upstream or the client is involved:
+to see at a glance whether the edge, the upstream or the client is involved. The metric
+`sensepitch_ingress_request_outcomes_total` counts the same values:
 
 | Value | Meaning |
 |---|---|
