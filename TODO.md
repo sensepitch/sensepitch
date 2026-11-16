@@ -21,6 +21,13 @@ implementation.
 - [ ] Flaky, not investigated: `ProxyShutdownIT`,
   `ShadedJarIT.sigtermSendsTheRequestLogAndExits`
   - P2: also the `SIGTERM` path.
+- [ ] Flaky test: `OtlpLogDestinationTest.badRequestGivesUpTheBatch` expected one log line and got
+  two in CI run 43810408003 (2026-11-16, Dependabot PR for `actions/setup-node` 7, unrelated to
+  it). The extra line came before the 400: "Request log export to http://127.0.0.1:.../v1/logs
+  failed: java.io.IOException: HTTP/1.1 header parser received no bytes. Buffering records and
+  retrying, ...". So a post failed on the connection first, then was retried.
+  - P2: find where the connection broke (test server, keep-alive reuse of a closed connection by
+    the JDK `HttpClient`) and whether the test or the sender should tolerate it.
 - [ ] Error log flood while an upstream is down: `DownstreamHandler.failExchange` logs every
   upstream connect or write failure as error with stack trace, one per request
   - P2: an operator sees one error per request. A misbehaving upstream is counted and logged at
