@@ -1,6 +1,7 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.sensepitch.edge.CompleteTest.COMMON_CONFIG;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -9,6 +10,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -27,7 +29,9 @@ class AdminServerTest {
   }
 
   void start(Supplier<ReloadResult> reload) throws IOException {
-    server = AdminServer.start(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), reload);
+    server =
+        AdminServer.start(
+            new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), reload, () -> false);
   }
 
   HttpResponse<String> send(String method, String path) throws Exception {
@@ -36,6 +40,44 @@ class AdminServerTest {
             .method(method, HttpRequest.BodyPublishers.noBody())
             .build();
     return client.send(request, HttpResponse.BodyHandlers.ofString());
+  }
+
+  @Test
+  void healthzStaysLiveDuringShutdown() throws Exception {
+    AtomicBoolean shuttingDown = new AtomicBoolean();
+    server =
+        AdminServer.start(
+            new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), null, shuttingDown::get);
+    assertThat(send("GET", "/healthz").statusCode()).isEqualTo(200);
+    shuttingDown.set(true);
+    assertThat(send("GET", "/healthz").statusCode()).isEqualTo(200);
+  }
+
+  @Test
+  void readyzTracksProxyShutdown() throws Exception {
+    Proxy proxy = new Proxy(COMMON_CONFIG, new RequestLogCapture());
+    try {
+      server =
+          AdminServer.start(
+              new InetSocketAddress(InetAddress.getLoopbackAddress(), 0),
+              () -> ReloadResult.APPLIED,
+              proxy::isShuttingDown);
+      assertThat(send("GET", "/readyz").statusCode()).isEqualTo(200);
+      proxy.shutdown();
+      assertThat(send("GET", "/readyz").statusCode()).isEqualTo(503);
+      assertThat(send("GET", "/healthz").statusCode()).isEqualTo(200);
+      assertThat(send("POST", "/reload").statusCode()).isEqualTo(200);
+    } finally {
+      proxy.shutdown();
+    }
+  }
+
+  @Test
+  void readyzWithoutConfigurationFile() throws Exception {
+    start(null);
+    assertThat(send("GET", "/readyz").statusCode()).isEqualTo(200);
+    assertThat(send("GET", "/readyz/other").statusCode()).isEqualTo(404);
+    assertThat(send("GET", "/healthz/other").statusCode()).isEqualTo(404);
   }
 
   @Test
@@ -82,7 +124,7 @@ class AdminServerTest {
 
   @Test
   void defaultsToLoopback() throws Exception {
-    server = AdminServer.start(AdminConfig.builder().port(freePort()).build(), null);
+    server = AdminServer.start(AdminConfig.builder().port(freePort()).build(), null, () -> false);
     assertThat(server.address().getAddress().isLoopbackAddress()).isTrue();
   }
 

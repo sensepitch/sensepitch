@@ -47,7 +47,10 @@ public class Main {
       config = builder.build();
       proxy = new Proxy(config);
     }
-    AdminServer admin = config.admin() != null ? AdminServer.start(config.admin(), reload) : null;
+    AdminServer admin =
+        config.admin() != null
+            ? AdminServer.start(config.admin(), reload, proxy::isShuttingDown)
+            : null;
     try {
       proxy.start();
     } finally {

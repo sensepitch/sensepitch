@@ -578,6 +578,9 @@ admin:
 curl -X POST http://127.0.0.1:9401/reload
 ````
 
+`/healthz` answers `200` while the admin server runs. `/readyz` answers `200` until shutdown
+starts, then `503`; it does not wait for the proxy listener to start.
+
 `POST /reload` answers `200` if the configuration was applied, `422` with the reason if it was
 rejected (invalid configuration, missing `#END`), and `409` if the configuration comes from
 environment variables. The endpoint has no authentication, so it binds to the loopback interface
