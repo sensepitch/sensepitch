@@ -137,10 +137,12 @@ while idle and needs no shutdown. A caller that wants to retry by itself schedul
 
 `tryAcquire()` in the closed state reads one volatile field and returns, it neither locks nor
 allocates, so it can be called for each request on an event loop (a test checks the allocation).
-All state changes and the open and half open paths take the monitor of the breaker. A breaker is
-rarely open, and then the cost of a lock is irrelevant, so the simpler locking was preferred over
-Armeria's compare and set on immutable state objects. A caller that saw the open state and then
-waits for the lock re-checks the state inside it.
+All state changes and the open and half open paths take a private lock object of the breaker, so
+no outside code can hold it. A breaker is rarely open, and then the cost of a lock is irrelevant,
+so the simpler locking was preferred over Armeria's compare and set on immutable state objects. A
+caller that saw the open state and then waits for the lock re-checks the state inside it. Only the
+state is volatile, for that lock free read; the other fields, including the trip and restart times
+for the metrics, are read under the lock.
 
 ### One `Ticker` for all times
 

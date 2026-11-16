@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit;
 /// window as in Armeria or resilience4j.
 ///
 /// [#tryAcquire()] in the closed state reads one volatile field, it neither locks nor allocates,
-/// so it can be called for each request on an event loop. State changes lock this object.
+/// so it can be called for each request on an event loop. State changes take an internal lock.
 ///
 /// Every outcome, refusal and state change is reported to the [Events], e.g. the metrics, see
 /// [CircuitBreakerMetrics]. The breaker keeps the wall clock times of its start, its last trip and
@@ -55,7 +55,7 @@ public final class CircuitBreaker {
     NOT_PERMITTED
   }
 
-  /// Receives what the breaker does, mostly with the lock of the breaker held, so an
+  /// Receives what the breaker does, mostly with the internal lock of the breaker held, so an
   /// implementation must not call back into the breaker.
   public interface Events {
 
@@ -87,18 +87,22 @@ public final class CircuitBreaker {
 
   private final Events events;
 
+  /// Guards all state changes and the fields below, private so no outside code can hold it
+  private final Object lock = new Object();
+
+  /// Written under the lock, volatile for the lock free read in [#tryAcquire()] and [#state()]
   private volatile State state = State.CLOSED;
 
-  /// Wall clock time of the last change from closed to open, `0` if none
-  private volatile long lastTripMillis;
-
-  /// Wall clock time of the last close after a trip, `0` if none
-  private volatile long lastRestartMillis;
-
-  // guarded by this
+  // guarded by lock
   private int failures;
   private long retryAtNanos;
   private long probeSinceNanos;
+
+  /// Wall clock time of the last change from closed to open, `0` if none
+  private long lastTripMillis;
+
+  /// Wall clock time of the last close after a trip, `0` if none
+  private long lastRestartMillis;
 
   /// @param probeTimeoutMillis time after which a probe that reported nothing is replaced, at
   ///   least the request timeout
@@ -129,30 +133,32 @@ public final class CircuitBreaker {
     return state == State.CLOSED || tryAcquireSlow();
   }
 
-  private synchronized boolean tryAcquireSlow() {
-    long now = ticker.nanoTime();
-    switch (state) {
-      case CLOSED -> {
-        // closed by another thread between the volatile read and taking the lock
-        return true;
-      }
-      case OPEN -> {
-        if (now - retryAtNanos < 0) {
-          events.call(Kind.NOT_PERMITTED);
-          return false;
+  private boolean tryAcquireSlow() {
+    synchronized (lock) {
+      long now = ticker.nanoTime();
+      switch (state) {
+        case CLOSED -> {
+          // closed by another thread between the volatile read and taking the lock
+          return true;
         }
-        state = State.HALF_OPEN;
-        events.transition(State.OPEN, State.HALF_OPEN, BACKOFF_OVER);
-        probeSinceNanos = now;
-        return true;
-      }
-      default -> {
-        if (now - probeSinceNanos < probeTimeoutNanos) {
-          events.call(Kind.NOT_PERMITTED);
-          return false;
+        case OPEN -> {
+          if (now - retryAtNanos < 0) {
+            events.call(Kind.NOT_PERMITTED);
+            return false;
+          }
+          state = State.HALF_OPEN;
+          events.transition(State.OPEN, State.HALF_OPEN, BACKOFF_OVER);
+          probeSinceNanos = now;
+          return true;
         }
-        probeSinceNanos = now;
-        return true;
+        default -> {
+          if (now - probeSinceNanos < probeTimeoutNanos) {
+            events.call(Kind.NOT_PERMITTED);
+            return false;
+          }
+          probeSinceNanos = now;
+          return true;
+        }
       }
     }
   }
@@ -160,13 +166,15 @@ public final class CircuitBreaker {
   /// A request succeeded, the breaker closes.
   ///
   /// @return the state before, not `CLOSED` means the remote recovered
-  public synchronized State onSuccess() {
-    events.call(Kind.SUCCESSFUL);
-    State before = state;
-    if (before != State.CLOSED) {
-      close(before);
+  public State onSuccess() {
+    synchronized (lock) {
+      events.call(Kind.SUCCESSFUL);
+      State before = state;
+      if (before != State.CLOSED) {
+        close(before);
+      }
+      return before;
     }
-    return before;
   }
 
   /// A request failed in a way a retry cannot fix, e.g. a status 400, reported as [Kind#IGNORED].
@@ -177,14 +185,16 @@ public final class CircuitBreaker {
   ///
   /// @param error short code of the error, see [Events#error(String)]
   /// @return the state before, not `CLOSED` means the remote recovered
-  public synchronized State onIgnored(String error) {
-    events.call(Kind.IGNORED);
-    events.error(error);
-    State before = state;
-    if (before != State.CLOSED) {
-      close(before);
+  public State onIgnored(String error) {
+    synchronized (lock) {
+      events.call(Kind.IGNORED);
+      events.error(error);
+      State before = state;
+      if (before != State.CLOSED) {
+        close(before);
+      }
+      return before;
     }
-    return before;
   }
 
   /// Closes the breaker after the remote answered, for [#onSuccess()] and [#onIgnored(String)]
@@ -203,38 +213,45 @@ public final class CircuitBreaker {
   ///   transition to `OPEN`
   /// @return the state before: `CLOSED` means an outage starts, `OPEN` means the failure was
   ///   counted already, the caller does not need to schedule another retry
-  public synchronized State onFailure(long retryAfterMillis, String error) {
-    events.call(Kind.FAILED);
-    events.error(error);
-    State before = state;
-    long now = ticker.nanoTime();
-    if (before == State.OPEN) {
-      // a request in flight when the breaker opened, only a longer requested delay matters
-      retryAtNanos = Math.max(retryAtNanos, now + TimeUnit.MILLISECONDS.toNanos(retryAfterMillis));
+  public State onFailure(long retryAfterMillis, String error) {
+    synchronized (lock) {
+      events.call(Kind.FAILED);
+      events.error(error);
+      State before = state;
+      long now = ticker.nanoTime();
+      if (before == State.OPEN) {
+        // a request in flight when the breaker opened, only a longer requested delay matters
+        retryAtNanos =
+            Math.max(retryAtNanos, now + TimeUnit.MILLISECONDS.toNanos(retryAfterMillis));
+        return before;
+      }
+      long delayMillis = backoff.delayMillis(failures++, retryAfterMillis);
+      retryAtNanos = now + TimeUnit.MILLISECONDS.toNanos(delayMillis);
+      state = State.OPEN;
+      if (before == State.CLOSED) {
+        lastTripMillis = nowMillis();
+      }
+      events.transition(before, State.OPEN, error);
       return before;
     }
-    long delayMillis = backoff.delayMillis(failures++, retryAfterMillis);
-    retryAtNanos = now + TimeUnit.MILLISECONDS.toNanos(delayMillis);
-    state = State.OPEN;
-    if (before == State.CLOSED) {
-      lastTripMillis = nowMillis();
-    }
-    events.transition(before, State.OPEN, error);
-    return before;
   }
 
   /// Ends the backoff now, the next [#tryAcquire()] lets a probe through. Used for a last attempt
   /// when shutting down.
-  public synchronized void skipBackoff() {
-    if (state == State.OPEN) {
-      retryAtNanos = ticker.nanoTime();
+  public void skipBackoff() {
+    synchronized (lock) {
+      if (state == State.OPEN) {
+        retryAtNanos = ticker.nanoTime();
+      }
     }
   }
 
   /// Time until the backoff is over and the breaker lets a probe through, `0` if it is over.
   /// Meaningful while open.
-  public synchronized long retryDelayNanos() {
-    return Math.max(0, retryAtNanos - ticker.nanoTime());
+  public long retryDelayNanos() {
+    synchronized (lock) {
+      return Math.max(0, retryAtNanos - ticker.nanoTime());
+    }
   }
 
   public State state() {
@@ -242,8 +259,10 @@ public final class CircuitBreaker {
   }
 
   /// Failed attempts in a row, `0` when closed
-  public synchronized int failures() {
-    return failures;
+  public int failures() {
+    synchronized (lock) {
+      return failures;
+    }
   }
 
   /// Wall clock time the breaker was created, in milliseconds
@@ -253,12 +272,16 @@ public final class CircuitBreaker {
 
   /// Wall clock time of the last change from closed to open, `0` if none
   public long lastTripMillis() {
-    return lastTripMillis;
+    synchronized (lock) {
+      return lastTripMillis;
+    }
   }
 
   /// Wall clock time of the last close after a trip, `0` if none
   public long lastRestartMillis() {
-    return lastRestartMillis;
+    synchronized (lock) {
+      return lastRestartMillis;
+    }
   }
 
   /// Wall clock time from the ticker, for the trip and restart times

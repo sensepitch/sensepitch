@@ -11,6 +11,13 @@ current production needs. Notes below record decisions to make before implementa
 
 - [ ] Improve code according to styling rules
   - Ongoing review principle; record concrete inconsistencies as separate tasks.
+- [ ] Lock on a private lock object, see the locking rule in `AGENTS.md`: `synchronized` methods
+  or `synchronized (this)` remain in `HttpBatchSender` (`synchronized (this)` blocks, `window()`),
+  `ThreadBatcher` (`log`, `takePartial`, `records`, a `synchronized (this)` block),
+  `CircuitBreakerMetrics` (`add`, `remove`), `Proxy` (`reload`, a `synchronized (this)` block) and
+  `ConfigFileWatcher` (`start`, `checkForChange`, `forceReload`). Check their `volatile` fields
+  along the way: volatile only if read without the lock.
+  - P2: mechanical; `HttpBatchSender` and `ThreadBatcher` are under the 100% coverage rule.
 - [ ] improve code coverage towards 100%
   - Prioritize uncovered risk and meaningful behavior rather than a percentage alone.
 - [ ] Performance test: different Netty allocators, leak detection,
