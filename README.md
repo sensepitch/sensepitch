@@ -1,4 +1,11 @@
 
+# Sensepitch Edge
+
+[![CI](https://github.com/sensepitch/sensepitch/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/sensepitch/sensepitch/actions/workflows/ci.yml)
+[![Nightly](https://github.com/sensepitch/sensepitch/actions/workflows/nightly.yml/badge.svg)](https://github.com/sensepitch/sensepitch/actions/workflows/nightly.yml)
+[![Line coverage](https://raw.githubusercontent.com/sensepitch/sensepitch/badges/badges/jacoco.svg)](https://github.com/sensepitch/sensepitch/actions/workflows/ci.yml?query=branch%3Amain)
+[![Branch coverage](https://raw.githubusercontent.com/sensepitch/sensepitch/badges/badges/branches.svg)](https://github.com/sensepitch/sensepitch/actions/workflows/ci.yml?query=branch%3Amain)
+
 Sensepitch Edge is a reverse proxy that improves the availability of web apps by absorbing malicious or excessive traffic, ensuring continuous, low‑latency service.
 
 ## Goals
