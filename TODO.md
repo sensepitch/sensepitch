@@ -11,11 +11,6 @@ implementation.
 
 ## Bugs
 
-- [ ] CI does not run: every run since at least 2026-11-15 23:03 UTC (15 runs, up to `e54c580`)
-  is still `queued`; the last runs that ended, on 2026-11-14, were `cancelled`. Both workflows use
-  `runs-on: self-hosted`, so the runner is probably offline (inferred, not verified). Nothing was
-  verified in CI since.
-  - P1: bring the runner back or add a hosted fallback, then re-run `main`.
 - [ ] Log4j2 shutdown hook runs concurrently with ours
   - P1, the shutdown on `SIGTERM` is the Kubernetes path: Log4j2 registers its own JVM shutdown hook
     by default (`log4j2.xml` does not disable it) and the JVM runs all hooks in parallel, so Log4j2
@@ -322,6 +317,11 @@ the failure threshold for upstreams is under Upstream.
 
 ## Done
 
+- [x] CI did not run (2026-11-16): every run since at least 2026-11-15 23:03 UTC stayed `queued`
+  on the `self-hosted` runner, probably offline (not verified). Both workflows run on
+  `ubuntu-latest` now, free for a public repository; a new push cancels the run of the previous
+  one (`concurrency` in `ci.yml`), setup-java caches the Maven dependencies. First hosted run
+  green in about 1.5 min. The runs queued for the self-hosted runner are left over.
 - [x] Flaky test: `ReloadableRequestLoggerTest.noRecordIsLostWhileReloading` dropped 4-5 records
   (2026-11-16, failed 7 of 8 runs alone). Root cause in the test: it logged from plain threads
   into a logger built for one thread, so a worker could log into a replaced destination for the
