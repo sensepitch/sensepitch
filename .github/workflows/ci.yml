@@ -12,18 +12,21 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     strategy:
       matrix:
         java-version: [25]
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Set up JDK ${{ matrix.java-version }}
       uses: actions/setup-java@v4
       with:
@@ -38,14 +41,27 @@ jobs:
 
     - name: Build, test and check
       run: ./mvnw clean verify
-      
+
+    # line and branch coverage of unit and integration tests, from the JaCoCo report of verify
+    - name: Coverage summary
+      if: always() && hashFiles('target/site/jacoco/jacoco.csv') != ''
+      run: |
+        awk -F, 'NR > 1 { bm += $6; bc += $7; lm += $8; lc += $9 }
+          END {
+            print "### Coverage\n"
+            print "| Counter | Covered |"
+            print "|---|---|"
+            printf "| Lines | %.1f %% (%d of %d) |\n", 100 * lc / (lm + lc), lc, lm + lc
+            printf "| Branches | %.1f %% (%d of %d) |\n", 100 * bc / (bm + bc), bc, bm + bc
+          }' target/site/jacoco/jacoco.csv >> "$GITHUB_STEP_SUMMARY"
+
     - name: Upload JAR artifact
       uses: actions/upload-artifact@v4
       with:
         name: sensepitch-edge-with-dependencies.jar
         path: target/sensepitch-edge-*-with-dependencies.jar
         retention-days: 7
-        
+
     - name: Upload build reports
       uses: actions/upload-artifact@v4
       if: always()
@@ -55,4 +71,59 @@ jobs:
           target/surefire-reports/
           target/failsafe-reports/
           target/reports/apidocs/
+          target/site/jacoco/
         retention-days: 7
+
+    - name: Upload coverage for the badges
+      uses: actions/upload-artifact@v4
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      with:
+        name: jacoco-csv
+        path: target/site/jacoco/jacoco.csv
+        retention-days: 1
+
+  # Coverage badges for the README, kept on the branch "badges" so main gets no generated commits.
+  # The only job with write access, and only for pushes to main.
+  badges:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download coverage
+      uses: actions/download-artifact@v4
+      with:
+        name: jacoco-csv
+        path: ${{ runner.temp }}/coverage
+
+    - name: Generate badges
+      uses: cicirello/jacoco-badge-generator@v2
+      with:
+        jacoco-csv-file: ${{ runner.temp }}/coverage/jacoco.csv
+        badges-directory: ${{ runner.temp }}/badges
+        generate-branches-badge: true
+
+    - name: Publish badges
+      run: |
+        if git fetch --depth 1 origin badges; then
+          git checkout -B badges FETCH_HEAD
+        else
+          git checkout --orphan badges
+          git rm -rfq .
+        fi
+        mkdir -p badges
+        cp "$RUNNER_TEMP"/badges/*.svg badges/
+        git add badges
+        if git diff --cached --quiet; then
+          echo "badges unchanged"
+          exit 0
+        fi
+        git -c user.name='github-actions[bot]' \
+          -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+          commit -q -m "coverage badges for $GITHUB_SHA"
+        git push origin badges
