@@ -56,14 +56,14 @@ jobs:
           }' target/site/jacoco/jacoco.csv >> "$GITHUB_STEP_SUMMARY"
 
     - name: Upload JAR artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: sensepitch-edge-with-dependencies.jar
         path: target/sensepitch-edge-*-with-dependencies.jar
         retention-days: 7
 
     - name: Upload build reports
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       if: always()
       with:
         name: build-reports
@@ -75,7 +75,7 @@ jobs:
         retention-days: 7
 
     - name: Upload coverage for the badges
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       with:
         name: jacoco-csv
