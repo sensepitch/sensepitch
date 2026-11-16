@@ -75,7 +75,7 @@ public class FlowAndExceptionTest {
     ChannelHandler[] handlers = {
       ingressFlushBlocker,
       new TimeoutsTest.FakeSslHandler(),
-      new RequestLoggingHandler(new ProxyMetrics(), requestLog),
+      new RequestLoggingHandler(proxyMetrics, requestLog),
       new HttpServerKeepAliveHandler(),
       new DownstreamHandler(new MockUpstream(), proxyMetrics),
       new ExceptionHandler(proxyMetrics)
@@ -340,6 +340,13 @@ public class FlowAndExceptionTest {
     assertThat(response.status().reasonPhrase()).isEqualTo("Upstream write problem");
     assertThat(ingressChannel.isOpen()).isFalse();
     assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.UPSTREAM_WRITE_FAILED);
+    assertThat(
+            proxyMetrics
+                .requestOutcomeCounter
+                .labelValues(
+                    SanitizeHostHandler.MISSING_HOST, RequestOutcome.UPSTREAM_WRITE_FAILED.value())
+                .getLongValue())
+        .isEqualTo(1);
   }
 
   /// An exception on the upstream connection while waiting for the response ends the ingress

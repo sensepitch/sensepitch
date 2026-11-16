@@ -155,10 +155,10 @@ breaker.
 
 ## Metrics, logging
 
-- [ ] failure counters: count the request outcomes in a metric, e.g. `UPSTREAM_TIMEOUT`,
-  `RESPONSE_WRITE_TIMEOUT` (`IngressTimeoutHandler`) and `UPSTREAM_WRITE_FAILED`
-  (`DownstreamHandler.channelRead`); today they are in the request log only
-  - P2: choose outcomes, labels and cardinality; use the existing request outcome definitions.
+- [ ] Ingress metrics without the `ingress` label: `sensepitch_ingress_request_errors`,
+  `sensepitch_ingress_receive_timeout` and the `sensepitch_ingress_requests_*` counters. Every
+  ingress metric needs it, see the `ProxyMetrics` class doc.
+  - P3: use `nil_host` where no request was read yet, e.g. `receive_timeout{phase="first_request"}`.
 - [ ] `ProxyMetrics`: one `sensepitch_edge_server_live` per ingress, to drill down per ingress
   and know how many servers it has
   - P3: define ingress identity and expected behavior for multiple servers and reloads.
@@ -285,6 +285,16 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
   likely succeed one round trip later anyway. `HttpBatchSender` logs the recovery for a batch
   given up as for one sent. Covered by `CircuitBreakerBDDTest.ignoredProbe_closes` and
   `OtlpLogDestinationTest.badRequestOfTheProbeEndsTheOutage`.
+
+- [x] Failure counters (2026-11-16): `sensepitch_ingress_request_outcomes_total{ingress,outcome}`
+  counts every logged request by its `RequestOutcome`. Counted once in `RequestLoggingHandler`
+  when the request is logged, not where an outcome is reported: the first report wins, so
+  counting at the report sites (`IngressTimeoutHandler`, `DownstreamHandler`) would double count,
+  and the sum would no longer match the request log. The `ingress` label is the sanitized host,
+  like on every ingress metric. No zero series for outcomes that did not happen, like the other
+  labelled counters; a per ingress cache to create them was dropped, the Prometheus `Counter`
+  already caches its data points.
+
 - [x] Serenity: reporting off by default, `-Dserenity.reports` switches it on (2026-11-14).
   Serenity stays for the BDD step chains. The `pom.xml` deactivates
   `SerenityTestExecutionListener`, so no test is recorded and nothing is written to

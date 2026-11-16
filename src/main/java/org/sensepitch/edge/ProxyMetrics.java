@@ -15,6 +15,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 
+/// Metrics of the proxy core: ingress requests and errors, deflector, request outcomes.
+///
+/// Every ingress metric (`sensepitch_ingress_*`, and every metric counting ingress requests, e.g.
+/// `sensepitch_deflector_requests`) has the label `ingress`, the `Host` header as sanitized by
+/// [SanitizeHostHandler]: a known host or one of [SanitizeHostHandler#SPECIAL_HOSTS], so the
+/// number of label values is bounded. Take it with [#ingress(HttpRequest)].
+///
 /// @author Jens Wilke
 public class ProxyMetrics implements HasMultipleMetrics {
 
@@ -36,6 +43,22 @@ public class ProxyMetrics implements HasMultipleMetrics {
 
   public final CounterDataPoint ingressReceiveTimeoutKeepAlive =
       ingressReceiveTimeoutCounter.labelValues("keep_alive");
+
+  /// Requests by ingress and [RequestOutcome], counted once per request when it is logged, so the
+  /// counts match the request log, see [#countRequestOutcome]. The outcome label values are the
+  /// fixed set of [RequestOutcome#value()].
+  public final Counter requestOutcomeCounter =
+      metricSet.add(
+          Counter.builder()
+              .name("sensepitch_ingress_request_outcomes")
+              .help("Requests by ingress and outcome, counted when the request is logged")
+              .labelNames("ingress", "outcome")
+              .build());
+
+  /// Counts a logged request, called by [RequestLoggingHandler] with the final outcome
+  public void countRequestOutcome(HttpRequest request, RequestOutcome outcome) {
+    requestOutcomeCounter.labelValues(ingress(request), outcome.value()).inc();
+  }
 
   /// Requests handled by a [Deflector], by ingress and outcome, see [#countDeflectorRequest]
   public final Counter deflectorRequestCounter =
@@ -69,14 +92,16 @@ public class ProxyMetrics implements HasMultipleMetrics {
     }
   }
 
-  /// Counts the request for its ingress, which is the host header, already sanitized by
-  /// [SanitizeHostHandler], so the number of label values is limited to the serviced hosts.
+  /// Counts the request for its ingress, see [#ingress(HttpRequest)]
   public void countDeflectorRequest(HttpRequest request, DeflectorOutcome outcome) {
+    deflectorRequestCounter.labelValues(ingress(request), outcome.label).inc();
+  }
+
+  /// The `ingress` label value of a request, see the class doc. The host header is missing only
+  /// when [SanitizeHostHandler] is not in the pipeline, e.g. in tests.
+  static String ingress(HttpRequest request) {
     String ingress = request.headers().get(HttpHeaderNames.HOST);
-    if (ingress == null) {
-      ingress = SanitizeHostHandler.MISSING_HOST;
-    }
-    deflectorRequestCounter.labelValues(ingress, outcome.label).inc();
+    return ingress != null ? ingress : SanitizeHostHandler.MISSING_HOST;
   }
 
   public final LongAdder ingressRequestsStarted = new LongAdder();

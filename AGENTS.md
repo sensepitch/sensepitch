@@ -61,6 +61,11 @@
   globally, so config records declare `@Builder(toBuilder = true)` explicitly.
 - Keep class and method names descriptive and consistent with existing `*Config`, `*Handler`, and `*Lookup` patterns.
 - Use named reusable constants for no-op implementations and immutable empty values.
+- Write no code that is not needed: no cache, wrapper or optimization in front of a library that
+  already does it (e.g. the Prometheus `Counter` keeps its data points, call `labelValues` per
+  event), and no feature nobody asked for. Check what the library does before adding to it. An
+  exception needs a clear justification, documented in the doc comment of the code, e.g. a
+  measured hot path.
 - Read concurrent state once per method invocation when multiple values must come from the same snapshot.
 - Lock on a private final lock object (`private final Object lock = new Object()`), not on `this`
   or with a `synchronized` method, so no outside code can hold or contend on the lock.

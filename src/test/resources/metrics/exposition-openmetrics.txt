@@ -92,6 +92,9 @@ sensepitch_ingress_request_errors_total{phase="upstream",type="connect"} 1.0
 # TYPE sensepitch_ingress_request_flavor_count counter
 sensepitch_ingress_request_flavor_count_total{country="DE",flavor="human"} 1.0
 sensepitch_ingress_request_flavor_count_total{country="unknown",flavor="unknown"} 1.0
+# TYPE sensepitch_ingress_request_outcomes counter
+# HELP sensepitch_ingress_request_outcomes Requests by ingress and outcome, counted when the request is logged
+sensepitch_ingress_request_outcomes_total{ingress="example.com",outcome="completed"} 1.0
 # TYPE sensepitch_ingress_request_size_bytes histogram
 # UNIT sensepitch_ingress_request_size_bytes bytes
 # HELP sensepitch_ingress_request_size_bytes Bytes of HTTP request traffic received

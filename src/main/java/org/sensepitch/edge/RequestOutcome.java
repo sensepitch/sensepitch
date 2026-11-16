@@ -3,7 +3,9 @@ package org.sensepitch.edge;
 import java.util.Locale;
 
 /// Why a request ended, logged as `sensepitch.request.outcome`. The values are few, so they are
-/// suited for grouping in dashboards: is it the edge, the upstream or the client?
+/// suited for grouping in dashboards: is it the edge, the upstream or the client? The same values
+/// are counted in the metric `sensepitch_ingress_request_outcomes_total{ingress,outcome}`, see
+/// [ProxyMetrics#countRequestOutcome].
 ///
 /// [#COMPLETED] and [#EDGE_RESPONSE] are derived when nothing else was reported. The others are
 /// reported by the handler that ended the request, the first report wins.

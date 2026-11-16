@@ -93,6 +93,7 @@ class MetricsExpositionTest {
     proxyMetrics.countDeflectorRequest(deflected, ProxyMetrics.DeflectorOutcome.CHALLENGE_SENT);
     proxyMetrics.countDeflectorRequest(deflected, ProxyMetrics.DeflectorOutcome.CHALLENGE_SENT);
     proxyMetrics.countDeflectorRequest(deflected, ProxyMetrics.DeflectorOutcome.PASSED);
+    proxyMetrics.countRequestOutcome(deflected, RequestOutcome.COMPLETED);
 
     ExposeRequestCountPerStatusCodeHandler perStatus = new ExposeRequestCountPerStatusCodeHandler();
     perStatus.registerCollectors(registry::register);

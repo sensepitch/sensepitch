@@ -228,6 +228,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
       resolveTls(ctx);
     }
     responseReceivedTimeNanos = ticker.nanoTime();
+    metrics.countRequestOutcome(request, outcome());
     try {
       logger.logRequest(this);
       requestCount++;
