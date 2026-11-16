@@ -56,5 +56,6 @@ jobs:
         name: build-reports
         path: |
           target/surefire-reports/
+          target/failsafe-reports/
           target/reports/apidocs/
         retention-days: 7
