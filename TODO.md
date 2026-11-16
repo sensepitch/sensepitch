@@ -260,7 +260,7 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
   was never reached. Fix: set `maxBufferedBytes(64 MiB)` explicitly in that test. 3 of 3 runs pass
   in 0.9 s. `ReloadableRequestLoggerTest`, `ProxyShutdownIT`,
   `ShadedJarIT.sigtermSendsTheRequestLogAndExits` are not investigated yet.
-  - P2: preserve both report directories in CI before attempting a speculative fix.
+  - CI preserves both unit and integration test report directories for investigation.
 - [x] Flaky test: `OtlpAllocationTest.loggingDoesNotAllocate(false)` measured 357 bytes per
   record against the bound of 256 in one parallel `./mvnw verify` (2026-11-16), it passed alone
   and in the next run. Inferred, not verified: under the parallel load the warm-up was not
