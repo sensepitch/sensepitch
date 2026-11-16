@@ -6,9 +6,15 @@ on:
   pull_request:
     branches: [ main ]
 
+# A new push cancels the run of the previous one on the same branch or pull request, so a series
+# of pushes builds only the last. GitHub-hosted runners are free for public repositories.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     
     strategy:
       matrix:
@@ -23,22 +29,13 @@ jobs:
       with:
         java-version: ${{ matrix.java-version }}
         distribution: 'temurin'
+        cache: maven
 
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '22'
 
-# Switch off caching, .m2 on our self hosted worker nodes
-# stays between jobs
-#         
-#    - name: Cache Maven dependencies
-#      uses: actions/cache@v4
-#      with:
-#        path: ~/.m2
-#        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-#        restore-keys: ${{ runner.os }}-m2
-        
     - name: Build, test and check
       run: ./mvnw clean verify
       
