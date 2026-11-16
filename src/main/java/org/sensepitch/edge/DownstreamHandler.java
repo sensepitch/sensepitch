@@ -382,9 +382,4 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     }
     super.exceptionCaught(ctx, cause);
   }
-
-  @Override
-  public boolean isSharable() {
-    return super.isSharable();
-  }
 }
