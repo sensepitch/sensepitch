@@ -24,6 +24,11 @@ current production needs. Notes below record decisions to make before implementa
   `-XX:NativeMemoryTracking=summary`
   - P3: compare representative workloads and record throughput, latency and memory before choosing.
 
+## Governance
+
+- add LICENSE
+- add CONTRIBUTING.md
+
 ## Upstream
 
 - [ ] upstream connection pool with keep-alive (an earlier version was disabled 2025-09-20 and
