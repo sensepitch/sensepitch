@@ -21,7 +21,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
-/// Replacing the request log destinations on a configuration reload
+/// Replacing the request log destinations on a configuration reload. Reloads under concurrent
+/// logging are in [ReloadableRequestLoggerIT], which uses this class as its fixture.
 ///
 /// @author Jens Wilke
 @Timeout(value = 20, unit = TimeUnit.SECONDS)
@@ -307,44 +308,6 @@ class ReloadableRequestLoggerTest {
     }
     assertThat(queuedDestinations()).as("the destination ended").doesNotContain("vl");
     assertThat(dropped("vl")).isEqualTo(10);
-  }
-
-  /// Threads keep logging while reloads replace the destination again and again: every record
-  /// arrives exactly once, none is dropped at a switch
-  @Test
-  void noRecordIsLostWhileReloading() throws Exception {
-    logger = RequestLoggerFactory.create(config(otlp("vl", 1)), stdout, metrics);
-    int threads = 4;
-    int perThread = 300;
-    int minReloads = 20;
-    List<Thread> workers = new java.util.ArrayList<>();
-    for (int t = 0; t < threads; t++) {
-      Thread worker =
-          new Thread(
-              () -> {
-                for (int i = 0; i < perThread; i++) {
-                  logOneRequest();
-                }
-              });
-      worker.start();
-      workers.add(worker);
-    }
-    int reloads = 0;
-    // with few records the workers may finish early, keep reloading to a minimum count
-    for (int i = 0; workers.stream().anyMatch(Thread::isAlive) || reloads < minReloads; i++) {
-      reload(config(otlp("vl", 1 + i % 2)));
-      reloads++;
-      Thread.sleep(1);
-    }
-    for (Thread worker : workers) {
-      worker.join();
-    }
-    // right after the reloads, replaced destinations may still be handing over
-    logger.close();
-    int got = awaitReceived(threads * perThread);
-    assertThat(dropped("vl")).isZero();
-    assertThat(got).as("every record exactly once").isEqualTo(threads * perThread);
-    assertThat(reloads).as("the destination was replaced often").isGreaterThan(10);
   }
 
   /// A record an event loop logs into a replaced destination after the switch, before it ran its

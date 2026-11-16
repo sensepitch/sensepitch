@@ -22,6 +22,20 @@ current production needs. Notes below record decisions to make before implementa
   - P2: mechanical; `HttpBatchSender` and `ThreadBatcher` are under the 100% coverage rule.
 - [ ] improve code coverage towards 100%
   - Prioritize uncovered risk and meaningful behavior rather than a percentage alone.
+- [ ] Move a test case that is doing real socket connections or sleeps from test to verify and maintain code coverage
+  - Goal: `./mvnw test` at about 5 s wall time. The classes run in parallel, the methods of a
+    class in order, so one slow class sets the wall time and a few hundred ms count.
+  - Move only what adds no coverage of its own: compare `target/site/jacoco/jacoco.csv` of
+    `./mvnw clean test jacoco:report` with and without the test (exclude with
+    `-Dtest='**/*Test,**/*BDDTest,!Class#method'`, a bare exclusion pulls in the `*IT`s). One
+    branch of `AsyncRequestLogWriter` varies between runs, rerun before reading a difference.
+  - Done 2026-11-16: `ReloadableRequestLoggerTest.noRecordIsLostWhileReloading` (0.3 s, no own
+    coverage) to `ReloadableRequestLoggerIT`, which uses the unit test class as its fixture.
+  - Next: `ReloadableRequestLoggerTest` still takes 3.3 s in the full run (2026-11-16):
+    `finishCoversDrainingDestinations` 1.4 s, `finishedDestinationEndsWhenItsRecordsAgedOut`
+    0.3 s, `disableAndEnableByReload` 0.2 s, `removedDestinationDoesNotBlockTheReload` 0.15 s.
+    Probably real timers (retry backoff after 503, age limit), not verified. What cannot move
+    for coverage gets a fake clock instead, see "Timing related tests" under Build, tests.
 - [ ] Performance test: different Netty allocators, leak detection,
   `-XX:NativeMemoryTracking=summary`
   - P3: compare representative workloads and record throughput, latency and memory before choosing.
@@ -115,7 +129,7 @@ the failure threshold for upstreams is under Upstream.
 - [x] Removed the unused WebCrypto-only `src/main/resources/challenge.html`.
   - The current challenge JavaScript PoW suite already tests WebCrypto and the JS fallback during
     `./mvnw verify`.
-- [ ] restrict admissions per solved challenge
+- [ ] restrict admissions per solved challenge; see [PoW admission design](doc/design/pow-admission.md)
   - P1 candidate: define the replay threat and permitted reuse, whether enforcement is per node
     or cluster-wide, and the state, lifetime and coordination cost.
 - [ ] expiry of granted admissions: the token carries its creation time, but only the cookie
@@ -262,7 +276,7 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
     `IOException`. Production defaults stay as they are, no config change.
   - Candidates: `OtlpLogDestinationTest` (3.6 s and `@Isolated`; 27 of its 34 tests run against a
     log server, about 20 of them test sender logic: retry, give up, outage, buffer limit,
-    breaker probes, aging, slow start, concurrency limit), `ReloadableRequestLoggerTest` (2.2 s, waits for the
+    breaker probes, aging, slow start, concurrency limit), `ReloadableRequestLoggerTest` (3.3 s on 2026-11-16, waits for the
     production retry backoff of 1 s), `RequestLoggerFactoryTest`, `HttpBatchSenderTest`,
     `AsyncRequestLogWriterTest`, `ConfigFileWatcherTest`, and the durations in `ProxyShutdownIT`.
   - The tests stay in the test scope meanwhile, see the coverage rule in `AGENTS.md`. Moving
@@ -279,9 +293,17 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
 - [x] Flaky build: `OtlpLogDestinationTest.outageLosesNothing` timed out on machines with 2 CPUs
   (2026-11-15). Root cause: `maxBufferedBytes` default (2×event_loops×batchBytes) was 512 KiB on
   2 CPUs, smaller than the 1000-record backlog the test builds; records were dropped and the count
-  was never reached. Fix: set `maxBufferedBytes(64 MiB)` explicitly in that test. 3 of 3 runs pass
-  in 0.9 s. `ReloadableRequestLoggerTest`, `ProxyShutdownIT`,
-  `ShadedJarIT.sigtermSendsTheRequestLogAndExits` are not investigated yet.
+  was never reached. The 30-second timeout was reproduced on baseline `e22c564` with
+  `./mvnw clean test -Dtest='OtlpLogDestinationTest#outageLosesNothing'`; it does not establish
+  the cause of the earlier unrecorded failure. Fix: set `maxBufferedBytes(64 MiB)` explicitly in
+  that test. 3 of 3 runs pass
+  in 0.9 s. `ProxyShutdownIT`, `ShadedJarIT.sigtermSendsTheRequestLogAndExits` are not
+  investigated yet.
+- [x] Flaky test: `ReloadableRequestLoggerTest.noRecordIsLostWhileReloading` dropped 4-5 records
+  (2026-11-16, failed 7 of 8 runs alone). Root cause in the test: it logged from plain threads
+  into a logger built for one thread, so a worker could log into a replaced destination for the
+  first time after it finished, which refuses the record. Fix: the workers are executors passed
+  to the logger as logging threads, as the event loops are. Now in `ReloadableRequestLoggerIT`.
   - CI preserves both unit and integration test report directories for investigation.
 - [x] Flaky test: `OtlpAllocationTest.loggingDoesNotAllocate(false)` measured 357 bytes per
   record against the bound of 256 in one parallel `./mvnw verify` (2026-11-16), it passed alone
