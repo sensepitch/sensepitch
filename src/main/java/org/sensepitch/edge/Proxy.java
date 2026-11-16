@@ -424,13 +424,14 @@ public class Proxy implements ProxyContext {
         .awaitUninterruptibly(remainingMillis(connectionsDeadline))) {
       LOG.info(
           "Shutdown: requests still in flight after "
-              + (totalMillis - drainMillis)
+              + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start)
               + " ms, total "
               + metrics.ingressRequestsInFlight()
               + ", by upstream "
               + metrics.upstreamRequestsInFlight()
               + ", closing the connections");
     }
+    long drainStart = System.nanoTime();
     // the calling thread may have logged as well, e.g. a test driving an EmbeddedChannel
     requestLogDestinations.endThread();
     CompletableFuture<Void> loops = new CompletableFuture<>();
@@ -448,9 +449,12 @@ public class Proxy implements ProxyContext {
     if (!drained) {
       LOG.info(
           "Shutdown: request log not drained after "
-              + drainMillis
+              + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - drainStart)
               + " ms, unsent records "
               + requestLogDestinations.unsent());
+      if (!eventLoopGroup.isTerminated()) {
+        LOG.info("Shutdown: event loop group still running");
+      }
     }
     requestLogOutput.close();
     if (metricsServer != null) {
