@@ -375,6 +375,11 @@ public class Proxy implements ProxyContext {
     }
   }
 
+  /// Reports shutdown as soon as it starts, before the listener closes, for admin readiness probes.
+  public boolean isShuttingDown() {
+    return shutdown.get() != null;
+  }
+
   /// Shuts down gracefully within [ProxyConfig#effectiveShutdownTimeoutMillis()], and faster
   /// when everything is done earlier:
   ///

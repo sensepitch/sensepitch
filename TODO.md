@@ -176,10 +176,6 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
 `3-gap-analysis.md`. Items 1-4 run today's `config.yml` edge on Kubernetes without a controller;
 5-6 are also part of M1.
 
-- [ ] 1. `/healthz` and `/readyz` on the admin port; `/readyz` answers 503 from the start of the
-  shutdown, before the listener closes
-  - P1: small. Replaces the `preStop` sleep hint in the README with a signal the load balancer
-    sees; decide whether readiness also waits for the first successful config load.
 - [ ] 2. OCI image: Dockerfile with a Java 25 runtime, non-root, `java` as PID 1 so `SIGTERM`
   arrives (exec form); CI builds and pushes it
   - P1: decide base image (distroless or Temurin JRE) and registry; keep the shaded jar.
@@ -203,6 +199,33 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
   schema, then the `config.yml` converter run against the production configurations, then the
   Go controller
   - P2: start once 1-4 are done; the converter shows early whether the model covers production.
+- [ ] `/readyz` answers `200` only after the upstreams were probed and at least one configured
+  upstream is available
+  - P3: today it answers `200` from the start until the shutdown begins. Decide what probes an
+    upstream (a request, a connect) and whether it reuses the upstream circuit breaker.
+- [ ] drain delay: on `SIGTERM` answer `/readyz` with `503` but keep the listener open for a
+  configurable time before closing it, then remove the `preStop` `sleep` hint from the README
+  - P2: `/readyz` alone does not close the gap the README hint covers. Kubernetes takes the pod
+    out of the service endpoints at the same time as it sends `SIGTERM`, so the proxies and load
+    balancers routing to it learn of the removal a moment later; an external load balancer
+    probing `/readyz` notices the `503` only after its probe interval times failure threshold.
+    Today the listener closes right away, so connections in that window are refused. A
+    `preStop` `exec` `sleep` needs a shell and a `sleep` binary in the image, which a distroless
+    image (item 2) does not have; the built-in `sleep` lifecycle action needs a recent Kubernetes
+    (1.30 or so, not verified). A delay in the proxy works with any image and platform. Count it
+    into `shutdownTimeoutMillis` and the grace period; `4-configuration-distribution.md` already
+    plans a drain time in the `admin` config.
+  - Implementation: sleep at the start of `Proxy.shutdown()`, before the listener closes. The
+    existing JVM shutdown hook runs it on `SIGTERM`, and the JVM exits only after all hooks
+    returned, so the process and the listener stay up; `isShuttingDown()` is already true, so
+    `/readyz` answers `503` meanwhile. Test with a fake clock, no real sleep.
+- [ ] Log4j2 shutdown hook runs concurrently with ours
+  - P2: Log4j2 registers its own JVM shutdown hook by default (`log4j2.xml` does not disable it)
+    and the JVM runs all hooks in parallel, so Log4j2 may stop while `Proxy.shutdown()` still
+    drains, and the diagnostic lines of the shutdown (phase reports, timeouts) can be lost.
+    Inferred from the Log4j2 default, not verified. Set `shutdownHook="disable"` and call
+    `LogManager.shutdown()` as the last step of `Proxy.shutdown()`; check with a test that the
+    shutdown report reaches Log4j2 (`Log4jCapture`).
 
 ## Configuration, operations
 
@@ -273,6 +296,12 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
   [doc/design/test-speed.md](doc/design/test-speed.md).
 
 ## Done
+
+- [x] Kubernetes 1. `/healthz` and `/readyz` on the admin port (2026-11-16). `/healthz` answers
+  `200` while the admin server runs; `/readyz` answers `503` from the start of the shutdown
+  (`Proxy.isShuttingDown`), before the listener closes, `200` before. Readiness does not wait for
+  the listener to start; the configuration is loaded before the admin server starts, so it needs
+  no extra wait for the first load. Tests: `AdminServerTest`.
 
 - [x] request log post latency: a histogram of the OTLP post duration per destination; today a slow log server
   shows only once requests time out and the breaker opens (2026-11-15).
