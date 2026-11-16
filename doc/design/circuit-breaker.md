@@ -144,16 +144,20 @@ caller that saw the open state and then waits for the lock re-checks the state i
 state is volatile, for that lock free read; the other fields, including the trip and restart times
 for the metrics, are read under the lock.
 
-### One `Ticker` for all times
+### `Ticker` for durations, system clock for timestamps
 
-Time comes from Netty's `io.netty.util.concurrent.Ticker`, which the proxy already uses in
-`RequestLoggingHandler`; Armeria injects a ticker the same way. Tests drive it with
-`Ticker.newMockTicker()`.
+The durations (backoff, probe timeout) come from Netty's `io.netty.util.concurrent.Ticker`, which
+the proxy already uses in `RequestLoggingHandler`; Armeria injects a ticker the same way. Tests
+drive it with `Ticker.newMockTicker()`.
 
-The wall clock times for the metrics (start, last trip, last restart) are derived from the same
-ticker: the wall clock time at construction plus the ticker time passed since. One time source
-keeps tests simple; that the derived times do not follow later steps of the system clock does not
-matter for metrics.
+The wall clock times for the metrics (start, last trip, last restart) are read from the system
+clock, injected as a `java.time.InstantSource` so a test passes a clock that follows its mock
+ticker. `InstantSource` is the standard type for a wall clock and narrower than `Clock`, which
+carries a time zone; `InstantSource.system().millis()` reads `System.currentTimeMillis()` without
+allocating an `Instant`. At first they were derived from the ticker, the wall clock time at
+construction plus the ticker time passed since, to have one time source. That was dropped: the
+derived times drift from the system clock after NTP steps, and on Linux the monotonic clock stops
+while the machine is suspended, so the gauges would disagree with the timestamps of the logs.
 
 Netty's system ticker counts from its own origin, not from `System.nanoTime()`. So the breaker
 hands out a delay (`retryDelayNanos()`), never an absolute ticker time a caller might compare with
@@ -242,8 +246,6 @@ Known limits of the current implementation, checked against the code on 2026-11-
     one still drains, and its state is visible only through the shared counters.
   - The counters of removed breakers stay exported until restart.
   - `not_permitted` depends on how often the sender dispatches, see [Metrics](#metrics).
-- **Derived wall clock times.** The trip and restart times are derived from the ticker and do not
-  follow steps of the system clock after the start.
 
 ## Planned improvements
 

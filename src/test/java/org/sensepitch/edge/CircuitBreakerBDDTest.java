@@ -8,6 +8,7 @@ import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import io.prometheus.metrics.model.snapshots.GaugeSnapshot;
 import io.prometheus.metrics.model.snapshots.MetricSnapshot;
 import java.lang.management.ManagementFactory;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -304,8 +305,14 @@ class CircuitBreakerBDDTest {
               PROBE_TIMEOUT_MILLIS,
               new RecordingEvents(),
               new HookedTicker(),
-              START_MILLIS);
+              () -> Instant.ofEpochMilli(currentTimeMillis()));
       return this;
+    }
+
+    /// Wall clock that follows the mock ticker, read without running [#onClockRead]
+    private long currentTimeMillis() {
+      return START_MILLIS
+          + TimeUnit.NANOSECONDS.toMillis(ticker.nanoTime() - ticker.initialNanoTime());
     }
 
     /// The mock ticker, running [#onClockRead] when the breaker reads the time
