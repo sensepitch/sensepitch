@@ -52,8 +52,13 @@ current production needs. Notes below record decisions to make before implementa
   - P3: specify thresholds, recovery probes, per-server versus per-upstream state and retry policy.
   - Keep the backoff, `Retry-After`, single probe and metrics, the request log keeps a threshold
     of one, see [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md).
-- [ ] `DownstreamHandler.channelInactive`: track and log if the close was unexpected
-  - P2: define expected closes and avoid duplicate or noisy logs.
+- [ ] Review the existing log statements against the log levels in `AGENTS.md`: a misbehaving
+  client or upstream is counted and logged at debug at most. E.g. `DownstreamHandler.failExchange`
+  logs every upstream connect or write failure as error with stack trace, one per request while an
+  upstream is down; `ExceptionHandler` logs "other" errors.
+- [ ] Rename the `ProxyLogger` constant `DEBUG` to `LOG`, as in the other classes: with a debug
+  level `DEBUG.debug(...)` and `DEBUG.error(...)` read wrong. `DownstreamHandler`,
+  `RequestLoggingHandler`, `JsonRequestLogger`.
 - [ ] `DownstreamHandler.isSharable`: decide on `@Sharable`, the override does nothing
   - Small cleanup: confirm the handler lifecycle and remove the ineffective override if unneeded.
 
@@ -328,6 +333,17 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
   sanitizes the name and looks up labelled data points on every connection for a breakdown that
   is rarely needed.
 
+- [x] `DownstreamHandler.channelInactive` logs an unexpected close (2026-11-15). Expected is a
+  close without an exchange in progress (idle keep-alive, after the response, shutdown drain) or
+  one the proxy requested: every close of ours passes `DownstreamHandler.close` (error responses,
+  timeouts, `ExceptionHandler` incl. connection resets, which it already counts). Unexpected is
+  any other close during an exchange, i.e. the client closing it, or the event loops ending after
+  the drain timed out. It is no fault of ours, so it is logged once per channel at debug, with the
+  phase (`upload`, `waiting`, `responding`, named like the `ExceptionHandler` phases) and the
+  upstream state (`connecting`, `connected`, `connect failed`). The request log already has the
+  request as `CLIENT_ABORTED`, so the debug line carries only what it lacks. No metric: `ingressRequestsAborted` counts these.
+  `channelInactive`, `channelWritabilityChanged` and `exceptionCaught` no longer call `resultNow()`
+  on a failed connect (it threw). `ProxyLogger` got a debug level, the levels are in `AGENTS.md`.
 - [x] Serenity: reporting off by default, `-Dserenity.reports` switches it on (2026-11-14).
   Serenity stays for the BDD step chains. The `pom.xml` deactivates
   `SerenityTestExecutionListener`, so no test is recorded and nothing is written to

@@ -20,8 +20,9 @@ import org.junit.platform.launcher.LauncherSessionListener;
 /// to the logging framework instead, e.g. the `ListAppender` of Log4j2, is shared by the whole
 /// JVM.
 ///
-/// Trace is enabled, so tests run the trace code, but trace and debug records are dropped: trace
-/// output is a debugging aid and no acceptance criterion.
+/// Trace is enabled, so tests run the trace code, but trace records are dropped: trace output is
+/// a debugging aid and no acceptance criterion. Debug records are kept, debug output is meant for
+/// operators to find root causes, so tests may assert on it, see [ProxyLogger].
 ///
 /// For debugging, add an appender to the root logger in `log4j2-test.xml`: then every record is
 /// passed on to Log4j2 as well.
@@ -89,7 +90,7 @@ final class LogSink implements LogTarget {
     if (forward != null) {
       forward.log(info);
     }
-    if (info.level().getSeverity() >= Level.INFO.getSeverity()) {
+    if (info.level().getSeverity() >= Level.DEBUG.getSeverity()) {
       BUFFER.get().add(new Entry(source, info));
     }
   }

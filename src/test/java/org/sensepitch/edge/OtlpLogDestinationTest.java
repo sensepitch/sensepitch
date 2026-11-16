@@ -785,76 +785,34 @@ class OtlpLogDestinationTest {
     }
   }
 
-  /// After an outage the backlog is sent with a slow start: the probe alone, then two requests in
-  /// flight, one more with each success, up to `maxConcurrentRequests`
+  /// After a failure the window is one request, it grows with each success back to
+  /// `maxConcurrentRequests`. The requests in flight at each step are timing dependent, they are
+  /// checked by [OtlpSlowStartIT].
   @Test
-  void slowStartAfterAnOutage() throws Exception {
-    java.util.concurrent.atomic.AtomicBoolean available =
-        new java.util.concurrent.atomic.AtomicBoolean();
-    java.util.concurrent.atomic.AtomicInteger inFlight =
-        new java.util.concurrent.atomic.AtomicInteger();
-    java.util.concurrent.atomic.AtomicInteger maxInFlight =
-        new java.util.concurrent.atomic.AtomicInteger();
-    java.util.concurrent.atomic.AtomicInteger records =
-        new java.util.concurrent.atomic.AtomicInteger();
-    java.util.concurrent.Semaphore answers = new java.util.concurrent.Semaphore(0);
-    HttpServer held = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-    held.setExecutor(java.util.concurrent.Executors.newCachedThreadPool());
-    held.createContext(
-        "/v1/logs",
-        exchange -> {
-          byte[] body = exchange.getRequestBody().readAllBytes();
-          if (!available.get()) {
-            exchange.sendResponseHeaders(503, -1);
-            exchange.close();
-            return;
-          }
-          maxInFlight.accumulateAndGet(inFlight.incrementAndGet(), Math::max);
-          answers.acquireUninterruptibly();
-          inFlight.decrementAndGet();
-          records.addAndGet(
-              decode(exchange, body).getResourceLogs(0).getScopeLogs(0).getLogRecordsCount());
-          exchange.sendResponseHeaders(200, -1);
-          exchange.close();
-        });
-    held.start();
-    try {
-      int batchBytes = OtlpConfig.MIN_BATCH_BYTES;
-      destination =
-          fastDestination(
-              OtlpConfig.builder()
-                  .endpoint("http://127.0.0.1:" + held.getAddress().getPort() + "/v1/logs")
-                  .batchBytes(batchBytes)
-                  .maxBufferedBytes(64 << 20)
-                  .maxConcurrentRequests(8)
-                  .flushIntervalMillis(60_000)
-                  .build());
-      OtlpRequestLogger logger = new OtlpRequestLogger(destination);
-      int total = 10 * (batchBytes / framedSize(request("/0")) + 1);
-      for (int i = 0; i < total; i++) {
-        logger.logRequest(request("/" + i));
-      }
-      await(() -> counter("sensepitch_request_log_export_retries") >= 1);
-      assertThat(destination.window()).as("after a failure").isOne();
-      available.set(true);
-      // the probe alone
-      await(() -> inFlight.get() == 1);
-      Thread.sleep(100);
-      assertThat(maxInFlight.get()).as("only the probe").isOne();
-      // its success allows two
-      answers.release();
-      await(() -> inFlight.get() == 2);
-      Thread.sleep(100);
-      assertThat(maxInFlight.get()).as("two after the probe").isEqualTo(2);
-      answers.release(1_000);
-      HttpBatchSenderTest.close(destination);
-      assertThat(records.get()).isEqualTo(total);
-      assertThat(destination.droppedCount()).isZero();
-      assertThat(destination.window()).as("back at the maximum").isEqualTo(8);
-    } finally {
-      answers.release(1_000);
-      held.stop(0);
+  void windowIsOneAfterAFailureAndGrowsBack() throws Exception {
+    status = 503;
+    int batchBytes = OtlpConfig.MIN_BATCH_BYTES;
+    destination =
+        fastDestination(
+            config()
+                .batchBytes(batchBytes)
+                .maxBufferedBytes(64 << 20)
+                .maxConcurrentRequests(8)
+                .flushIntervalMillis(60_000)
+                .build());
+    assertThat(destination.window()).as("initially").isEqualTo(8);
+    OtlpRequestLogger logger = new OtlpRequestLogger(destination);
+    int total = 10 * (batchBytes / framedSize(request("/0")) + 1);
+    for (int i = 0; i < total; i++) {
+      logger.logRequest(request("/" + i));
     }
+    await(() -> counter("sensepitch_request_log_export_retries") >= 1);
+    assertThat(destination.window()).as("after a failure").isOne();
+    status = 200;
+    HttpBatchSenderTest.close(destination);
+    assertThat(new HashSet<>(deliveredPaths())).hasSize(total);
+    assertThat(destination.droppedCount()).isZero();
+    assertThat(destination.window()).as("back at the maximum").isEqualTo(8);
   }
 
   /// During an outage the breaker lets one probe through per backoff, not a retry per batch, and

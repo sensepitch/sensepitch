@@ -383,13 +383,154 @@ public class FlowAndExceptionTest {
     ingressChannel.finishAndReleaseAll();
   }
 
-  /// When the client goes away, upstream reading continues so the response can be drained.
+  /// When the client goes away, upstream reading continues so the response can be drained. The
+  /// close is unexpected and logged once with the phase, the request log has the request as
+  /// aborted.
   @Test
   public void ingressInactiveResumesUpstreamReading() {
     sendGetRequest();
     upstreamChannel.config().setAutoRead(false);
-    ingressChannel.close();
+    closeByPeer();
     assertThat(upstreamChannel.config().isAutoRead()).isTrue();
+    assertThat(logs.messages(DownstreamHandler.class))
+        .singleElement()
+        .satisfies(
+            m ->
+                assertThat(m)
+                    .endsWith(
+                        "unexpected close during the exchange, phase=waiting, upstream=connected"));
+    assertThat(logs.entries())
+        .filteredOn(e -> e.source().equals(DownstreamHandler.class.getName()))
+        .allSatisfy(e -> assertThat(e.info().level()).isEqualTo(System.Logger.Level.DEBUG));
+    assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.CLIENT_ABORTED);
+  }
+
+  /// The client closes during the upload while the upstream is still connecting
+  @Test
+  public void peerCloseDuringUploadIsUnexpected() {
+    deferConnect = true;
+    HttpRequest post = new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, "/form");
+    HttpUtil.setContentLength(post, 3);
+    ingressChannel.writeInbound(post);
+    closeByPeer();
+    assertThat(logs.messages(DownstreamHandler.class))
+        .singleElement()
+        .satisfies(
+            m ->
+                assertThat(m)
+                    .endsWith(
+                        "unexpected close during the exchange, phase=upload, upstream=connecting"));
+    pendingConnect.setFailure(new SocketException("Connection refused"));
+  }
+
+  /// The client closes while the response is sent
+  @Test
+  public void peerCloseWhileRespondingIsUnexpected() {
+    sendGetRequest();
+    upstreamChannel.writeInbound(
+        new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK));
+    rattle();
+    closeByPeer();
+    assertThat(logs.messages(DownstreamHandler.class))
+        .singleElement()
+        .satisfies(
+            m ->
+                assertThat(m)
+                    .endsWith(
+                        "unexpected close during the exchange, phase=responding,"
+                            + " upstream=connected"));
+    ingressChannel.finishAndReleaseAll();
+  }
+
+  /// The upstream connect failed, but the client closes before the request is complete, so no 502
+  /// was sent yet
+  @Test
+  public void peerCloseAfterConnectFailureIsUnexpected() {
+    connectFailure = new SocketException("Connection refused");
+    ingressChannel.writeInbound(new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, "/"));
+    closeByPeer();
+    assertThat(logs.messages(DownstreamHandler.class))
+        .singleElement()
+        .satisfies(
+            m ->
+                assertThat(m)
+                    .endsWith(
+                        "unexpected close during the exchange, phase=upload,"
+                            + " upstream=connect failed"));
+  }
+
+  /// A close after the response, e.g. of an idle keep-alive connection, is expected
+  @Test
+  public void peerCloseAfterResponseIsExpected() {
+    sendGetRequest();
+    upstreamChannel.writeInbound(
+        new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK),
+        new DefaultLastHttpContent());
+    rattle();
+    closeByPeer();
+    assertThat(logs.messages(DownstreamHandler.class)).isEmpty();
+    ingressChannel.finishAndReleaseAll();
+  }
+
+  /// A close by the proxy during the exchange is expected, whoever requested it logs the reason
+  @Test
+  public void closeByProxyIsExpected() {
+    sendGetRequest();
+    ingressChannel.close();
+    assertThat(logs.messages(DownstreamHandler.class)).isEmpty();
+  }
+
+  /// A connection reset is handled and counted by the [ExceptionHandler], which closes the channel
+  @Test
+  public void connectionResetIsExpected() {
+    sendGetRequest();
+    ingressChannel.pipeline().fireExceptionCaught(new SocketException("Connection reset"));
+    closeByPeer();
+    assertThat(ingressChannel.isOpen()).isFalse();
+    assertThat(logs.messages(DownstreamHandler.class)).isEmpty();
+  }
+
+  /// An error response closes the connection, e.g. the 502 after a failed upstream connect
+  @Test
+  public void closeAfterErrorResponseIsExpected() {
+    connectFailure = new SocketException("Connection refused");
+    sendGetRequest();
+    rattle();
+    assertThat(ingressChannel.isOpen()).isFalse();
+    assertThat(logs.messages(DownstreamHandler.class))
+        .noneSatisfy(m -> assertThat(m).startsWith("unexpected close"));
+  }
+
+  /// A writability change during the upload after a failed upstream connect has no upstream to
+  /// throttle, the exchange goes on until the request is complete and the 502 is sent
+  @Test
+  public void writabilityChangeAfterConnectFailureIsIgnored() {
+    connectFailure = new SocketException("Connection refused");
+    ingressChannel.writeInbound(new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, "/"));
+    ingressChannel.pipeline().fireChannelWritabilityChanged();
+    assertThat(ingressChannel.isOpen()).isTrue();
+    assertThat(logs.errors()).isEmpty();
+    ingressChannel.writeInbound(new DefaultLastHttpContent());
+    rattle();
+    HttpResponse response = ingressChannel.readOutbound();
+    assertThat(response.status().code()).isEqualTo(502);
+  }
+
+  /// An exception during the upload after a failed upstream connect reaches the [ExceptionHandler],
+  /// which closes the connection
+  @Test
+  public void exceptionAfterConnectFailureIsHandled() {
+    connectFailure = new SocketException("Connection refused");
+    ingressChannel.writeInbound(new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, "/"));
+    ingressChannel.pipeline().fireExceptionCaught(new SocketException("Connection reset"));
+    assertThat(ingressChannel.isOpen()).isFalse();
+  }
+
+  /// Closes the ingress channel like the transport does when the peer closes the connection: the
+  /// close does not travel through the pipeline, only `channelInactive` is fired.
+  private void closeByPeer() {
+    ingressChannel.unsafe().close(ingressChannel.voidPromise());
+    rattle();
   }
 
   /// Reads the next outbound message, skipping the empty buffers written to trigger a flush

@@ -23,8 +23,8 @@ import org.junit.jupiter.api.parallel.Isolated;
 /// other tests log, so its test class must be `@Isolated`: it then runs while no other class
 /// does.
 ///
-/// Only `INFO` and above is captured, see [LogSink]. Messages of Netty, JUL and other libraries
-/// do not pass the proxy's loggers, [Log4jCapture] sees them.
+/// Only `DEBUG` and above is captured, see [LogSink], trace is no acceptance criterion. Messages
+/// of Netty, JUL and other libraries do not pass the proxy's loggers, [Log4jCapture] sees them.
 ///
 /// @author Jens Wilke
 public class LogCapture implements BeforeEachCallback {
