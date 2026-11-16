@@ -60,8 +60,7 @@ current production needs. Notes below record decisions to make before implementa
 - [ ] Rename the `ProxyLogger` constant `DEBUG` to `LOG`, as in the other classes: with a debug
   level `DEBUG.debug(...)` and `DEBUG.error(...)` read wrong. `DownstreamHandler`,
   `RequestLoggingHandler`, `JsonRequestLogger`.
-- [ ] `DownstreamHandler.isSharable`: decide on `@Sharable`, the override does nothing
-  - Small cleanup: confirm the handler lifecycle and remove the ineffective override if unneeded.
+- [x] `DownstreamHandler.isSharable`: removed the redundant override; the handler remains unshared.
 
 ## Circuit breaker
 
@@ -113,7 +112,7 @@ the failure threshold for upstreams is under Upstream.
   - P3: verify the published source and update strategy before adding ranges.
 - [ ] minimise + compress challenge resources
   - P3: measure transfer and CPU costs; decide build-time compression and cache behavior.
-- [ ] Verify whether the WebCrypto-only `src/main/resources/challenge.html` is unused; remove it if so.
+- [x] Removed the unused WebCrypto-only `src/main/resources/challenge.html`.
   - The current challenge JavaScript PoW suite already tests WebCrypto and the JS fallback during
     `./mvnw verify`.
 - [ ] restrict admissions per solved challenge
