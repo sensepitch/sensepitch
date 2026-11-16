@@ -10,6 +10,15 @@ import java.net.InetSocketAddress;
 /// Messages are forwarded to Log4j2 via [LogTarget], which also explains why diagnostics and
 /// the request log go to different streams.
 ///
+/// Levels:
+/// - `ERROR`: a fault of ours or something an operator has to act on.
+/// - `WARNING`: a problem in our own setup or state that may need action, never for a misbehaving
+///   client or upstream.
+/// - `INFO`: lifecycle, e.g. start, configuration, shutdown.
+/// - `DEBUG`: helps operators find root causes, for unusual events that do not happen for every
+///   request, e.g. a client or upstream misbehaving. Off in the default configuration.
+/// - `TRACE`: internals, several lines per request.
+///
 /// Tracing is available by default: every logger is a [WithTracing] instance that asks Log4j2, so
 /// the configured level decides, at the cost of a level check per trace call. The level is set in
 /// the Log4j2 configuration, e.g. `LOG4J_CONFIGURATION_FILE=classpath:log4j2-trace.xml`.
@@ -60,6 +69,8 @@ public interface ProxyLogger {
   void info(String message);
 
   void warn(String message);
+
+  void debug(Channel channel, String message);
 
   void error(Channel channel, Throwable cause);
 
@@ -210,6 +221,11 @@ public interface ProxyLogger {
     @Override
     public void warn(String message) {
       log(LogInfo.builder().level(Level.WARNING).message(message).build());
+    }
+
+    @Override
+    public void debug(Channel channel, String message) {
+      log(LogInfo.builder().level(Level.DEBUG).channel(channel).message(message).build());
     }
   }
 

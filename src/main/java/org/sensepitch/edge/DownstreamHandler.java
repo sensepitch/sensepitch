@@ -41,6 +41,14 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   /// longer be answered with an error response, see [#completeWithError]
   private boolean responseStarted;
 
+  /// The request of the current exchange was received completely, for the log of an unexpected
+  /// close, see [#channelInactive(ChannelHandlerContext)]
+  private boolean requestComplete;
+
+  /// A close was requested via the pipeline, so the proxy ends the connection on purpose, see
+  /// [#close(ChannelHandlerContext, ChannelPromise)]
+  private boolean closeRequested;
+
   public DownstreamHandler(Upstream upstream, ProxyMetrics metrics) {
     this.upstream = upstream;
   }
@@ -63,6 +71,8 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       if (requestLog != null) {
         requestLog.setUpstream(upstream);
       }
+      requestComplete = request instanceof LastHttpContent;
+      responseStarted = false;
       upstreamChannelFuture = upstream.connect(ctx);
       augmentHeadersAndForwardRequest(ctx, request);
     } else if (msg instanceof LastHttpContent) {
@@ -72,6 +82,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
         ReferenceCountUtil.release(msg);
         return;
       }
+      requestComplete = true;
       // Upstream channel might be still connecting or retrieved and checked by the pool.
       // Queue in all content we receive via the listener.
       upstreamChannelFuture.addListener(
@@ -234,7 +245,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   /// null, it means we received the last content, so no more flush is needed.
   @Override
   public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
-    if (upstreamChannelFuture == null || !upstreamChannelFuture.isDone()) {
+    if (upstreamChannelFuture == null || !upstreamChannelFuture.isSuccess()) {
       return;
     }
     if (ctx.channel().isWritable()) {
@@ -265,11 +276,57 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   ///
   /// That should work okay for small responses. For longer responses it might be better to close
   /// the upstream channel to avoid transferring data needlessly.
+  ///
+  /// An unexpected close is logged once at debug level, it is no fault of ours. Expected is a
+  /// close without an exchange in progress (idle keep-alive connection, close after the response,
+  /// shutdown drain) or a close the proxy requested via the pipeline: error responses, timeouts and
+  /// exceptions, including connection resets, which the [ExceptionHandler] counts. Unexpected is
+  /// any other close while an exchange is in progress: the client closes the connection, or the
+  /// event loops end after the shutdown drain timed out. The request log records the request as
+  /// [RequestOutcome#CLIENT_ABORTED] and `ingressRequestsAborted` counts it, the debug line adds
+  /// the phase and the upstream state.
   @Override
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-    if (upstreamChannelFuture != null && upstreamChannelFuture.isDone()) {
-      upstreamChannelFuture.resultNow().config().setAutoRead(true);
+    if (upstreamChannelFuture != null) {
+      if (!closeRequested) {
+        DEBUG.debug(
+            ctx.channel(),
+            "unexpected close during the exchange, phase="
+                + exchangePhase()
+                + ", upstream="
+                + upstreamState());
+      }
+      if (upstreamChannelFuture.isSuccess()) {
+        upstreamChannelFuture.resultNow().config().setAutoRead(true);
+      }
     }
+    super.channelInactive(ctx);
+  }
+
+  /// Phase of the exchange for the log of an unexpected close, named like the phases of the
+  /// [ExceptionHandler]
+  private String exchangePhase() {
+    if (!requestComplete) {
+      return "upload";
+    }
+    return responseStarted ? "responding" : "waiting";
+  }
+
+  /// State of the upstream connection for the log of an unexpected close
+  private String upstreamState() {
+    if (!upstreamChannelFuture.isDone()) {
+      return "connecting";
+    }
+    return upstreamChannelFuture.isSuccess() ? "connected" : "connect failed";
+  }
+
+  /// Marks the close as requested by the proxy. Every close of ours passes here: a close via the
+  /// channel, e.g. `ChannelFutureListener.CLOSE`, starts at the tail of the pipeline. A close by
+  /// the peer does not, it only fires [#channelInactive(ChannelHandlerContext)].
+  @Override
+  public void close(ChannelHandlerContext ctx, ChannelPromise promise) throws Exception {
+    closeRequested = true;
+    super.close(ctx, promise);
   }
 
   /// Remove upstream reference when processing for this request is complete. The upstream channel
@@ -320,7 +377,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
 
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-    if (upstreamChannelFuture != null && upstreamChannelFuture.isDone()) {
+    if (upstreamChannelFuture != null && upstreamChannelFuture.isSuccess()) {
       upstreamChannelFuture.resultNow().close();
     }
     super.exceptionCaught(ctx, cause);

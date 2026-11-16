@@ -183,5 +183,15 @@
   threads (event loops, senders, writers) and also sees other tests. `Log4jCapture` is only for
   tests of the way into Log4j2 itself (Netty, JUL, `LogTarget.Log4jOutput`). Capture the request
   log by passing a `RequestLogCapture` (a `RequestLogOutput`) to `Proxy` or the request logger.
+- Log levels (also in the `ProxyLogger` class doc):
+  - `ERROR`: a fault of ours or something an operator has to act on.
+  - `WARNING`: a problem in our own setup or state that may need action; never for a misbehaving
+    client or upstream.
+  - `INFO`: lifecycle, e.g. start, configuration, shutdown.
+  - `DEBUG`: helps operators find root causes; unusual events that do not happen for every
+    request, e.g. a client or upstream misbehaving. Such an event is counted in a metric and/or
+    recorded in the request log, the debug line adds what those lack. Off by default.
+  - `TRACE`: internals, several lines per request.
 - Tests do not assert on trace output, it is no acceptance criterion. Trace is enabled in tests
-  only so the trace code is covered; `LogCapture` captures `INFO` and above.
+  only so the trace code is covered; `LogCapture` captures `DEBUG` and above, so debug output can
+  be asserted.
