@@ -40,8 +40,26 @@ class MetricsExportTest {
         .when_requesting("withprotection.com", "/")
         .then_the_response_status_is(HttpResponseStatus.FORBIDDEN);
     var snapshots = scrape();
-    assertThat(snapshots.counter("sensepitch_ingress_requests_started").getValue()).isEqualTo(3);
-    assertThat(snapshots.counter("sensepitch_ingress_requests_completed").getValue()).isEqualTo(3);
+    assertThat(
+            snapshots
+                .counter("sensepitch_ingress_requests_started", "ingress", "example.com")
+                .getValue())
+        .isEqualTo(2);
+    assertThat(
+            snapshots
+                .counter("sensepitch_ingress_requests_completed", "ingress", "example.com")
+                .getValue())
+        .isEqualTo(2);
+    assertThat(
+            snapshots
+                .counter("sensepitch_ingress_requests_completed", "ingress", "withprotection.com")
+                .getValue())
+        .isEqualTo(1);
+    assertThat(
+            snapshots
+                .gauge("sensepitch_ingress_requests_in_flight", "ingress", "example.com")
+                .getValue())
+        .isZero();
     assertThat(histogramCount(snapshots, "example.com", "GET", "200")).isEqualTo(2);
     assertThat(histogramCount(snapshots, "withprotection.com", "GET", "403")).isEqualTo(1);
   }

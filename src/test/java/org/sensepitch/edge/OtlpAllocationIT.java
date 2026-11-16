@@ -8,6 +8,7 @@ import io.netty.handler.codec.http.HttpMethod;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.net.InetSocketAddress;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -21,8 +22,14 @@ import org.junit.jupiter.params.provider.ValueSource;
 /// ones are allocated, which is intended, see [OtlpLogDestination]. The best of a few rounds is
 /// taken, a round may need a new batch when the sender has not recycled one yet.
 ///
+/// Tagged `excessive`, so it runs only nightly and with `-Dexcessive`, e.g. for performance work:
+/// it measures the JIT more than our code, is load sensitive and adds no line or branch coverage.
+/// Among the parallel unit tests the warm-up was not always enough for the C2 compilation, once
+/// 357 bytes per record were measured.
+///
 /// @author Jens Wilke
-class OtlpAllocationTest {
+@Tag("excessive")
+class OtlpAllocationIT {
 
   /// Calls before measuring, enough for the C2 compilation that removes the temporary objects
   static final int WARMUP = 20_000;

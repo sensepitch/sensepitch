@@ -72,10 +72,10 @@ class TimeoutsTest {
     assertThat(ingressChannel.isActive()).isTrue();
     ticker.advance(9, SECONDS);
     rattle();
-    assertThat(proxyMetrics.ingressReceiveTimeoutFirstRequest.getLongValue()).isEqualTo(0);
+    assertThat(receiveTimeouts(SanitizeHostHandler.NIL_HOST, "first_request")).isEqualTo(0);
     ticker.advance(1, SECONDS);
     rattle();
-    assertThat(proxyMetrics.ingressReceiveTimeoutFirstRequest.getLongValue()).isEqualTo(1);
+    assertThat(receiveTimeouts(SanitizeHostHandler.NIL_HOST, "first_request")).isEqualTo(1);
     assertThat(ingressChannel.isActive()).isFalse();
     HttpResponse response = ingressChannel.readOutbound();
     assertThat(response.status().code()).isEqualTo(408);
@@ -100,8 +100,8 @@ class TimeoutsTest {
     response = ingressChannel.readOutbound();
     assertThat(response.status().code()).isEqualTo(408);
     assertThat(response.headers().toString()).contains("connection: close");
-    assertThat(proxyMetrics.ingressReceiveTimeoutKeepAlive.getLongValue()).isEqualTo(1);
-    assertThat(proxyMetrics.ingressReceiveTimeoutFirstRequest.getLongValue()).isEqualTo(0);
+    assertThat(receiveTimeouts(SanitizeHostHandler.NIL_HOST, "keep_alive")).isEqualTo(1);
+    assertThat(receiveTimeouts(SanitizeHostHandler.NIL_HOST, "first_request")).isEqualTo(0);
   }
 
   /// Receiving a part of the request moves the deadline, the timeout is rescheduled instead of
@@ -124,7 +124,7 @@ class TimeoutsTest {
     assertThat(ingressChannel.isActive()).isFalse();
     HttpResponse response = ingressChannel.readOutbound();
     assertThat(response.status().code()).isEqualTo(408);
-    assertThat(proxyMetrics.ingressReceiveTimeoutFirstRequest.getLongValue()).isEqualTo(1);
+    assertThat(receiveTimeouts(SanitizeHostHandler.MISSING_HOST, "first_request")).isEqualTo(1);
     // the request headers were received, so the request is logged
     assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.REQUEST_TIMEOUT);
   }
@@ -182,6 +182,24 @@ class TimeoutsTest {
         .contains("GET /no-response HTTP/1.1 504");
     assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.UPSTREAM_TIMEOUT);
     assertOutcomeCount(RequestOutcome.UPSTREAM_TIMEOUT, 1);
+    assertErrorCount("waiting", "timeout", 1);
+    assertErrorCount("waiting", "other", 0);
+  }
+
+  /// Our own timeouts are counted as error type `timeout`, apart from unexpected errors
+  void assertErrorCount(String phase, String type, long expected) {
+    assertThat(
+            proxyMetrics
+                .ingressErrorCounter
+                .labelValues(SanitizeHostHandler.MISSING_HOST, phase, type)
+                .getLongValue())
+        .isEqualTo(expected);
+  }
+
+  /// Read timeouts of the ingress and phase. The ingress is `nil_host` when no request was read,
+  /// otherwise `missing_host`, the test requests have no host header.
+  long receiveTimeouts(String ingress, String phase) {
+    return proxyMetrics.ingressReceiveTimeoutCounter.labelValues(ingress, phase).getLongValue();
   }
 
   /// The metric counts the outcome of the request log, see [ProxyMetrics#countRequestOutcome]. The
@@ -242,6 +260,8 @@ class TimeoutsTest {
     // logged when the connection closes, the timeout was reported first
     assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.RESPONSE_WRITE_TIMEOUT);
     assertOutcomeCount(RequestOutcome.RESPONSE_WRITE_TIMEOUT, 1);
+    assertErrorCount("responding", "timeout", 1);
+    assertErrorCount("responding", "other", 0);
   }
 
   private void sendRequest(String uri) {

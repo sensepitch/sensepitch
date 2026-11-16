@@ -9,6 +9,7 @@ current production needs. Notes below record decisions to make before implementa
 
 ## Evergreen
 
+- [ ] Check on GitHub CI actions and add a TODO or fix right away if something is broken
 - [ ] Improve code according to styling rules
   - Ongoing review principle; record concrete inconsistencies as separate tasks.
 - [ ] Lock on a private lock object, see the locking rule in `AGENTS.md`: `synchronized` methods
@@ -160,10 +161,6 @@ breaker.
 
 ## Metrics, logging
 
-- [ ] Ingress metrics without the `ingress` label: `sensepitch_ingress_request_errors`,
-  `sensepitch_ingress_receive_timeout` and the `sensepitch_ingress_requests_*` counters. Every
-  ingress metric needs it, see the `ProxyMetrics` class doc.
-  - P3: use `nil_host` where no request was read yet, e.g. `receive_timeout{phase="first_request"}`.
 - [ ] `ProxyMetrics`: one `sensepitch_edge_server_live` per ingress, to drill down per ingress
   and know how many servers it has
   - P3: define ingress identity and expected behavior for multiple servers and reloads.
@@ -259,6 +256,16 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
   in 0.9 s. `ReloadableRequestLoggerTest`, `ProxyShutdownIT`,
   `ShadedJarIT.sigtermSendsTheRequestLogAndExits` are not investigated yet.
   - P2: preserve both report directories in CI before attempting a speculative fix.
+- [x] Flaky test: `OtlpAllocationTest.loggingDoesNotAllocate(false)` measured 357 bytes per
+  record against the bound of 256 in one parallel `./mvnw verify` (2026-11-16), it passed alone
+  and in the next run. Inferred, not verified: under the parallel load the warm-up was not
+  enough for the C2 compilation. Moved to `OtlpAllocationIT`, it measures the JIT more than our
+  code. Its only unit coverage, the ranged `OtlpRequestLogSink.string` for a URI with a query,
+  was ported to `OtlpLogDestinationTest.recordIsExportedWithResourceScopeAndAttributes`; unit
+  line coverage is the same before and after (5017 lines), one branch of
+  `AsyncRequestLogWriter.reportError` varies with timing between runs. Tagged `excessive`: it
+  runs nightly and with `-Dexcessive`, not in `./mvnw verify`, see
+  [doc/design/test-speed.md](doc/design/test-speed.md).
 
 ## Done
 
@@ -299,6 +306,27 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
   like on every ingress metric. No zero series for outcomes that did not happen, like the other
   labelled counters; a per ingress cache to create them was dropped, the Prometheus `Counter`
   already caches its data points.
+
+- [x] `ingress` label on `sensepitch_ingress_request_errors`, `sensepitch_ingress_receive_timeout`
+  and `sensepitch_ingress_requests_{started,completed,aborted,in_flight}` (2026-11-16). The
+  ingress is the host of the request in progress. Without one (a handshake error, or a timeout
+  or error before the first request or between keep-alive requests) it is the TLS server name
+  (SNI), sanitized like the host header: `SanitizeHostHandler` stores the `SniCompletionEvent`
+  and sanitizes it only when an error or timeout is counted
+  (`ProxyMetrics.ingress(ChannelHandlerContext)`); `missing_host` without a name, also for bytes
+  that are no TLS (netty fires the event with no name, seen in `ExternalTcpIT`), `nil_host`
+  before the client sent anything. The requests counters are Prometheus metrics
+  now instead of `LongAdder`s with a custom collector; `in_flight` is a gauge incremented and
+  decremented with them, the shutdown report sums it over the ingresses. Incompatible for
+  queries that match the series exactly, sums are unchanged. The fixed data point fields
+  `ingressReceiveTimeoutFirstRequest`/`KeepAlive` are gone, the label values are dynamic now.
+  `request_errors` counts the upstream response and the response write timeout as
+  `type="timeout"`, before `other`: they are no unexpected errors, and are also in
+  `request_outcomes`; each metric counts a timeout once.
+  `sensepitch_ingress_connections_{opened,closed,active}` stay without label, the documented
+  exception in the `ProxyMetrics` class doc: labelling them by SNI was tried and dropped, it
+  sanitizes the name and looks up labelled data points on every connection for a breakdown that
+  is rarely needed.
 
 - [x] Serenity: reporting off by default, `-Dserenity.reports` switches it on (2026-11-14).
   Serenity stays for the BDD step chains. The `pom.xml` deactivates

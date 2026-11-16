@@ -1,11 +1,14 @@
 package org.sensepitch.edge;
 
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
+import io.netty.handler.ssl.SniCompletionEvent;
+import io.netty.util.AttributeKey;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
@@ -19,6 +22,10 @@ import java.util.stream.Collectors;
 /// contact. However, clients might leave the header out or just put garbage in there. We don't want
 /// to have that further polluting our systems, or do defensive coding every time the host header is
 /// needed.
+///
+/// It also keeps the TLS server name (SNI) of the connection, see [#serverName]. It is sanitized
+/// only when it is asked for, e.g. when an error is counted before a request was read, so a
+/// connection costs no more than storing the event.
 ///
 /// @see RequestLogInfo#requestHeaderHost()
 /// @author Jens Wilke
@@ -140,6 +147,41 @@ public class SanitizeHostHandler extends ChannelInboundHandlerAdapter {
     return true;
   }
 
+  /// The event of the `SniHandler` with the server name of the connection, see [#serverName]
+  private static final AttributeKey<SniCompletionEvent> SNI =
+      AttributeKey.valueOf(SanitizeHostHandler.class, "sni");
+
+  /// Keeps the server name for [#serverName], the handler is after the `SniHandler`
+  @Override
+  public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+    if (evt instanceof SniCompletionEvent sni) {
+      ctx.channel().attr(SNI).set(sni);
+    }
+    super.userEventTriggered(ctx, evt);
+  }
+
+  /// The sanitized TLS server name of the connection, the ingress when no request was read yet
+  ///
+  /// @return [#NIL_HOST] before the client sent its first bytes, [#MISSING_HOST] without a server
+  ///     name, also when the bytes are no TLS, otherwise like [#sanitize]
+  public String serverName(Channel channel) {
+    SniCompletionEvent sni = channel.attr(SNI).get();
+    return sni != null ? sanitize(sni.hostname()) : NIL_HOST;
+  }
+
+  /// Sanitizes a host name sent by the client, the host header or the TLS server name (SNI), so it
+  /// can be used as label value
+  ///
+  /// @return the normalized host if it is known, [#MISSING_HOST] for `null`, otherwise
+  ///     [#UNKNOWN_HOST]
+  public String sanitize(String host) {
+    if (host == null) {
+      return MISSING_HOST;
+    }
+    String normalized = normalizeHost(host);
+    return normalized != null && knownHosts.get().contains(normalized) ? normalized : UNKNOWN_HOST;
+  }
+
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
     if (msg instanceof HttpRequest request) {
@@ -151,10 +193,7 @@ public class SanitizeHostHandler extends ChannelInboundHandlerAdapter {
         // RFC 9112, 3.2: more than one host header must be rejected, see UnservicedHost
         host = UNKNOWN_HOST;
       } else {
-        host = normalizeHost(hosts.get(0));
-        if (host == null || !knownHosts.get().contains(host)) {
-          host = UNKNOWN_HOST;
-        }
+        host = sanitize(hosts.get(0));
       }
       // always set, so no other host header than the checked one reaches the upstream
       request.headers().set(HttpHeaderNames.HOST, host);

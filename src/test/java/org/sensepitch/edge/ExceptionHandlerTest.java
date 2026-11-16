@@ -46,8 +46,14 @@ public class ExceptionHandlerTest {
     return channel;
   }
 
+  /// Count of the errors in the phase and of the type. The ingress is `nil_host` before a request
+  /// was read, afterwards `missing_host`, the test requests have no host header.
   double count(String phase, String type) {
-    return metrics.ingressErrorCounter.labelValues(phase, type).get();
+    String ingress =
+        phase.equals("handshake") || phase.equals("requesting")
+            ? SanitizeHostHandler.NIL_HOST
+            : SanitizeHostHandler.MISSING_HOST;
+    return metrics.ingressErrorCounter.labelValues(ingress, phase, type).get();
   }
 
   @Test

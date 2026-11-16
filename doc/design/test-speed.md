@@ -174,6 +174,22 @@ build with delombok, and the format check. All tests run and the fat JAR is buil
 before the Serenity change: 30.5 s against 38.3 s for the full gate. It is for the inner loop;
 before a commit the full `./mvnw verify` runs.
 
+### Excessive tests run nightly
+
+A test that measures the JVM rather than our code is tagged `@Tag("excessive")` and left out of
+`./mvnw test` and `verify` (`test.excludedGroups` in `pom.xml`). It runs nightly
+([nightly.yml](../../.github/workflows/nightly.yml)) and with `-Dexcessive`, e.g. when working
+on performance. Such a test is load sensitive, and a failure among the parallel tests says
+little about a change, so it is not part of the gate. It adds no coverage; a scenario only it
+covered is ported to a unit test first.
+
+The first is `OtlpAllocationIT`, which bounds the bytes allocated per logged record. It failed
+once in a parallel `./mvnw verify` with 357 bytes against the bound of 256, measured normally
+120 to 150 (2026-11-16), and passed alone and in the next run. Inferred, not verified: the
+warm-up was not enough for the C2 compilation under that load. Moving it out of the unit tests
+lost the only test of a URI with a query on the OTLP path; that case is now in
+`OtlpLogDestinationTest`.
+
 ## Alternatives considered
 
 ### Surefire forks

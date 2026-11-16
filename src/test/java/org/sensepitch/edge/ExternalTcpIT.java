@@ -19,7 +19,10 @@ import java.util.Random;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import javax.net.ssl.SNIHostName;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLException;
+import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
@@ -209,6 +212,44 @@ class ExternalTcpIT {
       socket.startHandshake();
     }
     assertNothingLogged();
+  }
+
+  /// A handshake error has no request, its ingress is the TLS server name: the `SniHandler`
+  /// delivers it to [SanitizeHostHandler] in the real pipeline. Bytes that are no TLS have no
+  /// server name.
+  @Test
+  void handshakeErrorIngressIsTheServerName() throws Exception {
+    try (SSLSocket socket = tlsSocket()) {
+      SSLParameters parameters = socket.getSSLParameters();
+      parameters.setServerNames(List.of(new SNIHostName("example.com")));
+      // the test certificate is RSA, so the server cannot agree on an ECDSA suite
+      parameters.setProtocols(new String[] {"TLSv1.2"});
+      parameters.setCipherSuites(new String[] {"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"});
+      socket.setSSLParameters(parameters);
+      socket.startHandshake();
+      throw new IllegalStateException("handshake expected to fail");
+    } catch (SSLException expected) {
+      // the server rejected the handshake
+    }
+    sendGarbage();
+    awaitHandshakeErrors("example.com");
+    awaitHandshakeErrors(SanitizeHostHandler.MISSING_HOST);
+  }
+
+  /// Waits until a handshake error of the ingress was counted, the proxy counts asynchronously
+  private void awaitHandshakeErrors(String ingress) throws InterruptedException {
+    String prefix =
+        "sensepitch_ingress_request_errors_total{ingress=\"" + ingress + "\",phase=\"handshake\"";
+    MetricsAndMemoryTest.Snapshots snapshots = null;
+    for (int i = 0; i < 100; i++) {
+      snapshots = new MetricsAndMemoryTest.Snapshots(proxy.metricsRegistry().scrape());
+      if (snapshots.getPrometheusExpositionText().contains(prefix)) {
+        return;
+      }
+      Thread.sleep(50);
+    }
+    throw new IllegalStateException(
+        "not counted: " + prefix + "\n" + snapshots.getLinesContaining("request_errors"));
   }
 
   @Test

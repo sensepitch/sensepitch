@@ -26,6 +26,10 @@
   Javadoc build with delombok, and the format check. Each part can be skipped on its own:
   `-Djacoco.skip`, `-Dmaven.javadoc.skip -Dlombok.delombok.skip`, `-Dspotless.check.skip`.
   Before a commit run the full `./mvnw verify`.
+- `./mvnw verify -Dexcessive` (profile `excessive`) also runs the tests tagged
+  `@Tag("excessive")`: measurements of the JVM rather than of our code (allocation, timing), load
+  sensitive, run nightly (`.github/workflows/nightly.yml`). Run them when working on performance.
+  Such a test must add no coverage of its own; port a missing scenario to a unit test first.
 - How the tests are run and why (parallel execution, isolation, log capture, Serenity, what was
   tried and dropped) is in `doc/design/test-speed.md`. Update it when the test setup changes.
 - `./mvnw test` runs the unit test classes concurrently in one JVM (JUnit parallel execution, set
