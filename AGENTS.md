@@ -62,6 +62,11 @@
 - Keep class and method names descriptive and consistent with existing `*Config`, `*Handler`, and `*Lookup` patterns.
 - Use named reusable constants for no-op implementations and immutable empty values.
 - Read concurrent state once per method invocation when multiple values must come from the same snapshot.
+- Lock on a private final lock object (`private final Object lock = new Object()`), not on `this`
+  or with a `synchronized` method, so no outside code can hold or contend on the lock.
+- Make a field `volatile` only when it is read without the lock (e.g. a lock free fast path).
+  Fields only touched under the lock are plain and grouped under a `// guarded by lock` comment;
+  a rarely called getter takes the lock instead of making the field volatile.
 - Order methods so a class reads top down: entry points first, a factored-out helper that is not
   called from outside right after the method(s) calling it. Group the methods of larger classes by
   role (e.g. the API for callers, the end/lifecycle, timers, sending) with a short `//` section
