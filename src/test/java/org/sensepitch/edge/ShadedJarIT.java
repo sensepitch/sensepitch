@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.cert.X509Certificate;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.jar.JarFile;
 import java.util.zip.ZipEntry;
@@ -26,6 +27,7 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /// Checks the fat JAR produced by the shade plugin, as it is deployed.
 ///
@@ -145,6 +147,70 @@ class ShadedJarIT {
       assertThat(Files.readAllLines(stderr)).noneMatch(line -> line.contains("Shutdown:"));
     } finally {
       logServer.stop(0);
+    }
+  }
+
+  /// A blocked exporter forces a diagnostic at the end of the shutdown budget, after SIGTERM
+  /// started all JVM hooks. Both deployed logging configurations must keep that message.
+  @ParameterizedTest
+  @ValueSource(strings = {"log4j2.xml", "log4j2-trace.xml"})
+  void sigtermKeepsFinalShutdownDiagnostic(String loggingConfig) throws Exception {
+    var exportStarted = new CountDownLatch(1);
+    var releaseExport = new CountDownLatch(1);
+    var collector =
+        com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+    collector.createContext(
+        "/v1/logs",
+        exchange -> {
+          exchange.getRequestBody().readAllBytes();
+          exportStarted.countDown();
+          try {
+            releaseExport.await(10, TimeUnit.SECONDS);
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+          } finally {
+            exchange.close();
+          }
+        });
+    collector.start();
+    try {
+      int port = freePort();
+      Path config =
+          writeConfig(
+              port,
+              """
+              shutdownTimeoutMillis: 1000
+              requestLog:
+                drainTimeoutMillis: 1000
+                destinations:
+                  - type: otlp
+                    otlp:
+                      endpoint: http://127.0.0.1:%d/v1/logs
+                      flushIntervalMillis: 60000
+              """
+                  .formatted(collector.getAddress().getPort()));
+      Path stderr = dir.resolve("stderr.log");
+      process =
+          new ProcessBuilder(
+                  Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                  "-Dlog4j2.configurationFile=classpath:" + loggingConfig,
+                  "-jar",
+                  jar.toString(),
+                  config.toString())
+              .redirectOutput(dir.resolve("stdout.log").toFile())
+              .redirectError(stderr.toFile())
+              .start();
+      awaitOutput(stderr, "Proxy listening on 127.0.0.1:" + port);
+      assertThat(get(port)).startsWith("HTTP/1.1 200");
+      process.destroy();
+      assertThat(exportStarted.await(5, TimeUnit.SECONDS)).as("shutdown export started").isTrue();
+      assertThat(process.waitFor(10, TimeUnit.SECONDS)).as("exited after draining").isTrue();
+      assertThat(Files.readString(stderr))
+          .contains("Shutdown: request log not drained after")
+          .contains("unsent records");
+    } finally {
+      releaseExport.countDown();
+      collector.stop(0);
     }
   }
 

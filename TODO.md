@@ -47,13 +47,6 @@ implementation.
 
 ## Bugs
 
-- [ ] Log4j2 shutdown hook runs concurrently with ours
-  - P1, the shutdown on `SIGTERM` is the Kubernetes path: Log4j2 registers its own JVM shutdown hook
-    by default (`log4j2.xml` does not disable it) and the JVM runs all hooks in parallel, so Log4j2
-    may stop while `Proxy.shutdown()` still drains, and the diagnostic lines of the shutdown (phase
-    reports, timeouts) can be lost. Inferred from the Log4j2 default, not verified. Set
-    `shutdownHook="disable"` and call `LogManager.shutdown()` as the last step of
-    `Proxy.shutdown()`; check with a test that the shutdown report reaches Log4j2 (`Log4jCapture`).
 - [ ] Flaky, not investigated: `ProxyShutdownIT`,
   `ShadedJarIT.sigtermSendsTheRequestLogAndExits`
   - P2: also the `SIGTERM` path.
@@ -351,6 +344,10 @@ the failure threshold for upstreams is under Upstream.
 
 ## Done
 
+- [x] Log4j2 shutdown hook ran concurrently with ours and dropped the shutdown reports on
+  `SIGTERM` (2026-11-17), see [doc/design/diagnostic-logging.md](doc/design/diagnostic-logging.md).
+  Found on the way: `long` config values (`shutdownTimeoutMillis`,
+  `requestLog.drainTimeoutMillis`) could not be set via YAML or environment.
 - [x] Rename the `ProxyLogger` constant `DEBUG` to `LOG` in `DownstreamHandler`,
   `RequestLoggingHandler`, and `JsonRequestLogger` for consistent naming; no behavior change.
 

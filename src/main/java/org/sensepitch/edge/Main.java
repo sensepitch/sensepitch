@@ -7,6 +7,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.function.Supplier;
+import org.apache.logging.log4j.LogManager;
 import org.sensepitch.edge.config.RecordConstructor;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.nodes.Node;
@@ -18,6 +19,10 @@ import org.yaml.snakeyaml.nodes.Node;
 /// [AdminServer] if `admin` is configured, if it ends with the line `#END`, see
 /// [ConfigFileWatcher]. The admin endpoint also reloads an unchanged configuration, which picks up
 /// renewed certificate files.
+///
+/// The command-line application owns process-wide logging. Its shutdown hook waits for its proxy
+/// and admin server before stopping Log4j2; the bundled logging configurations disable Log4j2's
+/// concurrent hook. Embedded proxies leave logging lifecycle ownership to their caller.
 ///
 /// @author Jens Wilke
 public class Main {
@@ -51,12 +56,53 @@ public class Main {
         config.admin() != null
             ? AdminServer.start(config.admin(), reload, proxy::isShuttingDown)
             : null;
+    Shutdown shutdown =
+        new Shutdown(
+            () -> {
+              try {
+                proxy.shutdown();
+              } finally {
+                // its threads are not daemon threads and would keep the JVM running
+                if (admin != null) {
+                  admin.stop();
+                }
+              }
+            },
+            LogManager::shutdown);
+    Runtime.getRuntime().addShutdownHook(new Thread(shutdown, "main-shutdown"));
     try {
       proxy.start();
     } finally {
-      // its threads are no daemon threads and would keep the JVM running
-      if (admin != null) {
-        admin.stop();
+      shutdown.run();
+    }
+  }
+
+  /// Orders application cleanup on normal exit and SIGTERM. Concurrent callers wait for the same
+  /// cleanup, including logging, and each step runs once even if service cleanup fails.
+  static final class Shutdown implements Runnable {
+    private final Object lock = new Object();
+    private final Runnable stopServices;
+    private final Runnable stopLogging;
+    // guarded by lock
+    private boolean stopped;
+
+    Shutdown(Runnable stopServices, Runnable stopLogging) {
+      this.stopServices = stopServices;
+      this.stopLogging = stopLogging;
+    }
+
+    @Override
+    public void run() {
+      synchronized (lock) {
+        if (stopped) {
+          return;
+        }
+        stopped = true;
+        try {
+          stopServices.run();
+        } finally {
+          stopLogging.run();
+        }
       }
     }
   }

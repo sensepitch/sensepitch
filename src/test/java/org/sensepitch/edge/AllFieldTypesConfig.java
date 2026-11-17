@@ -8,6 +8,7 @@ import lombok.Builder;
 @Builder(toBuilder = true)
 public record AllFieldTypesConfig(
     int number,
+    long longNumber,
     boolean flag,
     String text,
     List<String> texts,

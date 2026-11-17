@@ -395,6 +395,8 @@ public class Proxy implements ProxyContext {
   /// A reload in progress completes first, later reloads are rejected, see [#reload(ProxyConfig)].
   /// A phase that runs out of time is logged with what was left. Can be called more than once,
   /// e.g. by the shutdown hook and by [#start()], the later calls wait for the first.
+  /// Does not stop process-wide Log4j2: other proxy instances or the embedding application may
+  /// still need it. The command-line application [Main] owns logging shutdown.
   public void shutdown() {
     CompletableFuture<Void> done = new CompletableFuture<>();
     CompletableFuture<Void> running;

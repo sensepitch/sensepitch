@@ -81,6 +81,8 @@ public class RecordConstructor {
       return scalarValue(node);
     } else if (type.equals(int.class)) {
       return Integer.valueOf(scalarValue(node));
+    } else if (type.equals(long.class)) {
+      return Long.valueOf(scalarValue(node));
     } else if (type.equals((boolean.class))) {
       return BOOL_VALUES.get((scalarValue(node).toLowerCase()));
     } else if (type instanceof ParameterizedType) {

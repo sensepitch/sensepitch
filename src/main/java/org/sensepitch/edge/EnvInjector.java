@@ -156,6 +156,8 @@ public class EnvInjector {
   private static Object parseValue(String str, Class<?> type) {
     if (type == int.class || type == Integer.class) {
       return Integer.parseInt(str);
+    } else if (type == long.class || type == Long.class) {
+      return Long.parseLong(str);
     } else if (type == boolean.class || type == Boolean.class) {
       return Boolean.parseBoolean(str);
     } else if (type == String.class) {

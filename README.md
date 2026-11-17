@@ -870,6 +870,10 @@ environment variable, or point it to an own file:
 LOG4J_CONFIGURATION_FILE=classpath:log4j2-trace.xml
 ````
 
+An own configuration file needs `shutdownHook="disable"` on its `<Configuration>` element, like
+the bundled ones: otherwise Log4j2 stops in parallel to the graceful shutdown on `SIGTERM`, and the
+shutdown messages are lost. The proxy stops Log4j2 itself when the shutdown is complete.
+
 Tracing costs a level check per trace call. For maximum performance,
 `SENSEPITCH_EDGE_DISABLE_TRACE=true` removes the trace code completely, a configured trace level
 then has no effect. The former variable `SENSEPITCH_EDGE_LOG_LEVEL` is no longer supported.

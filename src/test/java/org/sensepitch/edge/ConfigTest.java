@@ -43,11 +43,13 @@ public class ConfigTest {
     Map<String, String> env =
         Map.of(
             "XX_NUMBER", "123",
+            "XX_LONG_NUMBER", "5000000000",
             "XX_FLAG", "true",
             "XX_TEXT", "hello world");
     AllFieldTypesConfig cfg =
         (AllFieldTypesConfig) EnvInjector.injectFromEnv("XX_", env, AllFieldTypesConfig.builder());
     assertEquals(123, cfg.number());
+    assertEquals(5_000_000_000L, cfg.longNumber());
     assertEquals(true, cfg.flag());
     assertEquals("hello world", cfg.text());
   }
@@ -103,6 +105,7 @@ public class ConfigTest {
     String yaml =
         """
       number: 123
+      longNumber: 5000000000
       flag: true
       text: hello world
       texts:
@@ -122,6 +125,7 @@ public class ConfigTest {
     // printNode(root, 2);
     AllFieldTypesConfig obj = RecordConstructor.construct(AllFieldTypesConfig.class, root);
     assertThat(obj.number()).isEqualTo(123);
+    assertThat(obj.longNumber()).isEqualTo(5_000_000_000L);
     assertThat(obj.flag()).isEqualTo(true);
     assertThat(obj.text()).isEqualTo("hello world");
     assertThat(obj.texts()).hasSize(2).first().isEqualTo("one");

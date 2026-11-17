@@ -2,6 +2,9 @@
 <!--
   Production logging of diagnostic messages.
 
+  shutdownHook="disable": Main stops Log4j2 after the graceful shutdown. Log4j2's own hook would
+  run in parallel and drop the shutdown reports, see doc/design/diagnostic-logging.md.
+
   Diagnostics go to standard error, unbuffered: the last message before a crash or hang must not
   be stuck in a buffer. Standard out is reserved for the request log, which the proxy writes
   directly and buffered (see RequestLogger and LogTarget). Keeping the two apart means a log
@@ -15,7 +18,7 @@
   it to an own file. SENSEPITCH_EDGE_DISABLE_TRACE=true removes the trace code completely for
   maximum performance, see ProxyLogger.
 -->
-<Configuration xmlns="https://logging.apache.org/xml/ns"
+<Configuration shutdownHook="disable" xmlns="https://logging.apache.org/xml/ns"
                xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                xsi:schemaLocation="
                    https://logging.apache.org/xml/ns
