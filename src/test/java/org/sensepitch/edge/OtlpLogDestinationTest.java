@@ -134,7 +134,12 @@ class OtlpLogDestinationTest {
       destination.endThread();
       destination.finish();
     }
-    server.stop(0);
+    // Lets a running exchange write its answer: the server puts a post into `received` before
+    // answering, and a test may end right after taking it. `stop(0)` would close the connection
+    // under the answer, the post would fail with "header parser received no bytes", and the
+    // sender would log the retry warning late, into the all threads log capture of the next
+    // test. Returns at once when no exchange is running.
+    server.stop(10);
   }
 
   String endpoint() {
