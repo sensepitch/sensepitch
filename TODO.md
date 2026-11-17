@@ -140,11 +140,6 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
 - [ ] bypass config should be in the protection and not in the protection providers => we need a
   proper API for the protection provider
   - P3: define provider-independent bypass semantics and migration of existing configuration.
-- [ ] Integrate https://github.com/cruftex/GoodBots
-  - P3: define data source, update cadence and conflict behavior with existing crawler lists.
-- [ ] Perplexity, https://docs.perplexity.ai/guides/bots: the user agent is in `crawlers.tsv`,
-  the IP ranges are not in `crawler-ips/` yet
-  - P3: verify the published source and update strategy before adding ranges.
 - [ ] minimise + compress challenge resources
   - P3: measure transfer and CPU costs; decide build-time compression and cache behavior.
 - [ ] abnormal admission usage detection
