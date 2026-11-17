@@ -67,7 +67,8 @@ class ReloadableRequestLoggerTest {
     if (logger != null) {
       logger.close();
     }
-    server.stop(0);
+    // lets a running exchange write its answer, see `OtlpLogDestinationTest.stop()`
+    server.stop(1);
   }
 
   RequestLogDestinationConfig otlp(String name, int flushIntervalMillis) {

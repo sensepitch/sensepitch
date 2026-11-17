@@ -9,6 +9,42 @@ M1 path, observability, admission lifetime; P3 = features and measured performan
 priorities against current production needs. Notes below record decisions to make before
 implementation.
 
+## Scheduled Cleanup and Refactorings
+
+- [ ] One central test timeout instead of literal waits
+  - P2: the flake fix (see Done, `badRequestGivesUpTheBatch`) stops the test log server with
+    `stop(1)`. The grace is released by the dispatcher thread of the JDK `HttpServer`
+    (`ServerImpl.stop` waits on `finishedLatch` until no exchange runs and no request is being
+    read, JDK 25.0.5), so a scheduling pause over 1 s on a cloud machine brings the flake back. In
+    the normal case `stop` returns at once, so a generous value costs nothing.
+  - A test class `TestingParameters` with `TIMEOUT_SECONDS = 10` and `TIMEOUT`, the pattern of
+    cache2k `PinpointParameters`: the maximum time a test waits for something another thread or
+    process does. Next to it `await(description, condition)` (moved from
+    `OtlpLogDestinationTest.await`) and `stop(HttpServer)` = `stop(TIMEOUT_SECONDS)`.
+  - Use it for: the server stop at the end of a test (`OtlpLogDestinationTest`,
+    `ReloadableRequestLoggerTest`, `RequestLoggerFactoryTest`, `HttpBatchSenderTest`,
+    `ProxyOptionsTest`, `ProxyShutdownIT`, `ShadedJarIT`, `ExternalTcpIT`, `OtlpAllocationIT`,
+    `OtlpSlowStartIT`); the `poll`/`get`/`await(10, SECONDS)` calls; the hand written deadline loops
+    (10 s, `ConfigFileWatcherTest` 15 s, `ShadedJarIT` 30 s, `ExternalTcpIT` 5 s); the unbounded
+    `received.take()` and `Thread.sleep(5)` loops without deadline in `OtlpLogDestinationTest` and
+    `ReloadableRequestLoggerTest`.
+  - Not changed: intentional outages with `stop(0)` inside a test (`outageLosesNothing`,
+    `finishDuringAnOutage`, `ProxyShutdownIT.unsentRecordsAreReported`), negative waits ("nothing
+    within 100 ms"), deliberate pauses, and the class level `@Timeout` as the outer guard of a test
+    with several waits.
+  - Add a line to the testing guidelines in `AGENTS.md`: no literal timeouts in tests.
+- [ ] Move the real server tests of `OtlpLogDestinationTest` and `ReloadableRequestLoggerTest` to
+  `*IT` where the unit tests keep their coverage
+  - P2: the full move was undone 2026-11-14 because the unit tests lost coverage (see "Timing
+    related tests" under Build, tests). This time move only what the remaining unit tests already
+    cover: baseline `./mvnw clean test jacoco:report`, then exclude the slowest and most timing
+    dependent tests one at a time (`-Dtest='!OtlpLogDestinationTest#x,...'`) and keep a test
+    excluded only if `target/site/jacoco/jacoco.csv` stays identical.
+  - The moved tests go to a new `OtlpLogDestinationIT` and the existing `ReloadableRequestLoggerIT`,
+    with the unit test as fixture; the class docs name the unit test as the place for new
+    scenarios. If almost nothing is movable, record the measurement in
+    `doc/design/test-speed.md` instead; the remedy is then the fake clock.
+
 ## Bugs
 
 - [ ] Log4j2 shutdown hook runs concurrently with ours
@@ -21,13 +57,6 @@ implementation.
 - [ ] Flaky, not investigated: `ProxyShutdownIT`,
   `ShadedJarIT.sigtermSendsTheRequestLogAndExits`
   - P2: also the `SIGTERM` path.
-- [ ] Flaky test: `OtlpLogDestinationTest.badRequestGivesUpTheBatch` expected one log line and got
-  two in CI run 43810408003 (2026-11-16, Dependabot PR for `actions/setup-node` 7, unrelated to
-  it). The extra line came before the 400: "Request log export to http://127.0.0.1:.../v1/logs
-  failed: java.io.IOException: HTTP/1.1 header parser received no bytes. Buffering records and
-  retrying, ...". So a post failed on the connection first, then was retried.
-  - P2: find where the connection broke (test server, keep-alive reuse of a closed connection by
-    the JDK `HttpClient`) and whether the test or the sender should tolerate it.
 - [ ] Error log flood while an upstream is down: `DownstreamHandler.failExchange` logs every
   upstream connect or write failure as error with stack trace, one per request
   - P2: an operator sees one error per request. A misbehaving upstream is counted and logged at
@@ -279,6 +308,13 @@ the failure threshold for upstreams is under Upstream.
     test covers.
   - Write the converted tests as step chains (`*BDDTest`).
   - P2.
+- [ ] Investigate cache2k pinpoint for the test patterns
+  - P3: `cache2k-pinpoint` (module of cache2k, 2.6.1) has `PinpointParameters.TIMEOUT`,
+    `Await` with a `TimeoutError` naming the condition, `TimeBox` (timing assertions only count when
+    run within the time box, for "no retry within 100 ms" and the duration ranges in
+    `ProxyShutdownIT`), and `SupervisedExecutor`/`TaskSuccessGuardian` for exceptions of worker
+    threads. It is not on Maven Central (its deploy is skipped), so decide: publish it with a
+    cache2k release, or copy the needed classes.
 
 ## Evergreen / Cleanups
 
@@ -324,6 +360,27 @@ the failure threshold for upstreams is under Upstream.
 
 ## Done
 
+- [x] Flaky test: `OtlpLogDestinationTest.badRequestGivesUpTheBatch` expected one log line and got
+  two in CI run 43810408003 (2026-11-16). The extra line, "Request log export to ... failed:
+  java.io.IOException: HTTP/1.1 header parser received no bytes. Buffering records and retrying",
+  came from the sender of an earlier test, not from this one: the log assertion is the last of the
+  test, so its `export_retries` was zero, its own sender never retried. Root cause in the test
+  server: it put a post into `received` before writing the answer, a test could end right after
+  taking its last post, and `server.stop(0)` closes open connections at once (JDK 25
+  `sun.net.httpserver.ServerImpl.stop`). The cut post failed, and the sender of the ended test,
+  which does not wait in `@AfterEach`, logged the warning on its own thread into the all threads log
+  capture of the next test. The sender is not at fault: each `HttpBatchSender` has its own
+  `HttpClient`, so the first post of a test cannot reuse a pooled connection, and a connection
+  closed by the server is a retryable failure as the OTLP specification asks. Shown with a throwaway
+  test that delays the answer by 300 ms after publishing (2026-11-16, not committed): with `stop(0)`
+  exactly this warning is logged, with `stop(1)` nothing. The CI flake itself was not reproduced,
+  and the port of the extra line is not in the TODO, so which earlier test cut its post is inferred.
+  Fix: `@AfterEach` of `OtlpLogDestinationTest` and `ReloadableRequestLoggerTest` stops the server
+  with `stop(1)`, which lets a running exchange write its answer and returns at once when none runs.
+  Publishing only after answering was tried and dropped: tests that wait for the sender and then
+  read `received` without blocking, e.g. `closeSendsPendingRecords`, failed 1 of 5 runs.
+  `ProxyOptionsTest` is unaffected, `Proxy.shutdown()` drains the request log before its collector
+  stops.
 - [x] CI did not run (2026-11-16): every run since at least 2026-11-15 23:03 UTC stayed `queued`
   on the `self-hosted` runner, probably offline (not verified). Both workflows run on
   `ubuntu-latest` now, free for a public repository; a new push cancels the run of the previous
