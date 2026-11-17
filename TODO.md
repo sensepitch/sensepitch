@@ -213,10 +213,6 @@ breaker.
 - [ ] Review the existing log statements against the log levels in `AGENTS.md`: a misbehaving
   client or upstream is counted and logged at debug at most. E.g. `ExceptionHandler` logs "other"
   errors; `DownstreamHandler.failExchange` is under Bugs.
-- [ ] Rename the `ProxyLogger` constant `DEBUG` to `LOG`, as in the other classes: with a debug
-  level `DEBUG.debug(...)` and `DEBUG.error(...)` read wrong. `DownstreamHandler`,
-  `RequestLoggingHandler`, `JsonRequestLogger`.
-  - P3, no operator-visible effect.
 
 ## Circuit breaker
 
@@ -359,6 +355,9 @@ the failure threshold for upstreams is under Upstream.
 - [ ] add CONTRIBUTING.md
 
 ## Done
+
+- [x] Rename the `ProxyLogger` constant `DEBUG` to `LOG` in `DownstreamHandler`,
+  `RequestLoggingHandler`, and `JsonRequestLogger` for consistent naming; no behavior change.
 
 - [x] Flaky test: `OtlpLogDestinationTest.badRequestGivesUpTheBatch` expected one log line and got
   two in CI run 43810408003 (2026-11-16). The extra line, "Request log export to ... failed:

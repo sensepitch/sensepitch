@@ -27,7 +27,7 @@ import java.net.InetSocketAddress;
 /// @author Jens Wilke
 public class DownstreamHandler extends ChannelDuplexHandler {
 
-  private static final ProxyLogger DEBUG = ProxyLogger.get(DownstreamHandler.class);
+  private static final ProxyLogger LOG = ProxyLogger.get(DownstreamHandler.class);
 
   private final Upstream upstream;
 
@@ -59,7 +59,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       // no pipelining, the HttpServerCodec delivers content only between a request and its last
       // content, so a new request while the exchange is active is the only unexpected case
       if (upstreamChannelFuture != null) {
-        DEBUG.error(ctx.channel(), "another request is unexpected");
+        LOG.error(ctx.channel(), "another request is unexpected");
         ReferenceCountUtil.release(request);
         completeWithError(
             ctx,
@@ -147,10 +147,10 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       RequestOutcome outcome,
       HttpResponseStatus status) {
     if (upstreamChannelFuture != exchangeUpstream) {
-      DEBUG.trace(ctx.channel(), "upstream failure after the exchange ended: " + cause);
+      LOG.trace(ctx.channel(), "upstream failure after the exchange ended: " + cause);
       return;
     }
-    DEBUG.error(ctx.channel(), "upstream failure, outcome=" + outcome, cause);
+    LOG.error(ctx.channel(), "upstream failure, outcome=" + outcome, cause);
     RequestLoggingHandler requestLog = RequestLoggingHandler.find(ctx);
     if (requestLog != null) {
       requestLog.setException(cause);
@@ -289,7 +289,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     if (upstreamChannelFuture != null) {
       if (!closeRequested) {
-        DEBUG.debug(
+        LOG.debug(
             ctx.channel(),
             "unexpected close during the exchange, phase="
                 + exchangePhase()

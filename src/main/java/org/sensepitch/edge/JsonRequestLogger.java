@@ -35,7 +35,7 @@ public class JsonRequestLogger implements RequestLogger {
   private static final DateTimeFormatter TIMESTAMP =
       DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC);
 
-  private static final ProxyLogger DEBUG = ProxyLogger.get(JsonRequestLogger.class);
+  private static final ProxyLogger LOG = ProxyLogger.get(JsonRequestLogger.class);
 
   private final JsonFactory jsonFactory = new JsonFactory();
   private final RequestLogOutput output;
@@ -62,7 +62,7 @@ public class JsonRequestLogger implements RequestLogger {
       json.writeEndObject();
     } catch (IOException | UncheckedIOException e) {
       // a StringWriter does not do I/O, so this cannot happen in practice
-      DEBUG.error("Error rendering request log record, request " + info.requestId(), e);
+      LOG.error("Error rendering request log record, request " + info.requestId(), e);
       return;
     }
     output.writeLine(buffer.toString());
