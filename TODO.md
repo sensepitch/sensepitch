@@ -151,8 +151,6 @@ the failure threshold for upstreams is under Upstream.
   - P3: for upstreams, once latency targets are known.
 - [ ] manual control: force a breaker open, e.g. for maintenance of a log server or upstream
   - P3: through the admin server.
-- [ ] `Retry-After` as an HTTP date, only seconds are supported
-  - P3: small; until then a date is ignored and the backoff applies.
 
 ## Ingress, HTTP
 
@@ -344,6 +342,11 @@ the failure threshold for upstreams is under Upstream.
 - [ ] add CONTRIBUTING.md
 
 ## Done
+
+- [x] `Retry-After` as an HTTP date (2026-11-17): `Backoff` converts dates against the current
+  wall clock, with an explicit time input for tests. Seconds, the 300 s cap and the minimum
+  exponential backoff are preserved; invalid, past and current dates add no delay. See
+  [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md).
 
 - [x] Move redundant real server tests to `*IT` (2026-11-17): five OTLP scenarios now run in
   `OtlpLogDestinationIT`, four reload scenarios in `ReloadableRequestLoggerIT`, with the unit

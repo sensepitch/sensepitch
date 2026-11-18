@@ -81,9 +81,9 @@ The open state lasts a backoff, not a constant window:
 - Of the nominal delay, a random half is taken: half the delay plus a random part of the other
   half ("equal jitter"). A fleet of proxies that lost the same log server does not retry in
   lockstep, and the delay never drops near zero as with full jitter.
-- A `Retry-After` in seconds that is longer than the backoff wins, a shorter one does not shorten
-  it. It is capped at 300 s, so a misconfigured server cannot stop the export for hours. The HTTP
-  date form is not supported.
+- A `Retry-After` in seconds or as an HTTP date that is longer than the backoff wins, a shorter
+  one does not shorten it. It is capped at 300 s, so a misconfigured server cannot stop the export
+  for hours.
 - The OTLP specification considers a connection error, a timeout and the status codes 429, 502,
   503 and 504 retryable. The caller classifies, see below.
 
@@ -104,6 +104,21 @@ a new sender and breaker for new records. The replaced sender drains buffered re
 original delays and age limit. Updating a live breaker in place would mix old queued work with
 new settings and require a separate reconfiguration protocol. Upstream retry settings remain
 future work.
+
+### Reuse Netty's HTTP-date parser and convert once at receipt
+
+`Backoff` uses `DateFormatter.parseHttpDate` from the existing Netty 4.2.20.Final dependency
+instead of maintaining another date parser. The installed library bytecode was inspected with
+`javap -c -p` on 2026-11-17: it returns null for unparseable dates and throws for inputs longer
+than 64 characters. We reject those oversized inputs before calling it. Tests exercise the
+standard date form and the older RFC 850 and asctime forms, alongside numeric regression cases.
+
+Dates are compared with the current system wall clock when the response is handled. The parser
+also accepts an explicit epoch-millisecond time, so tests need no sleeps or real clock deadlines.
+The result is a duration; the breaker continues to measure that duration with its monotonic
+`Ticker`. Later wall clock adjustments do not change an already scheduled delay. An incorrect
+local clock can affect a date delay; the exponential backoff and 300 s cap still bound it.
+Numeric seconds remain independent of the clock.
 
 ### One probe at a time, replaced after a timeout
 
@@ -252,7 +267,7 @@ Known limits of the current implementation, checked against the code on 2026-11-
 - **Two probes can be in flight.** A probe replaced after the probe timeout may still complete;
   its result then counts as well. With the probe timeout above the request timeout, this needs a
   completion that is lost or very late.
-- **`Retry-After` format.** Honoured only in seconds, not as an HTTP date, and capped at 300 s.
+- **`Retry-After` cap.** A server can request at most 300 s of delay.
 - **The maximum delay can be out of reach.** `Backoff` doubles at most 20 times, so the nominal
   delay stops at `initialRetryDelayMillis × 2^20`; with an initial delay of 1 ms that is about
   17.5 minutes, whatever larger maximum is configured.
@@ -282,4 +297,3 @@ In order of priority, all tracked in [TODO.md](../../TODO.md), sections "Circuit
    `Endpoint` record in `HttpBatchSender` and "multiple servers per upstream" in TODO.md.
 4. **Manual control.** Force a breaker open, e.g. to take a log server or upstream out for
    maintenance, through the admin server.
-5. **`Retry-After` as an HTTP date.** Small; until then a date is ignored and the backoff applies.
