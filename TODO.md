@@ -137,8 +137,8 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
 ## Request log
 
 Decisions, alternatives and limitations are in
-[doc/design/request-log.md](doc/design/request-log.md); the configurable backoff is under Circuit
-breaker.
+[doc/design/request-log.md](doc/design/request-log.md); retry backoff is described in
+[doc/design/circuit-breaker.md](doc/design/circuit-breaker.md).
 
 - [ ] compression budget: gzip runs on the common pool at a fixed level (`BEST_SPEED`)
   - P3: a small bounded executor and `otlp.compressionLevel`; zstd once the target log servers
@@ -185,9 +185,6 @@ breaker.
 Limitations and the reasoning are in [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md);
 the failure threshold for upstreams is under Upstream.
 
-- [ ] configurable backoff: initial and maximum delay (1 s, 30 s) are constants in
-  `OtlpLogDestination`
-  - P3: options of a destination, later of an upstream, with the current values as defaults.
 - [ ] slow calls count as failures, as resilience4j's slow call rate
   - P3: for upstreams, once latency targets are known.
 - [ ] manual control: force a breaker open, e.g. for maintenance of a log server or upstream
@@ -256,7 +253,8 @@ the failure threshold for upstreams is under Upstream.
   - Candidates: `OtlpLogDestinationTest` (3.6 s and `@Isolated`; 27 of its 34 tests run against a
     log server, about 20 of them test sender logic: retry, give up, outage, buffer limit,
     breaker probes, aging, slow start, concurrency limit), `ReloadableRequestLoggerTest` (3.3 s
-    on 2026-11-16, waits for the production retry backoff of 1 s), `RequestLoggerFactoryTest`,
+    on 2026-11-16; since 2026-11-18 it sets 10 to 50 ms retry delays, real time still),
+    `RequestLoggerFactoryTest`,
     `HttpBatchSenderTest`,
     `AsyncRequestLogWriterTest`, `ConfigFileWatcherTest`, and the durations in `ProxyShutdownIT`.
   - The tests stay in the test scope meanwhile, see the coverage rule in `AGENTS.md`. Moving
@@ -269,7 +267,19 @@ the failure threshold for upstreams is under Upstream.
     refused connection, and one multi threaded end to end run. They may only repeat what a unit
     test covers.
   - Write the converted tests as step chains (`*BDDTest`).
+  - New scenarios for the configurable retry delays, on the simulated clock only: the nominal
+    delay stops at `initialRetryDelayMillis × 2^20` below a larger `maxRetryDelayMillis` (see
+    Limitations in [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md)); with
+    `maxRetryDelayMillis` above `maximumUnsentLogAgeMillis` the batches age out between two
+    probes, are counted as dropped, and the next probe still comes.
   - P2.
+- [ ] Component level config tests, against the rule in `AGENTS.md`
+  - P3, no operator visible effect: `RequestLoggerFactoryTest.environmentVariables` loads
+    destinations from env vars; `environmentVariableMapEntryNeedsValue` tests the env loader
+    itself; `ConfigTest` has cases built on component configs (`configDeflector`,
+    `readRoutingFromYaml`, `readRoutingFromEnvironment`).
+  - Remove a case if `./mvnw clean test jacoco:report` shows no coverage loss; a case that
+    covers a loader path moves to `ConfigTest` with a generic record.
 - [ ] Load sensitive timing assertions in tests, against the rules for concurrent tests in
   `AGENTS.md`
   - P2: each one can fail on a loaded machine although the code is right.
@@ -301,6 +311,13 @@ the failure threshold for upstreams is under Upstream.
     logging" below; test log servers that signal each post with a `Semaphore` or queue (several
     have a `received` queue already), a latch in the reload callback. `TestingParameters.await`
     stays where no hook exists.
+- [ ] Complete config records, plan in
+  [plans/complete-config-records.md](plans/complete-config-records.md)
+  - P2, the dumped configuration is complete and can be replayed: defaults preset in an
+    overridden `builder()`, derived defaults (`maxBufferedBytes`, `maxConcurrentRequests`,
+    `requestLog.drainTimeoutMillis`) computed in the builder's `build()` from a
+    `ProxyEnvironment`, the `effective*` getters of `OtlpConfig` and `ProxyConfig` removed.
+  - Incompatible: an explicit `0` that meant "default" is rejected, see the plan.
 - [ ] Instance scoped diagnostic logging, plan in
   [plans/instance-scoped-logging.md](plans/instance-scoped-logging.md)
   - P2, test speed and clarity, no operator visible change: non-trace loggers become instance
@@ -367,6 +384,11 @@ the failure threshold for upstreams is under Upstream.
 - [ ] add CONTRIBUTING.md
 
 ## Done
+
+- [x] Configurable OTLP retry backoff (2026-11-17): per-destination
+  `initialRetryDelayMillis` and `maxRetryDelayMillis`, defaulting to 1000 ms and 30000 ms.
+  Reject negative or reversed effective bounds; reload replaces the destination while its old
+  backlog drains with the old settings. See [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md).
 
 - [x] One central test timeout instead of literal waits (2026-11-17): `TestingParameters`
   supplies the 10-second completion bound, descriptive `await` and graceful HTTP server stop.

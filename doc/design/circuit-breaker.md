@@ -74,8 +74,10 @@ The consecutive failures (`failures()`) are counted, but only to grow the backof
 
 The open state lasts a backoff, not a constant window:
 
-- It starts at 1 s and doubles with each failed probe, up to 30 s (the values of
-  `OtlpLogDestination`).
+- It starts at 1 s and doubles with each failed probe, up to 30 s by default. Per-destination
+  `OtlpConfig.initialRetryDelayMillis` and `maxRetryDelayMillis` set these nominal bounds in
+  milliseconds; omitted or zero values retain the defaults. Negative values and an effective
+  maximum below the effective initial delay are rejected during destination validation.
 - Of the nominal delay, a random half is taken: half the delay plus a random part of the other
   half ("equal jitter"). A fleet of proxies that lost the same log server does not retry in
   lockstep, and the delay never drops near zero as with full jitter.
@@ -87,6 +89,21 @@ The open state lasts a backoff, not a constant window:
 
 A constant 10 s window as in Armeria would either retry a log server that is down for an hour 360
 times per proxy, or wait too long after a short hiccup.
+
+### Configure retry bounds per destination
+
+Different collectors can need different retry frequencies. The bounds belong to
+[`OtlpConfig`](../../src/main/java/org/sensepitch/edge/OtlpConfig.java), which passes effective
+values into the existing `Backoff`; jitter and the precedence of a longer `Retry-After` stay
+unchanged. Keeping zero as the default sentinel preserves existing YAML and environment setups
+and allows either bound to be overridden independently, provided the effective pair is valid.
+The nominal maximum is not a cap on `Retry-After`, which retains its separate 300 s cap.
+
+A reload uses the existing destination replacement mechanism: changing either option creates
+a new sender and breaker for new records. The replaced sender drains buffered records with its
+original delays and age limit. Updating a live breaker in place would mix old queued work with
+new settings and require a separate reconfiguration protocol. Upstream retry settings remain
+future work.
 
 ### One probe at a time, replaced after a timeout
 
@@ -235,8 +252,10 @@ Known limits of the current implementation, checked against the code on 2026-11-
 - **Two probes can be in flight.** A probe replaced after the probe timeout may still complete;
   its result then counts as well. With the probe timeout above the request timeout, this needs a
   completion that is lost or very late.
-- **Fixed backoff bounds.** 1 s to 30 s are constants in `OtlpLogDestination`, not configuration.
-  `Retry-After` is honoured only in seconds, not as an HTTP date, and is capped at 300 s.
+- **`Retry-After` format.** Honoured only in seconds, not as an HTTP date, and capped at 300 s.
+- **The maximum delay can be out of reach.** `Backoff` doubles at most 20 times, so the nominal
+  delay stops at `initialRetryDelayMillis × 2^20`; with an initial delay of 1 ms that is about
+  17.5 minutes, whatever larger maximum is configured.
 - **No manual control.** There is no forced open or disabled state as Armeria's `FORCED_OPEN`.
   `skipBackoff()` is only used for the last attempt at shutdown.
 - **One endpoint per sender.** A request log destination has one URI and one breaker; there is no
@@ -257,12 +276,10 @@ In order of priority, all tracked in [TODO.md](../../TODO.md), sections "Circuit
    request log sender keeps the current policy, a threshold of one. The backoff, `Retry-After`,
    the single probe and the metrics stay as they are; the window counts may become gauges like
    Armeria's `requests{result}`.
-2. **Configurable backoff.** Initial and maximum delay as options of a destination, later of an
-   upstream, with the current values as defaults.
-3. **Slow calls for upstreams.** Count a response slower than a threshold as a failure, as
+2. **Slow calls for upstreams.** Count a response slower than a threshold as a failure, as
    resilience4j's slow call rate, once upstream latency targets are known.
-4. **Several endpoints.** One breaker per endpoint of a destination or upstream, see the
+3. **Several endpoints.** One breaker per endpoint of a destination or upstream, see the
    `Endpoint` record in `HttpBatchSender` and "multiple servers per upstream" in TODO.md.
-5. **Manual control.** Force a breaker open, e.g. to take a log server or upstream out for
+4. **Manual control.** Force a breaker open, e.g. to take a log server or upstream out for
    maintenance, through the admin server.
-6. **`Retry-After` as an HTTP date.** Small; until then a date is ignored and the backoff applies.
+5. **`Retry-After` as an HTTP date.** Small; until then a date is ignored and the backoff applies.

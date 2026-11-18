@@ -81,6 +81,9 @@ class ReloadableRequestLoggerTest {
             OtlpConfig.builder()
                 .endpoint("http://127.0.0.1:" + server.getAddress().getPort() + "/v1/logs")
                 .flushIntervalMillis(flushIntervalMillis)
+                // short retries, the outage tests need not wait the production backoff of 1 s
+                .initialRetryDelayMillis(10)
+                .maxRetryDelayMillis(50)
                 .build())
         .build();
   }

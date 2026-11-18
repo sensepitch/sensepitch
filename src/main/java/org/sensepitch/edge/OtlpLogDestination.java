@@ -27,9 +27,6 @@ public class OtlpLogDestination extends HttpBatchSender<OtlpBatch> {
   /// Name of the instrumentation scope of the records
   public static final String SCOPE = "org.sensepitch.edge";
 
-  static final long INITIAL_RETRY_DELAY_MILLIS = 1_000;
-  static final long MAX_RETRY_DELAY_MILLIS = 30_000;
-
   private final int sampleHeadersInterval;
 
   public OtlpLogDestination(String name, OtlpConfig config) {
@@ -43,34 +40,8 @@ public class OtlpLogDestination extends HttpBatchSender<OtlpBatch> {
   /// @param sampleHeadersInterval see [RequestLogDestinationConfig#sampleHeadersInterval()]
   public OtlpLogDestination(
       String name, OtlpConfig config, RequestLogMetrics metrics, int sampleHeadersInterval) {
-    this(
-        name,
-        config,
-        metrics,
-        INITIAL_RETRY_DELAY_MILLIS,
-        MAX_RETRY_DELAY_MILLIS,
-        sampleHeadersInterval);
-  }
-
-  /// With other delays, for tests
-  OtlpLogDestination(
-      String name,
-      OtlpConfig config,
-      RequestLogMetrics metrics,
-      long initialRetryDelayMillis,
-      long maxRetryDelayMillis) {
-    this(name, config, metrics, initialRetryDelayMillis, maxRetryDelayMillis, 0);
-  }
-
-  private OtlpLogDestination(
-      String name,
-      OtlpConfig config,
-      RequestLogMetrics metrics,
-      long initialRetryDelayMillis,
-      long maxRetryDelayMillis,
-      int sampleHeadersInterval) {
     super(
-        settings(name, config, initialRetryDelayMillis, maxRetryDelayMillis),
+        settings(name, config),
         new OtlpBatchPayload(config.resourceAttributes(), sampleHeadersInterval),
         metrics);
     this.sampleHeadersInterval = sampleHeadersInterval;
@@ -79,8 +50,7 @@ public class OtlpLogDestination extends HttpBatchSender<OtlpBatch> {
   /// Validates the configuration and derives the settings of the sender
   ///
   /// @throws IllegalArgumentException if the configuration is invalid
-  static Settings settings(
-      String name, OtlpConfig config, long initialRetryDelayMillis, long maxRetryDelayMillis) {
+  static Settings settings(String name, OtlpConfig config) {
     if (config.endpoint() == null || config.endpoint().isBlank()) {
       throw new IllegalArgumentException("Request log destination " + name + ": endpoint missing");
     }
@@ -120,6 +90,20 @@ public class OtlpLogDestination extends HttpBatchSender<OtlpBatch> {
       throw new IllegalArgumentException(
           "Request log destination " + name + ": maximumUnsentLogAgeMillis must be positive");
     }
+    if (config.initialRetryDelayMillis() < 0) {
+      throw new IllegalArgumentException(
+          "Request log destination " + name + ": initialRetryDelayMillis must not be negative");
+    }
+    if (config.maxRetryDelayMillis() < 0) {
+      throw new IllegalArgumentException(
+          "Request log destination " + name + ": maxRetryDelayMillis must not be negative");
+    }
+    if (config.effectiveMaxRetryDelayMillis() < config.effectiveInitialRetryDelayMillis()) {
+      throw new IllegalArgumentException(
+          "Request log destination "
+              + name
+              + ": effective maxRetryDelayMillis must be at least effective initialRetryDelayMillis");
+    }
     String compression = config.effectiveCompression();
     if (!compression.equals(OtlpConfig.GZIP) && !compression.equals(OtlpConfig.NONE)) {
       throw new IllegalArgumentException(
@@ -143,7 +127,8 @@ public class OtlpLogDestination extends HttpBatchSender<OtlpBatch> {
         config.effectiveMaximumUnsentLogAgeMillis(),
         config.effectiveFlushIntervalMillis(),
         compression.equals(OtlpConfig.GZIP),
-        new Backoff(initialRetryDelayMillis, maxRetryDelayMillis));
+        new Backoff(
+            config.effectiveInitialRetryDelayMillis(), config.effectiveMaxRetryDelayMillis()));
   }
 
   /// Encoded `Resource` message. By default with `service.name`, `service.instance.id` (the host

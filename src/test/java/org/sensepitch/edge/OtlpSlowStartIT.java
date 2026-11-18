@@ -70,10 +70,9 @@ class OtlpSlowStartIT {
                   .maxBufferedBytes(64 << 20)
                   .maxConcurrentRequests(8)
                   .flushIntervalMillis(OUT_OF_REACH_MILLIS)
-                  .build(),
-              new RequestLogMetrics(),
-              10,
-              50);
+                  .initialRetryDelayMillis(10)
+                  .maxRetryDelayMillis(50)
+                  .build());
       OtlpLogDestination sender = destination;
       OtlpRequestLogger logger = new OtlpRequestLogger(destination);
       int total = 10 * (batchBytes / framedSize(request("/0")) + 1);

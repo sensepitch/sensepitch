@@ -15,6 +15,15 @@ import lombok.Builder;
 /// @param resourceAttributes attributes of the resource, the producer of the records.
 ///   `service.name` defaults to {@value OtlpLogDestination#DEFAULT_SERVICE_NAME}
 /// @param timeoutMillis connect and request timeout, defaults to {@value #DEFAULT_TIMEOUT_MILLIS}
+/// @param initialRetryDelayMillis nominal delay after the first retryable failure, in milliseconds;
+///   omitted or zero uses {@value #DEFAULT_INITIAL_RETRY_DELAY_MILLIS}. Must not be negative.
+/// @param maxRetryDelayMillis maximum nominal exponential retry delay, in milliseconds; omitted
+///   or zero uses {@value #DEFAULT_MAX_RETRY_DELAY_MILLIS}. Must not be negative or effectively
+///   below the initial delay. Jitter takes a random half of the nominal delay; a longer
+///   `Retry-After` can exceed this maximum. Changing either delay on reload replaces the
+///   destination; buffered records drain with the old settings, see [ReloadableRequestLogger].
+///   A maximum above `maximumUnsentLogAgeMillis` lets batches age out between two probes, and
+///   the end of an outage is noticed late.
 /// @param flushIntervalMillis maximum time a record waits before it is sent, defaults to
 ///   {@value #DEFAULT_FLUSH_INTERVAL_MILLIS}
 /// @param batchBytes size of a batch: each thread that logs, i.e. each event loop, encodes its
@@ -47,6 +56,8 @@ public record OtlpConfig(
     Map<String, String> headers,
     Map<String, String> resourceAttributes,
     int timeoutMillis,
+    int initialRetryDelayMillis,
+    int maxRetryDelayMillis,
     int flushIntervalMillis,
     int batchBytes,
     int maxBufferedBytes,
@@ -55,6 +66,8 @@ public record OtlpConfig(
     String compression) {
 
   public static final int DEFAULT_TIMEOUT_MILLIS = 10_000;
+  public static final int DEFAULT_INITIAL_RETRY_DELAY_MILLIS = 1_000;
+  public static final int DEFAULT_MAX_RETRY_DELAY_MILLIS = 30_000;
   public static final int DEFAULT_FLUSH_INTERVAL_MILLIS = 1_000;
   public static final int DEFAULT_BATCH_BYTES = 1024 * 1024;
   public static final int DEFAULT_MAXIMUM_UNSENT_LOG_AGE_MILLIS = 5 * 60 * 1000;
@@ -68,6 +81,18 @@ public record OtlpConfig(
   /// Timeout, or the default if not configured
   public int effectiveTimeoutMillis() {
     return timeoutMillis > 0 ? timeoutMillis : DEFAULT_TIMEOUT_MILLIS;
+  }
+
+  /// Initial nominal retry delay, or the default if omitted or zero
+  public int effectiveInitialRetryDelayMillis() {
+    return initialRetryDelayMillis != 0
+        ? initialRetryDelayMillis
+        : DEFAULT_INITIAL_RETRY_DELAY_MILLIS;
+  }
+
+  /// Maximum nominal retry delay, or the default if omitted or zero
+  public int effectiveMaxRetryDelayMillis() {
+    return maxRetryDelayMillis != 0 ? maxRetryDelayMillis : DEFAULT_MAX_RETRY_DELAY_MILLIS;
   }
 
   /// Flush interval, or the default if not configured

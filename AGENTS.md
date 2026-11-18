@@ -97,6 +97,10 @@
   readable than plain JUnit, compare `UnservicedHostHandlerBDDTest` with `UnservicedHostHandlerIT`,
   or `ProxyRejectedConfigBDDTest` with its former inline form. Group many rejected-input variants
   into one `@ParameterizedTest` over a step chain.
+- No component level tests of the YAML or environment configuration: the generic loading
+  (`Main.parseConfig`, `EnvInjector`, the config records) is tested once, a new key of a
+  component adds no coverage there. A component tests its configuration through the config
+  record and its builder: defaults, effective values, rejected values.
 - When a plain JUnit test duplicates a BDD test, keep the BDD test as the unit test and move the
   JUnit one to `*IT` (runs with `verify` only). Port scenarios the BDD test lacks first, and let both
   class docs reference each other, naming the BDD test as the place for new scenarios.

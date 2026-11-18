@@ -163,7 +163,8 @@ class OtlpLogDestinationTest {
 
   /// Destination with short retry delays, to keep the tests fast
   OtlpLogDestination fastDestination(OtlpConfig config) {
-    return new OtlpLogDestination("otlp", config, new RequestLogMetrics(), 10, 50);
+    return new OtlpLogDestination(
+        "otlp", config.toBuilder().initialRetryDelayMillis(10).maxRetryDelayMillis(50).build());
   }
 
   static TestRequestLogInfo request(String path) {
@@ -845,10 +846,9 @@ class OtlpLogDestinationTest {
                 .batchBytes(batchBytes)
                 .maxBufferedBytes(64 << 20)
                 .flushIntervalMillis(OUT_OF_REACH_MILLIS)
-                .build(),
-            new RequestLogMetrics(),
-            200,
-            200);
+                .initialRetryDelayMillis(200)
+                .maxRetryDelayMillis(200)
+                .build());
     OtlpRequestLogger logger = new OtlpRequestLogger(destination);
     int perBatch = batchBytes / framedSize(request("/0000")) + 1;
     int index = 0;
@@ -905,7 +905,8 @@ class OtlpLogDestinationTest {
     answers.add(new Answer(400, null));
     // a long backoff, an open breaker would hold the second batch for seconds
     destination =
-        new OtlpLogDestination("otlp", config().build(), new RequestLogMetrics(), 10_000, 10_000);
+        new OtlpLogDestination(
+            "otlp", config().initialRetryDelayMillis(10_000).maxRetryDelayMillis(10_000).build());
     OtlpRequestLogger logger = new OtlpRequestLogger(destination);
     logger.logRequest(request("/bad"));
     assertThat(receive().status()).isEqualTo(400);
