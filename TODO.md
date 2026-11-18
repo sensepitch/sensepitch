@@ -297,9 +297,17 @@ the failure threshold for upstreams is under Upstream.
     `ShadedJarIT.awaitOutput` (reads the stderr file) and the counter and gauge `await`s in
     `OtlpLogDestinationTest` and `ReloadableRequestLoggerTest` poll, as does
     `ConfigFileWatcherTest.waitUntilReloads`.
-  - Remedy: a blocking wait for an entry on the captures (notify when added), test log servers
-    that signal each post with a `Semaphore` or queue (several have a `received` queue already),
-    a latch in the reload callback. `TestingParameters.await` stays where no hook exists.
+  - Remedy: a blocking wait for an entry on the captures, see "Instance scoped diagnostic
+    logging" below; test log servers that signal each post with a `Semaphore` or queue (several
+    have a `received` queue already), a latch in the reload callback. `TestingParameters.await`
+    stays where no hook exists.
+- [ ] Instance scoped diagnostic logging, plan in
+  [plans/instance-scoped-logging.md](plans/instance-scoped-logging.md)
+  - P2, test speed and clarity, no operator visible change: non-trace loggers become instance
+    fields owned by a `LogScope` (proxy instance and component), trace stays on a `static final`
+    `TraceLogger`. Tests capture by scope instead of by thread, so `LogCapture.ofAllThreads()`
+    and the `@Isolated` it forces go away, and `LogCapture.await` waits for a record without
+    polling.
 - [ ] `ShadedJarIT` waits the full stop grace of its test servers
   - P2: with `TestingParameters.stop(HttpServer)` the class went from 10.3 s to 29.8 s, about
     12.85 s per `sigtermKeepsFinalShutdownDiagnostic` case, see
