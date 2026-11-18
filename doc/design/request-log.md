@@ -181,14 +181,25 @@ configuration leaves the active ones untouched, then switches (`apply`).
 
 ### Graceful shutdown drains the request log last
 
-The shutdown in `Proxy` follows the data: stop the listener, let the requests in flight complete
-(up to `shutdownTimeoutMillis − requestLog.drainTimeoutMillis`), shut down the event loops, which
-closes the remaining connections, logs their requests as aborted (499) and writes the end markers,
-then wait for the destinations to send everything until `shutdownTimeoutMillis`. The request log
-gets its own budget, by default a third of the total, because the records of the aborted requests
-only exist after the connections are gone. What is left at a deadline is logged at `INFO`: the
-requests in flight per upstream, the unsent records per destination, and whether the event loop
-group is still running. A reload and the start of the shutdown run one at a time.
+The shutdown in `Proxy` follows the data: keep accepting for `shutdownAcceptGraceMillis` while
+readiness is already false, stop the listener, let the requests in flight complete (up to
+`shutdownTimeoutMillis − requestLog.drainTimeoutMillis` from the start), shut down the event
+loops, which closes the remaining connections, logs their requests as aborted (499) and writes
+the end markers, then wait for the destinations to send everything until `shutdownTimeoutMillis`.
+The request log gets its own budget, by default a third of the total, because the records of the
+aborted requests only exist after the connections are gone. What is left at a deadline is logged
+at `INFO`: the requests in flight per upstream, the unsent records per destination, and whether
+the event loop group is still running. A reload and the start of the shutdown run one at a time.
+
+The accept grace is built in rather than left to a `preStop` hook with `sleep`, which needs a
+shell and a `sleep` binary in the image. It is part of the one deadline and cannot eat the
+request log's reservation, so the platform grace period only has to cover
+`shutdownTimeoutMillis`. It is a top level key next to `shutdownTimeoutMillis`, not under
+`admin`: a present `admin` section starts the admin server, and the grace is needed with an
+external load balancer as well. Traefik has the same option for its entry points,
+`lifeCycle.requestAcceptGraceTimeout` (from its documentation, not re-checked for this text); the
+name avoids "drain", which here already means the request log (`drainTimeoutMillis`) and the
+closing of connections.
 
 ### Gzip, never on an event loop
 

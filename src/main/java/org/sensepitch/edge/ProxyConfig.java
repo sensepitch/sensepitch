@@ -9,11 +9,16 @@ import lombok.Builder;
 /// @param requestLog request log destinations and format, see [RequestLogConfig]
 /// @param traceContext handling of the W3C trace context, see [TraceContextConfig]
 /// @param shutdownTimeoutMillis upper limit of the time a shutdown takes, e.g. after `SIGTERM`.
-///   The shutdown stops accepting connections, waits for the requests in flight, then sends the
-///   request log, and ends as soon as all is done. The last part of it, see
-///   [RequestLogConfig#drainTimeoutMillis()], is reserved for sending the request log. `0`
-///   means the default of {@value #DEFAULT_SHUTDOWN_TIMEOUT_MILLIS}. Read at shutdown, so a reload
-///   changes it.
+///   The shutdown first keeps accepting for `shutdownAcceptGraceMillis`, then stops accepting
+///   connections, waits for the requests in flight, then sends the request log, and ends as soon
+///   as all is done. The last part, [RequestLogConfig#drainTimeoutMillis()], is reserved for
+///   sending the log. `0` means the default of {@value #DEFAULT_SHUTDOWN_TIMEOUT_MILLIS}. Read at
+///   shutdown, so a reload changes it.
+/// @param shutdownAcceptGraceMillis time the proxy keeps accepting and serving connections after
+///   the shutdown started and readiness became false (`/readyz` answers `503`), before the
+///   listener closes. It gives endpoint updates and load balancer probes time to notice. Default
+///   `0`, the listener closes at once. Part of `shutdownTimeoutMillis`: together with the
+///   reserved request log time it must fit into it. Read at shutdown, so a reload changes it.
 /// @author Jens Wilke
 @Builder(toBuilder = true)
 public record ProxyConfig(
@@ -30,7 +35,8 @@ public record ProxyConfig(
     RequestLogConfig requestLog,
     TraceContextConfig traceContext,
     Map<String, SiteConfig> sites,
-    long shutdownTimeoutMillis) {
+    long shutdownTimeoutMillis,
+    long shutdownAcceptGraceMillis) {
 
   public static final long DEFAULT_SHUTDOWN_TIMEOUT_MILLIS = 5_000;
 
@@ -42,18 +48,27 @@ public record ProxyConfig(
   /// The part of the shutdown timeout reserved for sending the request log
   ///
   /// @throws IllegalArgumentException if a timeout is negative or the drain timeout exceeds the
-  ///   shutdown timeout
+  ///   shutdown timeout, or the accept grace leaves less than the reserved log time
   public long effectiveDrainTimeoutMillis() {
     long total = effectiveShutdownTimeoutMillis();
     long drain = requestLog != null ? requestLog.drainTimeoutMillis() : 0;
-    if (shutdownTimeoutMillis < 0 || drain < 0) {
+    if (shutdownTimeoutMillis < 0 || drain < 0 || shutdownAcceptGraceMillis < 0) {
       throw new IllegalArgumentException(
-          "shutdownTimeoutMillis and requestLog.drainTimeoutMillis must not be negative");
+          "shutdownTimeoutMillis, shutdownAcceptGraceMillis and requestLog.drainTimeoutMillis"
+              + " must not be negative");
     }
     if (drain > total) {
       throw new IllegalArgumentException(
           "requestLog.drainTimeoutMillis " + drain + " exceeds shutdownTimeoutMillis " + total);
     }
-    return drain > 0 ? drain : total / 3;
+    drain = drain > 0 ? drain : total / 3;
+    // subtract instead of adding the two configured values, which could overflow
+    if (shutdownAcceptGraceMillis > total - drain) {
+      throw new IllegalArgumentException(
+          "shutdownAcceptGraceMillis plus requestLog.drainTimeoutMillis exceeds"
+              + " shutdownTimeoutMillis "
+              + total);
+    }
+    return drain;
   }
 }

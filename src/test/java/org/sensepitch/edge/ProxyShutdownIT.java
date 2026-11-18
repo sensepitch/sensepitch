@@ -1,6 +1,7 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
 import static org.sensepitch.edge.TestingParameters.TIMEOUT;
 import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
@@ -14,6 +15,10 @@ import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
@@ -27,6 +32,10 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
+import java.util.function.LongConsumer;
+import java.util.function.LongSupplier;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.TrustManager;
@@ -63,6 +72,12 @@ class ProxyShutdownIT {
   private int port;
 
   void startProxy(long shutdownTimeoutMillis, long drainTimeoutMillis) throws Exception {
+    startProxy(shutdownTimeoutMillis, drainTimeoutMillis, System::nanoTime, LockSupport::parkNanos);
+  }
+
+  void startProxy(
+      long shutdownTimeoutMillis, long drainTimeoutMillis, LongSupplier clock, LongConsumer wait)
+      throws Exception {
     upstream = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     upstream.createContext(
         "/",
@@ -147,7 +162,7 @@ class ProxyShutdownIT {
             .metrics(MetricsConfig.builder().enable(false).build())
             .shutdownTimeoutMillis(shutdownTimeoutMillis)
             .build();
-    proxy = new Proxy(config, requestLog);
+    proxy = new Proxy(config, requestLog, clock, wait);
     Thread thread =
         new Thread(
             () -> {
@@ -313,7 +328,8 @@ class ProxyShutdownIT {
           .isTrue();
       Thread shutdownThread = Thread.ofPlatform().name("shutdown-during-reload").start(shutdown);
       TestingParameters.await(
-          "shutdown waits for reload", () -> shutdownThread.getState() == Thread.State.BLOCKED || shutdown.isDone());
+          "shutdown waits for reload",
+          () -> shutdownThread.getState() == Thread.State.BLOCKED || shutdown.isDone());
       assertThat(shutdownThread.getState())
           .as("shutdown waits for reload")
           .isEqualTo(Thread.State.BLOCKED);
@@ -329,6 +345,77 @@ class ProxyShutdownIT {
     shutdown.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
     assertThat(proxy.isShuttingDown()).isTrue();
     assertThat(proxy.reload(config).applied()).isFalse();
+  }
+
+  /// During the accept grace the proxy serves new and keep-alive traffic while readiness is false.
+  /// The fake grace consumes the entire connection budget; a stalled request is then aborted and
+  /// logged, while the reserved log budget remains available. No real sleep is used.
+  @Test
+  void acceptGraceKeepsServingThenClosesWithinTheBudget() throws Exception {
+    AtomicLong now = new AtomicLong(1234);
+    CountDownLatch delaying = new CountDownLatch(1);
+    CountDownLatch releaseDelay = new CountDownLatch(1);
+    startProxy(
+        10_000,
+        3000,
+        now::get,
+        nanos -> {
+          assertThat(nanos).isEqualTo(TimeUnit.MILLISECONDS.toNanos(7000));
+          delaying.countDown();
+          try {
+            assertThat(releaseDelay.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+          } catch (InterruptedException e) {
+            throw new AssertionError(e);
+          }
+          now.addAndGet(nanos);
+        });
+    assertThat(proxy.reload(config.toBuilder().shutdownAcceptGraceMillis(7000).build()).applied())
+        .isTrue();
+    AdminServer admin =
+        AdminServer.start(new InetSocketAddress("127.0.0.1", 0), null, proxy::isShuttingDown);
+    try (SSLSocket keepAlive = tlsSocket()) {
+      send(keepAlive, "example.com");
+      assertThat(readResponse(keepAlive.getInputStream())).startsWith("HTTP/1.1 200");
+      CompletableFuture<Void> shutdown = CompletableFuture.runAsync(proxy::shutdown);
+      try {
+        assertThat(delaying.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+        var ready =
+            HttpClient.newHttpClient()
+                .send(
+                    HttpRequest.newBuilder(
+                            URI.create("http://127.0.0.1:" + admin.port() + "/readyz"))
+                        .build(),
+                    HttpResponse.BodyHandlers.ofString());
+        assertThat(ready.statusCode()).isEqualTo(503);
+        send(keepAlive, "example.com");
+        assertThat(readResponse(keepAlive.getInputStream())).startsWith("HTTP/1.1 200");
+        try (SSLSocket fresh = tlsSocket()) {
+          send(fresh, "example.com");
+          assertThat(readResponse(fresh.getInputStream())).startsWith("HTTP/1.1 200");
+        }
+        upstreamDelayMillis = 60_000;
+        send(keepAlive, "upstream.com");
+        assertThat(upstreamGotRequest.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+      } finally {
+        releaseDelay.countDown();
+      }
+      shutdown.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      assertThat(otlpRecords.get()).isEqualTo(4);
+      assertThat(requestLog.lines()).hasSize(4);
+      assertThat(logs.messages(Proxy.class))
+          .anyMatch(m -> m.contains("requests still in flight after 7000 ms"));
+      assertThat(logs.messages(Proxy.class)).noneMatch(m -> m.contains("request log not drained"));
+      try (Socket probe = new Socket()) {
+        assertThatThrownBy(
+                () ->
+                    probe.connect(
+                        new InetSocketAddress("127.0.0.1", port), (int) TIMEOUT.toMillis()))
+            .isInstanceOf(IOException.class);
+      }
+    } finally {
+      releaseDelay.countDown();
+      admin.stop();
+    }
   }
 
   static void send(SSLSocket socket, String host) throws IOException {

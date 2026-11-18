@@ -7,7 +7,9 @@ environment variables, as today):
 
 - metrics, IP lookup, JA4, request log
 - admission token secrets (mounted from a Kubernetes Secret)
-- `admin`: port for `/healthz` and `/readyz`, drain time (new, optional)
+- `admin`: port for `/healthz` and `/readyz`; the time to keep accepting after `/readyz` turned
+  `503` is the top level `shutdownAcceptGraceMillis` (done, see
+  [README shutdown](../../README.md#shutdown)).
 - `controlPlane`: controller URL, token file, edge identity (new, optional)
 
 Without `controlPlane`, the edge runs standalone exactly as today.

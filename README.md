@@ -597,35 +597,43 @@ file again, so the worst case is repeated reloads.
 ## Shutdown
 
 On `SIGTERM` the proxy shuts down gracefully, within `shutdownTimeoutMillis` (default 5000). It
-ends as soon as everything is done, so an idle proxy exits at once.
+ends as soon as everything is done, so with the default settings an idle proxy exits at once.
 
-1. The listener closes, no new connections are accepted.
+1. Readiness becomes false (`/readyz` answers `503`). The proxy keeps accepting and serving new
+   and keep-alive requests for `shutdownAcceptGraceMillis` (default 0), then the listener closes.
 2. Idle keep-alive connections are closed. A response in flight gets `Connection: close`, and its
    connection is closed after it.
-3. The requests in flight may take the shutdown timeout minus `requestLog.drainTimeoutMillis`.
-   Requests still running then are aborted and logged with status 499.
+3. The requests in flight may take the shutdown timeout minus the accept grace and
+   `requestLog.drainTimeoutMillis`. Requests still running then are aborted and logged with
+   status 499.
 4. The event loops end, each writes its last request log records. The request log destinations
    send them, within the drain timeout.
 
 ````yaml
-shutdownTimeoutMillis: 5000       # upper limit of the whole shutdown
+shutdownTimeoutMillis: 10000      # upper limit of the whole shutdown, including the grace
+shutdownAcceptGraceMillis: 2000   # keep accepting after readiness turned false, default 0
 requestLog:
-  drainTimeoutMillis: 1666        # reserved for the request log, default a third of the above
+  drainTimeoutMillis: 3000        # reserved for the request log, default a third of the above
 ````
+
+The example allows 2 seconds for routing updates, 5 seconds for the requests in flight and 3
+seconds for the request log. The accept grace plus the drain timeout must fit into the shutdown
+timeout, negative values are rejected.
 
 A phase that runs out of time is logged at level `INFO` with what was left: the requests in
 flight per upstream, or the request log records not sent per destination. Records not sent by
 then are lost.
 
 A configuration reload and the shutdown run one at a time: `SIGTERM` during a reload waits until
-it is applied, a reload after the shutdown started is rejected.
+it is applied, a reload after the shutdown started is rejected. The settings are read when the
+shutdown starts, so a reload changes them.
 
-Both settings are read when the shutdown starts, so a reload changes them. Fit
-`shutdownTimeoutMillis` into the grace period of the platform, e.g.
-`terminationGracePeriodSeconds` in Kubernetes. Kubernetes removes the pod from the service
-endpoints at the same time as it sends `SIGTERM`, so a client may still be routed to the pod for
-a moment. A `preStop` hook with a short `sleep` keeps the listener open until the endpoints are
-updated.
+Kubernetes removes the pod from the service endpoints at the same time as it sends `SIGTERM`, so
+proxies and load balancers route to it for a moment longer; one probing `/readyz` notices the
+`503` after its probe interval times the failure threshold. Set `shutdownAcceptGraceMillis` to
+cover that time. It works with any image, no `preStop` hook with a shell and `sleep` is needed;
+it cannot guarantee that every client has stopped by then. Fit the whole `shutdownTimeoutMillis`
+into the grace period of the platform, e.g. `terminationGracePeriodSeconds`, with some margin.
 
 ## Request log
 

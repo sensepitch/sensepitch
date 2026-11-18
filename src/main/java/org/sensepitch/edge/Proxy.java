@@ -28,6 +28,9 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.LockSupport;
+import java.util.function.LongConsumer;
+import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 import javax.net.ssl.SSLException;
 import org.sensepitch.edge.config.KeyInjector;
@@ -39,7 +42,8 @@ import org.yaml.snakeyaml.representer.Representer;
 /// Minimal HTTP/1.1 proxy without aggregation, with keep-alive and basic logging.
 ///
 /// Routing, known hosts, certificates and the IP lookup live in an [EdgeState], which
-/// [#reload(ProxyConfig)] replaces at runtime. Everything else is fixed at construction.
+/// [#reload(ProxyConfig)] replaces at runtime. Shutdown budgets also use the active configuration;
+/// other settings are fixed at construction.
 ///
 /// A private lock serializes reloads and the start of shutdown. State publication and shutdown
 /// completion use atomic references for readers outside that lock. Shutdown drains and waits
@@ -49,6 +53,11 @@ public class Proxy implements ProxyContext {
   private static final ProxyLogger LOG = ProxyLogger.get(Proxy.class);
 
   private final Object lock = new Object();
+
+  /// Monotonic shutdown time and a possibly spurious wait, injected for deterministic delay tests.
+  private final LongSupplier shutdownNanoTime;
+
+  private final LongConsumer shutdownWaitNanos;
 
   private final Dummy404Handler dummy404Handler = new Dummy404Handler();
   private final TrackIngressConnectionsHandler trackIngressConnectionsHandler;
@@ -105,11 +114,24 @@ public class Proxy implements ProxyContext {
   /// @param requestLogOutput destination of the request log, tests pass a capture here. The proxy
   ///   closes it on [#shutdown()].
   public Proxy(ProxyConfig config, RequestLogOutput requestLogOutput) {
+    this(config, requestLogOutput, System::nanoTime, LockSupport::parkNanos);
+  }
+
+  /// Timing seam for shutdown tests; production uses the monotonic system clock and park.
+  Proxy(
+      ProxyConfig config,
+      RequestLogOutput requestLogOutput,
+      LongSupplier shutdownNanoTime,
+      LongConsumer shutdownWaitNanos) {
+    this.shutdownNanoTime = shutdownNanoTime;
+    this.shutdownWaitNanos = shutdownWaitNanos;
     this.requestLogOutput = requestLogOutput;
     config = KeyInjector.injectAllMapKeys(config);
     if (config.listen() == null) {
       throw new IllegalArgumentException("Missing listen configuration");
     }
+    // Validate the entire shutdown budget before allocating runtime resources.
+    config.effectiveDrainTimeoutMillis();
     if (config.listen().connection() == null) {
       connectionConfig = ConnectionConfig.DEFAULT;
     } else {
@@ -132,8 +154,6 @@ public class Proxy implements ProxyContext {
         requestLogOutput instanceof AsyncRequestLogWriter writer
             ? writer.metrics()
             : new RequestLogMetrics();
-    // validates the shutdown timeouts
-    config.effectiveDrainTimeoutMillis();
     requestLogDestinations =
         RequestLoggerFactory.create(
             config.requestLog(), requestLogOutput, requestLogMetrics, eventLoopGroup);
@@ -395,13 +415,16 @@ public class Proxy implements ProxyContext {
   /// Shuts down gracefully within [ProxyConfig#effectiveShutdownTimeoutMillis()], and faster
   /// when everything is done earlier:
   ///
-  /// 1. Stops accepting connections.
-  /// 2. Closes idle connections, the others after their response, see
+  /// 1. Marks readiness false, then keeps accepting and serving for
+  ///    [ProxyConfig#shutdownAcceptGraceMillis()], within the same deadline as the following
+  ///    phases.
+  /// 2. Stops accepting connections.
+  /// 3. Closes idle connections, the others after their response, see
   ///    [TrackIngressConnectionsHandler#drain()]. Waits for that until only the drain timeout
   ///    of the request log is left, see [ProxyConfig#effectiveDrainTimeoutMillis()].
-  /// 3. Shuts down the event loops, which closes the remaining connections, their requests are
+  /// 4. Shuts down the event loops, which closes the remaining connections, their requests are
   ///    logged as aborted. Each loop writes its end marker into the request log when it ends.
-  /// 4. Waits until the request log destinations sent everything, or the shutdown timeout is
+  /// 5. Waits until the request log destinations sent everything, or the shutdown timeout is
   ///    over.
   ///
   /// A reload in progress completes first, later reloads are rejected, see [#reload(ProxyConfig)].
@@ -431,9 +454,10 @@ public class Proxy implements ProxyContext {
     ProxyConfig active = state.get().config();
     long totalMillis = active.effectiveShutdownTimeoutMillis();
     long drainMillis = active.effectiveDrainTimeoutMillis();
-    long start = System.nanoTime();
+    long start = shutdownNanoTime.getAsLong();
     long connectionsDeadline = start + TimeUnit.MILLISECONDS.toNanos(totalMillis - drainMillis);
     long deadline = start + TimeUnit.MILLISECONDS.toNanos(totalMillis);
+    awaitAcceptGrace(start + TimeUnit.MILLISECONDS.toNanos(active.shutdownAcceptGraceMillis()));
     if (serverChannel != null) {
       serverChannel.close().syncUninterruptibly();
       bossGroup.shutdownGracefully(0, 0, TimeUnit.MILLISECONDS);
@@ -443,14 +467,14 @@ public class Proxy implements ProxyContext {
         .awaitUninterruptibly(remainingMillis(connectionsDeadline))) {
       LOG.info(
           "Shutdown: requests still in flight after "
-              + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start)
+              + TimeUnit.NANOSECONDS.toMillis(shutdownNanoTime.getAsLong() - start)
               + " ms, total "
               + metrics.ingressRequestsInFlight()
               + ", by upstream "
               + metrics.upstreamRequestsInFlight()
               + ", closing the connections");
     }
-    long drainStart = System.nanoTime();
+    long drainStart = shutdownNanoTime.getAsLong();
     // the calling thread may have logged as well, e.g. a test driving an EmbeddedChannel
     requestLogDestinations.endThread();
     CompletableFuture<Void> loops = new CompletableFuture<>();
@@ -468,7 +492,7 @@ public class Proxy implements ProxyContext {
     if (!drained) {
       LOG.info(
           "Shutdown: request log not drained after "
-              + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - drainStart)
+              + TimeUnit.NANOSECONDS.toMillis(shutdownNanoTime.getAsLong() - drainStart)
               + " ms, unsent records "
               + requestLogDestinations.unsent());
       if (!eventLoopGroup.isTerminated()) {
@@ -481,8 +505,25 @@ public class Proxy implements ProxyContext {
     }
   }
 
-  private static long remainingMillis(long deadlineNanos) {
-    return Math.max(0, TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime()));
+  /// Keeps the listener open through propagation, tolerating spurious wakeups and interruption.
+  /// Like the other shutdown waits, this restores interruption only after the wait finishes.
+  private void awaitAcceptGrace(long deadlineNanos) {
+    boolean interrupted = Thread.interrupted();
+    try {
+      long remaining;
+      while ((remaining = deadlineNanos - shutdownNanoTime.getAsLong()) > 0) {
+        shutdownWaitNanos.accept(remaining);
+        interrupted |= Thread.interrupted();
+      }
+    } finally {
+      if (interrupted) {
+        Thread.currentThread().interrupt();
+      }
+    }
+  }
+
+  private long remainingMillis(long deadlineNanos) {
+    return Math.max(0, TimeUnit.NANOSECONDS.toMillis(deadlineNanos - shutdownNanoTime.getAsLong()));
   }
 
   private static final StripEdgeHeadersHandler STRIP_EDGE_HEADERS_HANDLER =

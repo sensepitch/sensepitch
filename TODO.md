@@ -60,23 +60,6 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
   - P1: a reload watches only `config.yml`, so a renewed certificate Secret (cert-manager)
     triggers no reload; watch the referenced files too. Add a test for the ConfigMap symlink
     swap, which `ConfigFileWatcher` is designed for but no test covers.
-- [ ] drain delay: on `SIGTERM` answer `/readyz` with `503` but keep the listener open for a
-  configurable time before closing it, then remove the `preStop` `sleep` hint from the README
-  - P1, with a distroless image (item 2) a rolling update refuses connections without it:
-    `/readyz` alone does not close the gap the README hint covers. Kubernetes takes the pod
-    out of the service endpoints at the same time as it sends `SIGTERM`, so the proxies and load
-    balancers routing to it learn of the removal a moment later; an external load balancer
-    probing `/readyz` notices the `503` only after its probe interval times failure threshold.
-    Today the listener closes right away, so connections in that window are refused. A
-    `preStop` `exec` `sleep` needs a shell and a `sleep` binary in the image, which a distroless
-    image (item 2) does not have; the built-in `sleep` lifecycle action needs a recent Kubernetes
-    (1.30 or so, not verified). A delay in the proxy works with any image and platform. Count it
-    into `shutdownTimeoutMillis` and the grace period; `4-configuration-distribution.md` already
-    plans a drain time in the `admin` config.
-  - Implementation: sleep at the start of `Proxy.shutdown()`, before the listener closes. The
-    existing JVM shutdown hook runs it on `SIGTERM`, and the JVM exits only after all hooks
-    returned, so the process and the listener stay up; `isShuttingDown()` is already true, so
-    `/readyz` answers `503` meanwhile. Test with a fake clock, no real sleep.
 - [ ] 5. plain HTTP listener and several listeners (`ListenConfig` has one HTTPS port), with the
   HTTP to HTTPS forward (there is no plain HTTP listener yet)
   - P2: confirm the redirect status and host/port behavior. Needed for HTTP to HTTPS redirects,
@@ -376,6 +359,13 @@ the failure threshold for upstreams is under Upstream.
 - [ ] add CONTRIBUTING.md
 
 ## Done
+
+- [x] Accept grace at shutdown (2026-11-17): `shutdownAcceptGraceMillis` (default 0) keeps
+  accepting and serving after readiness turned `503`, within the shutdown deadline and without
+  taking the request log's reservation; no `preStop` `sleep` needed. Tested on a fake clock
+  (`ProxyAcceptGraceTest`) and with real connections (`ProxyShutdownIT`). Renamed and moved from
+  `admin.drainDelayMillis` before release. See [README](README.md#shutdown) and
+  [shutdown design](doc/design/request-log.md#graceful-shutdown-drains-the-request-log-last).
 
 - [x] Lock on a private lock object (2026-11-17): `HttpBatchSender`, `ThreadBatcher`,
   `CircuitBreakerMetrics`, `Proxy` and `ConfigFileWatcher` now encapsulate synchronization.
