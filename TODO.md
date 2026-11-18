@@ -9,20 +9,6 @@ M1 path, observability, admission lifetime; P3 = features and measured performan
 priorities against current production needs. Notes below record decisions to make before
 implementation.
 
-## Scheduled Cleanup and Refactorings
-
-- [ ] Move the real server tests of `OtlpLogDestinationTest` and `ReloadableRequestLoggerTest` to
-  `*IT` where the unit tests keep their coverage
-  - P2: the full move was undone 2026-11-14 because the unit tests lost coverage (see "Timing
-    related tests" under Build, tests). This time move only what the remaining unit tests already
-    cover: baseline `./mvnw clean test jacoco:report`, then exclude the slowest and most timing
-    dependent tests one at a time (`-Dtest='!OtlpLogDestinationTest#x,...'`) and keep a test
-    excluded only if `target/site/jacoco/jacoco.csv` stays identical.
-  - The moved tests go to a new `OtlpLogDestinationIT` and the existing `ReloadableRequestLoggerIT`,
-    with the unit test as fixture; the class docs name the unit test as the place for new
-    scenarios. If almost nothing is movable, record the measurement in
-    `doc/design/test-speed.md` instead; the remedy is then the fake clock.
-
 ## Bugs
 
 - [ ] Flaky, not investigated: `ProxyShutdownIT`,
@@ -358,6 +344,13 @@ the failure threshold for upstreams is under Upstream.
 - [ ] add CONTRIBUTING.md
 
 ## Done
+
+- [x] Move redundant real server tests to `*IT` (2026-11-17): five OTLP scenarios now run in
+  `OtlpLogDestinationIT`, four reload scenarios in `ReloadableRequestLoggerIT`, with the unit
+  classes as fixtures. Thirteen individual exclusions and cumulative comparisons retained both
+  packing tests, aged-batch expiry and draining-destination finish in the unit suite. Unit line
+  and branch coverage is unchanged; the fake clock remains separate work. Measurements and the
+  retained cases are in [test speed design](doc/design/test-speed.md#move-only-redundant-server-scenarios).
 
 - [x] Request level events are logged at debug and counted (2026-11-17): every failure that can
   happen per request or connection, an unexpected exception included, is `DEBUG` with channel,

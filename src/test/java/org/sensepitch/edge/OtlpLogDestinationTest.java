@@ -25,7 +25,6 @@ import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -42,9 +41,9 @@ import org.junit.jupiter.api.parallel.Isolated;
 /// with the official OTLP message classes, which proves the hand written encoding conforms to the
 /// schema.
 ///
-/// Runs against a real HTTP server and waits for the timers of the sender. It stays a unit test
-/// nevertheless, `./mvnw test` covers everything that is unit testable. See `TODO.md` for the
-/// fake clock that makes these tests fast.
+/// New scenarios belong here. [OtlpLogDestinationIT] repeats covered scenarios against real
+/// HTTP and timers, using this class as its fixture. The remaining server tests add unit coverage;
+/// see `TODO.md` for the fake clock that makes them fast.
 ///
 /// @author Jens Wilke
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
@@ -415,70 +414,6 @@ class OtlpLogDestinationTest {
     assertThat(post.records()).isEqualTo(perBatch);
   }
 
-  /// The log server is unavailable for a while: first it answers 503, then it is down, then it is
-  /// back. Every record arrives exactly once and in order, nothing is dropped.
-  @Test
-  void outageLosesNothing() throws Exception {
-    status = 503;
-    // one request at a time, so the batches arrive in order. The whole backlog must fit: the
-    // default limit depends on the number of processors, with two of them records were dropped
-    destination =
-        fastDestination(
-            config()
-                .batchBytes(OtlpConfig.MIN_BATCH_BYTES)
-                .maxBufferedBytes(64 * 1024 * 1024)
-                .maxConcurrentRequests(1)
-                .build());
-    OtlpRequestLogger logger = new OtlpRequestLogger(destination);
-    int total = 1_000;
-    for (int i = 0; i < total / 2; i++) {
-      logger.logRequest(request("/" + i));
-    }
-    // a few retries answered with 503
-    await("three retry attempts received", () -> received.size() >= 3);
-    server.stop(0);
-    for (int i = total / 2; i < total; i++) {
-      logger.logRequest(request("/" + i));
-    }
-    // retries against the stopped server
-    long retries = counter("sensepitch_request_log_export_retries");
-    await(
-        "three retries during outage",
-        () -> counter("sensepitch_request_log_export_retries") >= retries + 3);
-    assertThat(bufferedBytesGauge()).as("backlog waits").isPositive();
-    status = 200;
-    restartServer();
-    await("all records delivered", () -> deliveredPaths().size() >= total);
-    List<String> expected = new ArrayList<>();
-    for (int i = 0; i < total; i++) {
-      expected.add("/" + i);
-    }
-    assertThat(deliveredPaths()).as("all, once, in order").isEqualTo(expected);
-    assertThat(destination.droppedCount()).isZero();
-    assertThat(counter("sensepitch_request_log_export_failed")).isZero();
-    assertThat(logs.messages(OtlpLogDestination.class))
-        .anySatisfy(m -> assertThat(m).contains("Buffering records and retrying"))
-        .anySatisfy(m -> assertThat(m).contains("recovered after"));
-    await("buffered batches released", () -> bufferedBytesGauge() == 0);
-  }
-
-  /// A server asking for a delay via `Retry-After` is not asked again meanwhile, although the
-  /// backoff of this destination is only milliseconds. The exact delay is tested with
-  /// [Backoff#delayMillis(int, long)], without waiting. At shutdown the batch gets a last
-  /// attempt, regardless of the requested delay, before its records would be dropped.
-  @Test
-  void retryAfterIsHonoured() throws Exception {
-    answers.add(new Answer(429, "30"));
-    destination = fastDestination(config().build());
-    new OtlpRequestLogger(destination).logRequest(TestRequestLogInfo.of(HttpMethod.GET, 200));
-    assertThat(receive().status()).isEqualTo(429);
-    assertThat(received.poll(100, TimeUnit.MILLISECONDS)).as("no retry before the delay").isNull();
-    assertThat(counter("sensepitch_request_log_export_retries")).isOne();
-    HttpBatchSenderTest.close(destination);
-    assertThat(receive().status()).as("last attempt at shutdown").isEqualTo(200);
-    assertThat(destination.droppedCount()).isZero();
-  }
-
   /// A status that retrying cannot fix gives up the batch, it is not sent again
   @Test
   void badRequestGivesUpTheBatch() throws Exception {
@@ -589,38 +524,6 @@ class OtlpLogDestinationTest {
     new OtlpRequestLogger(destination).logRequest(TestRequestLogInfo.of(HttpMethod.GET, 200));
     HttpBatchSenderTest.close(destination);
     assertThat(received.poll()).isNotNull();
-  }
-
-  /// Several threads log at the same time, every record arrives exactly once and intact. While
-  /// the sender is busy, the pool provides more batches, so a burst is not dropped.
-  @Test
-  void concurrentThreads() throws Exception {
-    destination = new OtlpLogDestination("otlp", config().flushIntervalMillis(5).build());
-    OtlpRequestLogger logger = new OtlpRequestLogger(destination);
-    int threads = 4;
-    int perThread = 500;
-    List<Thread> started = new ArrayList<>();
-    for (int t = 0; t < threads; t++) {
-      int thread = t;
-      Thread worker =
-          new Thread(
-              () -> {
-                for (int i = 0; i < perThread; i++) {
-                  logger.logRequest(request("/" + thread + "/" + i));
-                }
-              });
-      worker.start();
-      started.add(worker);
-    }
-    for (Thread worker : started) {
-      assertThat(worker.join(TIMEOUT)).as("logging worker finished").isTrue();
-    }
-    HttpBatchSenderTest.close(destination);
-    List<String> paths = deliveredPaths();
-    Set<String> unique = new HashSet<>(paths);
-    assertThat(destination.droppedCount()).isZero();
-    assertThat(paths).hasSize(threads * perThread);
-    assertThat(unique).as("no record twice").hasSize(threads * perThread);
   }
 
   /// A thread that terminated is forgotten, after its last records were sent
@@ -747,61 +650,6 @@ class OtlpLogDestinationTest {
     }
   }
 
-  /// Full batches are posted concurrently, at most `maxConcurrentRequests` at a time
-  @Test
-  void concurrentRequestsUpToTheLimit() throws Exception {
-    java.util.concurrent.atomic.AtomicInteger inFlight =
-        new java.util.concurrent.atomic.AtomicInteger();
-    java.util.concurrent.atomic.AtomicInteger maxInFlight =
-        new java.util.concurrent.atomic.AtomicInteger();
-    java.util.concurrent.atomic.AtomicInteger records =
-        new java.util.concurrent.atomic.AtomicInteger();
-    java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
-    HttpServer slow = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-    slow.setExecutor(java.util.concurrent.Executors.newCachedThreadPool());
-    slow.createContext(
-        "/v1/logs",
-        exchange -> {
-          byte[] body = exchange.getRequestBody().readAllBytes();
-          maxInFlight.accumulateAndGet(inFlight.incrementAndGet(), Math::max);
-          awaitQuietly(release);
-          inFlight.decrementAndGet();
-          records.addAndGet(
-              decode(exchange, body).getResourceLogs(0).getScopeLogs(0).getLogRecordsCount());
-          exchange.sendResponseHeaders(200, -1);
-          exchange.close();
-        });
-    slow.start();
-    try {
-      int batchBytes = OtlpConfig.MIN_BATCH_BYTES;
-      destination =
-          new OtlpLogDestination(
-              "otlp",
-              OtlpConfig.builder()
-                  .endpoint("http://127.0.0.1:" + slow.getAddress().getPort() + "/v1/logs")
-                  .batchBytes(batchBytes)
-                  .maxBufferedBytes(64 << 20)
-                  .maxConcurrentRequests(3)
-                  .flushIntervalMillis(OUT_OF_REACH_MILLIS)
-                  .build());
-      OtlpRequestLogger logger = new OtlpRequestLogger(destination);
-      int total = 6 * batchBytes / framedSize(request("/0")) + 1;
-      for (int i = 0; i < total; i++) {
-        logger.logRequest(request("/" + i));
-      }
-      await("concurrent request limit reached", () -> inFlight.get() == 3);
-      Thread.sleep(100);
-      assertThat(maxInFlight.get()).as("requests at the same time").isEqualTo(3);
-      release.countDown();
-      HttpBatchSenderTest.close(destination);
-      assertThat(records.get()).isEqualTo(total);
-      assertThat(destination.droppedCount()).isZero();
-    } finally {
-      release.countDown();
-      TestingParameters.stop(slow);
-    }
-  }
-
   /// After a failure the window is one request, it grows with each success back to
   /// `maxConcurrentRequests`. The requests in flight at each step are timing dependent, they are
   /// checked by [OtlpSlowStartIT].
@@ -830,46 +678,6 @@ class OtlpLogDestinationTest {
     assertThat(new HashSet<>(deliveredPaths())).hasSize(total);
     assertThat(destination.droppedCount()).isZero();
     assertThat(destination.window()).as("back at the maximum").isEqualTo(8);
-  }
-
-  /// During an outage the breaker lets one probe through per backoff, not a retry per batch, and
-  /// sends all waiting batches once the server is back
-  @Test
-  void breakerSendsOneProbePerBackoff() throws Exception {
-    status = 503;
-    int batchBytes = OtlpConfig.MIN_BATCH_BYTES;
-    // a backoff of 100 to 200 ms with jitter
-    destination =
-        new OtlpLogDestination(
-            "otlp",
-            config()
-                .batchBytes(batchBytes)
-                .maxBufferedBytes(64 << 20)
-                .flushIntervalMillis(OUT_OF_REACH_MILLIS)
-                .initialRetryDelayMillis(200)
-                .maxRetryDelayMillis(200)
-                .build());
-    OtlpRequestLogger logger = new OtlpRequestLogger(destination);
-    int perBatch = batchBytes / framedSize(request("/0000")) + 1;
-    int index = 0;
-    for (; index < perBatch; index++) {
-      logger.logRequest(request(String.format("/%04d", index)));
-    }
-    // the first batch failed, the breaker is open
-    await("outage retried", () -> counter("sensepitch_request_log_export_retries") >= 1);
-    int total = 11 * perBatch;
-    for (; index < total; index++) {
-      logger.logRequest(request(String.format("/%04d", index)));
-    }
-    int before = received.size();
-    Thread.sleep(500);
-    assertThat(received.size() - before)
-        .as("probes in 500 ms, with 10 more batches waiting")
-        .isLessThanOrEqualTo(6);
-    status = 200;
-    await("all records delivered", () -> deliveredPaths().size() >= total);
-    assertThat(new HashSet<>(deliveredPaths())).hasSize(total);
-    assertThat(destination.droppedCount()).isZero();
   }
 
   /// A batch whose first record is older than the maximum age is dropped, the retries end

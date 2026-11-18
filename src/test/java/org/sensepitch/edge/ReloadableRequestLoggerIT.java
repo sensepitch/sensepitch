@@ -1,6 +1,7 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
 import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.await;
 
@@ -15,8 +16,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
-/// Reloads under concurrent logging. It adds no coverage to [ReloadableRequestLoggerTest], which
-/// is the place for new scenarios and provides the OTLP server and helpers as a fixture.
+/// Real server reload checks, including concurrent logging. These repeat the unit coverage of
+/// [ReloadableRequestLoggerTest], the place for new scenarios, which provides the server and
+/// helpers.
 ///
 /// @author Jens Wilke
 @Timeout(value = 20, unit = TimeUnit.SECONDS)
@@ -93,5 +95,96 @@ class ReloadableRequestLoggerIT {
     } finally {
       workers.forEach(ExecutorService::shutdownNow);
     }
+  }
+
+  /// A removed destination whose log server does not come back ends once its records are older
+  /// than the maximum age, they are counted as dropped
+  @Test
+  void finishedDestinationEndsWhenItsRecordsAgedOut() throws Exception {
+    fixture.status = 503;
+    RequestLogDestinationConfig shortAge = fixture.otlp("vl", 1);
+    shortAge =
+        shortAge.toBuilder()
+            .otlp(shortAge.otlp().toBuilder().maximumUnsentLogAgeMillis(300).build())
+            .build();
+    fixture.logger =
+        RequestLoggerFactory.create(
+            ReloadableRequestLoggerTest.config(shortAge), fixture.stdout, fixture.metrics);
+    for (int i = 0; i < 10; i++) {
+      fixture.logOneRequest();
+    }
+    fixture.awaitAttempts(1);
+    fixture.reload(ReloadableRequestLoggerTest.config(ReloadableRequestLoggerTest.stdout(false)));
+    await("removed destination ended", () -> !fixture.queuedDestinations().contains("vl"));
+    assertThat(fixture.queuedDestinations()).as("the destination ended").doesNotContain("vl");
+    assertThat(fixture.dropped("vl")).isEqualTo(10);
+  }
+
+  /// Switching the request log off ends its destinations, switching it on creates them again
+  @Test
+  void disableAndEnableByReload() throws Exception {
+    fixture.logger =
+        RequestLoggerFactory.create(
+            ReloadableRequestLoggerTest.config(fixture.otlp("vl", OUT_OF_REACH_MILLIS)),
+            fixture.stdout,
+            fixture.metrics);
+    fixture.logOneRequest();
+    fixture.reload(RequestLogConfig.builder().disabled(true).build());
+    assertThat(fixture.logger.destinations()).isEmpty();
+    assertThat(fixture.awaitReceived(1)).as("sent after the end marker").isOne();
+    fixture.logOneRequest();
+    fixture.reload(ReloadableRequestLoggerTest.config(fixture.otlp("vl", OUT_OF_REACH_MILLIS)));
+    fixture.logOneRequest();
+    fixture.logger.close();
+    assertThat(fixture.awaitReceived(1)).as("only the record after enabling").isOne();
+  }
+
+  /// Removing a destination during an outage does not wait for the log server, the removed
+  /// destination sends its records once the server is back
+  @Test
+  void removedDestinationDoesNotBlockTheReload() throws Exception {
+    fixture.status = 503;
+    fixture.logger =
+        RequestLoggerFactory.create(
+            ReloadableRequestLoggerTest.config(fixture.otlp("vl", 1)),
+            fixture.stdout,
+            fixture.metrics);
+    for (int i = 0; i < 20; i++) {
+      fixture.logOneRequest();
+    }
+    fixture.awaitAttempts(1);
+    long start = System.nanoTime();
+    fixture.reload(ReloadableRequestLoggerTest.config(ReloadableRequestLoggerTest.stdout(false)));
+    assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start))
+        .as("the reload does not wait for the log server")
+        .isLessThan(500);
+    fixture.status = 200;
+    assertThat(fixture.awaitReceived(20)).isEqualTo(20);
+    assertThat(fixture.dropped("vl")).isZero();
+  }
+
+  /// The log server is unavailable while a reload changes the destination: the replaced
+  /// destination keeps its buffered records and sends them once the server is back. The reload
+  /// does not wait.
+  @Test
+  void replacedDestinationSendsItsBacklog() throws Exception {
+    fixture.status = 503;
+    fixture.logger =
+        RequestLoggerFactory.create(
+            ReloadableRequestLoggerTest.config(fixture.otlp("vl", 1)),
+            fixture.stdout,
+            fixture.metrics);
+    for (int i = 0; i < 50; i++) {
+      fixture.logOneRequest();
+    }
+    fixture.awaitAttempts(1);
+    long start = System.nanoTime();
+    fixture.reload(ReloadableRequestLoggerTest.config(fixture.otlp("vl", 2)));
+    assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start))
+        .as("the reload does not wait for the log server")
+        .isLessThan(500);
+    fixture.status = 200;
+    assertThat(fixture.awaitReceived(50)).isEqualTo(50);
+    assertThat(fixture.dropped("vl")).isZero();
   }
 }

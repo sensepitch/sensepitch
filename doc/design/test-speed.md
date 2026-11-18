@@ -175,6 +175,78 @@ while a connection is still ending. Both gates passed with identical coverage. T
 runs establish the observed cost, not a stable performance estimate. A grace that is consumed in
 full every run is a defect; finding its cause is in [`TODO.md`](../../TODO.md).
 
+### Move only redundant server scenarios
+
+The selective move on 2026-11-17 compares the unit suite alone, rather than the combined gate.
+[OtlpLogDestinationIT](../../src/test/java/org/sensepitch/edge/OtlpLogDestinationIT.java) and
+[ReloadableRequestLoggerIT](../../src/test/java/org/sensepitch/edge/ReloadableRequestLoggerIT.java)
+reuse the unit classes as fixtures, preserving assertions, completion bounds and graceful server
+teardown. New scenarios belong in the unit classes. No production code or build settings changed.
+
+Measurements used Oracle Java 25.0.5, Node 26.12.1, an x86_64 AMD EPYC-Milan sandbox with two
+available CPUs, and `/usr/bin/time -v`. The commands were `./mvnw -o clean test jacoco:report`
+and, for each individual exclusion:
+
+```sh
+./mvnw -o clean test jacoco:report \
+  '-Dtest=Test*,*Test,*Tests,*TestCase,!Class#method'
+```
+
+The positive patterns match Surefire's default unit class names; a bare negative pattern also
+selects integration classes and invalidates this comparison. Each trial ran 663 unit cases,
+without failures, errors, skips or IT cases. CSV comparisons checked line and branch counters per
+production class; XML comparisons located changed source lines. The two unchanged baselines ran
+664 cases with identical coverage: 5,055/5,326 lines and 1,990/2,220 branches. The individual
+results:
+
+| Class | Method | Result |
+|---|---|---|
+| OTLP | `concurrentRequestsUpToTheLimit` | move |
+| OTLP | `breakerSendsOneProbePerBackoff` | move; timestamp branch gain |
+| OTLP | `partialBatchesOfThreadsArriveInOneRequest` | retain for cumulative coverage |
+| OTLP | `partialBatchesBeyondTheBatchSizeAreSplit` | retain for cumulative coverage |
+| OTLP | `agedBatchIsDiscarded` | retain; exclusion missed two sender branches |
+| OTLP | `outageLosesNothing` | move |
+| OTLP | `concurrentThreads` | move |
+| OTLP | `retryAfterIsHonoured` | move; async writer gained one branch |
+| Reload | `finishCoversDrainingDestinations` | retain; lost 16 lines, nine branches |
+| Reload | `finishedDestinationEndsWhenItsRecordsAgedOut` | move |
+| Reload | `disableAndEnableByReload` | move |
+| Reload | `removedDestinationDoesNotBlockTheReload` | move; timestamp branch gain |
+| Reload | `replacedDestinationSendsItsBacklog` | move; timestamp branch gain |
+
+Removing all eleven individually redundant tests together lost three sender lines and four
+branches. Keeping only the split test recovered the lines but still missed one packing branch.
+Both packing tests therefore stay: one exercises combining partial batches, the other splitting
+beyond the byte limit. The nine exclusions together, and the actual move afterwards (655 unit
+cases), produced identical per-class counters and source-level coverage to both baselines.
+
+Coverage variation was inspected rather than subtracted from a loss: the gained oldest-record
+comparison is `HttpBatchSender.Post.of` choosing the earliest batch timestamp (lines 110–111),
+which depends on batch collection order. The async writer gain is its queue check at line 201.
+Both unchanged baseline runs missed these same paths; three isolated exclusions gained the former
+and two trials gained the latter. These observations are consistent with timing variation; none of these
+gains is counted as an improvement or used to excuse a cumulative loss.
+
+The baseline unit builds took 33.79 and 23.60 seconds; the actual move took 22.75 seconds. OTLP
+class times were 13.625 / 3.752 seconds before and 2.461 after; reload class times were 2.632 /
+2.247 before and 1.458 after. In the unchanged baselines the concurrency-limit method alone varied
+from 10.189 to 0.185 seconds. An HTTP server consuming its teardown grace is a plausible cause of
+that ten-second difference, not established by these runs. The move reduces work in the unit
+phase, but these observations do not establish a stable wall-clock speedup; integration tests
+now pay for the nine moved scenarios. The two packing timers and draining-finish retry remain
+unit costs for the separate fake-clock task.
+
+The complete `./mvnw -o clean verify` gates passed before and after (86.18 / 77.82 seconds),
+including JavaScript, Javadoc, formatting and all coverage checks. Surefire/Failsafe XML showed
+664/40 cases before, 655/49 after, with zero failures, errors or skips. Combined coverage remained
+5,141/5,326 lines and 2,019/2,220 branches; the posting class rules still pass at 100%. The affected
+IT classes cost 0.405 seconds before and 3.349 seconds after (1.619 OTLP, 1.730 reload); all IT
+class times summed to 38.283 / 41.152 seconds. These single runs describe the added integration
+cost, not a repeatable whole-build saving. Online `./mvnw clean verify` failed before tests both
+times because Maven could not write the shared read-only `org/jspecify/jspecify` resolver metadata;
+the complete cached offline gates used no skips or exclusions.
+
 ### Flaky tests are fixed at the cause
 
 Faster and concurrent runs surfaced three faults that had been there before. None was fixed by a
@@ -245,7 +317,8 @@ The 27 tests of `OtlpLogDestinationTest` that run against a log server were move
 That saved about 4 s in `./mvnw test`, and the combined coverage checked by the gate was
 identical. But the unit tests alone lost coverage, lines 95.1 % to 94.5 %, branches 89.8 % to
 89.0 %, mostly in `HttpBatchSender`. It was undone, and is the origin of the first rule in
-[Purpose and scope](#purpose-and-scope).
+[Purpose and scope](#purpose-and-scope). The later
+[selective move](#move-only-redundant-server-scenarios) keeps that rule.
 
 ### A mock for the HTTP transport only
 
@@ -262,8 +335,9 @@ build.
 ## Limitations
 
 - The unit test phase is bounded by the isolated classes, which run one after the other, and by
-  the two classes waiting on real timers, `OtlpLogDestinationTest` (3.6 s) and
-  `ReloadableRequestLoggerTest` (2.2 s).
+  the two classes waiting on real timers, `OtlpLogDestinationTest` and
+  `ReloadableRequestLoggerTest`. The selective move left them at 2.461 s and 1.458 s in one run
+  on 2026-11-17; this is an observed cost, not a stable bound.
 - Parallel execution is checked by repetition, not proven: 10 and 25 green runs in a row. A race
   between tests that needs rarer timing can still be there.
 - `LogCapture` only sees the loggers of the proxy. Netty, JUL and other libraries are visible

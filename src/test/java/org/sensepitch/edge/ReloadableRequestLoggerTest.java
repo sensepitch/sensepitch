@@ -25,7 +25,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 /// Replacing the request log destinations on a configuration reload. Reloads under concurrent
-/// logging are in [ReloadableRequestLoggerIT], which uses this class as its fixture.
+/// logging and redundant server checks are in [ReloadableRequestLoggerIT], which uses this class
+/// as its fixture. New scenarios belong here.
 ///
 /// @author Jens Wilke
 @Timeout(value = 20, unit = TimeUnit.SECONDS)
@@ -160,21 +161,6 @@ class ReloadableRequestLoggerTest {
     assertThat(stdout.lines()).singleElement().asString().startsWith("RQ0 ");
   }
 
-  /// Switching the request log off ends its destinations, switching it on creates them again
-  @Test
-  void disableAndEnableByReload() throws Exception {
-    logger = RequestLoggerFactory.create(config(otlp("vl", OUT_OF_REACH_MILLIS)), stdout, metrics);
-    logOneRequest();
-    reload(RequestLogConfig.builder().disabled(true).build());
-    assertThat(logger.destinations()).isEmpty();
-    assertThat(awaitReceived(1)).as("sent after the end marker").isOne();
-    logOneRequest();
-    reload(config(otlp("vl", OUT_OF_REACH_MILLIS)));
-    logOneRequest();
-    logger.close();
-    assertThat(awaitReceived(1)).as("only the record after enabling").isOne();
-  }
-
   /// At shutdown, finish also covers a destination still draining from a reload. Until all is
   /// sent, the records not sent are reported by destination.
   @Test
@@ -244,68 +230,6 @@ class ReloadableRequestLoggerTest {
 
   String endpoint() {
     return "http://127.0.0.1:" + server.getAddress().getPort() + "/v1/logs";
-  }
-
-  /// The log server is unavailable while a reload changes the destination: the replaced
-  /// destination keeps its buffered records and sends them once the server is back. The reload
-  /// does not wait.
-  @Test
-  void replacedDestinationSendsItsBacklog() throws Exception {
-    status = 503;
-    logger = RequestLoggerFactory.create(config(otlp("vl", 1)), stdout, metrics);
-    for (int i = 0; i < 50; i++) {
-      logOneRequest();
-    }
-    awaitAttempts(1);
-    long start = System.nanoTime();
-    reload(config(otlp("vl", 2)));
-    assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start))
-        .as("the reload does not wait for the log server")
-        .isLessThan(500);
-    status = 200;
-    assertThat(awaitReceived(50)).isEqualTo(50);
-    assertThat(dropped("vl")).isZero();
-  }
-
-  /// Removing a destination during an outage does not wait for the log server, the removed
-  /// destination sends its records once the server is back
-  @Test
-  void removedDestinationDoesNotBlockTheReload() throws Exception {
-    status = 503;
-    logger = RequestLoggerFactory.create(config(otlp("vl", 1)), stdout, metrics);
-    for (int i = 0; i < 20; i++) {
-      logOneRequest();
-    }
-    awaitAttempts(1);
-    long start = System.nanoTime();
-    reload(config(stdout(false)));
-    assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start))
-        .as("the reload does not wait for the log server")
-        .isLessThan(500);
-    status = 200;
-    assertThat(awaitReceived(20)).isEqualTo(20);
-    assertThat(dropped("vl")).isZero();
-  }
-
-  /// A removed destination whose log server does not come back ends once its records are older
-  /// than the maximum age, they are counted as dropped
-  @Test
-  void finishedDestinationEndsWhenItsRecordsAgedOut() throws Exception {
-    status = 503;
-    RequestLogDestinationConfig shortAge = otlp("vl", 1);
-    shortAge =
-        shortAge.toBuilder()
-            .otlp(shortAge.otlp().toBuilder().maximumUnsentLogAgeMillis(300).build())
-            .build();
-    logger = RequestLoggerFactory.create(config(shortAge), stdout, metrics);
-    for (int i = 0; i < 10; i++) {
-      logOneRequest();
-    }
-    awaitAttempts(1);
-    reload(config(stdout(false)));
-    await("removed destination ended", () -> !queuedDestinations().contains("vl"));
-    assertThat(queuedDestinations()).as("the destination ended").doesNotContain("vl");
-    assertThat(dropped("vl")).isEqualTo(10);
   }
 
   /// A record an event loop logs into a replaced destination after the switch, before it ran its
