@@ -1,6 +1,8 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
+import static org.sensepitch.edge.TestingParameters.await;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -64,25 +66,30 @@ class ReloadableRequestLoggerIT {
         }
         lastRecords.add(last);
       }
-      int reloads = 0;
+      int[] reloads = {0};
       // with few records the workers may finish early, keep reloading to a minimum count
-      for (int i = 0;
-          lastRecords.stream().anyMatch(f -> !f.isDone()) || reloads < minReloads;
-          i++) {
-        fixture.reload(ReloadableRequestLoggerTest.config(fixture.otlp("vl", 1 + i % 2)));
-        reloads++;
-        Thread.sleep(1);
-      }
+      await(
+          "logging workers finished after the minimum reloads",
+          () -> {
+            if (lastRecords.stream().allMatch(Future::isDone) && reloads[0] >= minReloads) {
+              return true;
+            }
+            fixture.reload(
+                ReloadableRequestLoggerTest.config(fixture.otlp("vl", 1 + reloads[0] % 2)));
+            reloads[0]++;
+            Thread.sleep(1);
+            return false;
+          });
       // the end markers of the workers, as an event loop writes them when it terminates
       for (ExecutorService worker : workers) {
-        worker.submit(logger::endThread).get(10, TimeUnit.SECONDS);
+        worker.submit(logger::endThread).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
       }
       // right after the reloads, replaced destinations may still be handing over
       logger.close();
       int got = fixture.awaitReceived(threads * perThread);
       assertThat(fixture.dropped("vl")).isZero();
       assertThat(got).as("every record exactly once").isEqualTo(threads * perThread);
-      assertThat(reloads).as("the destination was replaced often").isGreaterThan(10);
+      assertThat(reloads[0]).as("the destination was replaced often").isGreaterThan(10);
     } finally {
       workers.forEach(ExecutorService::shutdownNow);
     }

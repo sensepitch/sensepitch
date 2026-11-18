@@ -2,6 +2,7 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.sensepitch.edge.TestingParameters.await;
 
 import com.sun.net.httpserver.HttpServer;
 import io.netty.handler.codec.http.HttpMethod;
@@ -41,7 +42,7 @@ class RequestLoggerFactoryTest {
 
   @AfterEach
   void stopLogServer() {
-    logServer.stop(0);
+    TestingParameters.stop(logServer);
   }
 
   RequestLogger build(RequestLogConfig config) {
@@ -189,7 +190,7 @@ class RequestLoggerFactoryTest {
       assertThat(queuedDestinations()).containsExactly("otlp");
       logOneRequest(logger);
     }
-    OtlpLogDestinationTest.await(() -> queuedDestinations().isEmpty());
+    await("all destinations drained", () -> queuedDestinations().isEmpty());
     assertThat(stdout.lines()).hasSize(2);
     assertThat(stdout.lines().get(0)).contains("\"client.address\":\"192.0.2.7\"");
     assertThat(stdout.lines().get(1)).startsWith("RQ0 0 example.com 192.0.2.0 ");

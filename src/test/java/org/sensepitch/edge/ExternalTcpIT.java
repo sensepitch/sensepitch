@@ -1,6 +1,9 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.sensepitch.edge.TestingParameters.TIMEOUT;
+import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
+import static org.sensepitch.edge.TestingParameters.await;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -136,7 +139,7 @@ class ExternalTcpIT {
   @AfterEach
   void stopProxy() throws Exception {
     proxy.shutdown();
-    upstream.stop(0);
+    TestingParameters.stop(upstream);
   }
 
   /// The upstream receives the trace context the edge assigned, and the request log reports the
@@ -159,7 +162,8 @@ class ExternalTcpIT {
           new String(socket.getInputStream().readAllBytes(), StandardCharsets.US_ASCII);
       assertThat(response).startsWith("HTTP/1.1 200").contains("from upstream");
     }
-    TraceContext forwarded = TraceContext.parse(upstreamTraceparents.poll(10, TimeUnit.SECONDS));
+    TraceContext forwarded =
+        TraceContext.parse(upstreamTraceparents.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS));
     assertThat(forwarded).as("valid traceparent forwarded").isNotNull();
     assertThat(forwarded.traceId())
         .as("client trace is not trusted by default")
@@ -187,15 +191,8 @@ class ExternalTcpIT {
   }
 
   /// The record is written when the response is sent, which can be after the client read it
-  @SuppressWarnings("BusyWait")
-  private String awaitRequestLog() throws InterruptedException {
-    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-    while (requestLog.lines().isEmpty()) {
-      if (System.nanoTime() > deadline) {
-        throw new IllegalStateException("no request log record");
-      }
-      Thread.sleep(5);
-    }
+  private String awaitRequestLog() throws Exception {
+    await("request log record is written", () -> !requestLog.lines().isEmpty());
     return requestLog.lines().getFirst();
   }
 
@@ -237,19 +234,15 @@ class ExternalTcpIT {
   }
 
   /// Waits until a handshake error of the ingress was counted, the proxy counts asynchronously
-  private void awaitHandshakeErrors(String ingress) throws InterruptedException {
+  private void awaitHandshakeErrors(String ingress) throws Exception {
     String prefix =
         "sensepitch_ingress_request_errors_total{ingress=\"" + ingress + "\",phase=\"handshake\"";
-    MetricsAndMemoryTest.Snapshots snapshots = null;
-    for (int i = 0; i < 100; i++) {
-      snapshots = new MetricsAndMemoryTest.Snapshots(proxy.metricsRegistry().scrape());
-      if (snapshots.getPrometheusExpositionText().contains(prefix)) {
-        return;
-      }
-      Thread.sleep(50);
-    }
-    throw new IllegalStateException(
-        "not counted: " + prefix + "\n" + snapshots.getLinesContaining("request_errors"));
+    await(
+        "handshake error is counted for " + ingress,
+        () ->
+            new MetricsAndMemoryTest.Snapshots(proxy.metricsRegistry().scrape())
+                .getPrometheusExpositionText()
+                .contains(prefix));
   }
 
   @Test
@@ -348,7 +341,7 @@ class ExternalTcpIT {
   @SuppressWarnings("resource")
   private void drainEventLoops() throws InterruptedException {
     for (EventExecutor executor : proxy.eventLoopGroup()) {
-      assertThat(executor.submit(() -> {}).await(5, TimeUnit.SECONDS))
+      assertThat(executor.submit(() -> {}).await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
           .describedAs("event loop did not drain")
           .isTrue();
     }
@@ -364,8 +357,8 @@ class ExternalTcpIT {
     byte[] bytes = new byte[512];
     new Random(42).nextBytes(bytes);
     try (Socket socket = new Socket()) {
-      socket.connect(new InetSocketAddress("127.0.0.1", port), 5_000);
-      socket.setSoTimeout(2_000);
+      socket.connect(new InetSocketAddress("127.0.0.1", port), (int) TIMEOUT.toMillis());
+      socket.setSoTimeout((int) TIMEOUT.toMillis());
       socket.getOutputStream().write(bytes);
       socket.getOutputStream().flush();
       try {
@@ -397,8 +390,8 @@ class ExternalTcpIT {
         },
         new SecureRandom());
     SSLSocket socket = (SSLSocket) context.getSocketFactory().createSocket();
-    socket.connect(new InetSocketAddress("127.0.0.1", port), 5_000);
-    socket.setSoTimeout(5_000);
+    socket.connect(new InetSocketAddress("127.0.0.1", port), (int) TIMEOUT.toMillis());
+    socket.setSoTimeout((int) TIMEOUT.toMillis());
     return socket;
   }
 
@@ -408,29 +401,24 @@ class ExternalTcpIT {
     }
   }
 
-  @SuppressWarnings("BusyWait")
-  private void awaitLogged(String messagePart) throws InterruptedException {
-    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-    while (proxyMessages().stream().noneMatch(m -> m.contains(messagePart))) {
-      if (System.nanoTime() > deadline) {
-        throw new IllegalStateException("proxy did not log: " + messagePart);
-      }
-      Thread.sleep(5);
-    }
+  /// Waits for startup logging before clearing the capture for a test.
+  private void awaitLogged(String messagePart) throws Exception {
+    await(
+        "proxy logs " + messagePart,
+        () -> proxyMessages().stream().anyMatch(m -> m.contains(messagePart)));
   }
 
-  @SuppressWarnings("BusyWait")
+  /// Waits for the listener before a test opens its client connection.
   private void awaitListening() throws Exception {
-    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-    while (System.nanoTime() < deadline) {
-      try (Socket probe = new Socket()) {
-        probe.connect(new InetSocketAddress("127.0.0.1", port), 250);
-        return;
-      } catch (IOException notUpYet) {
-        // backoff
-        Thread.sleep(25);
-      }
-    }
-    throw new IllegalStateException("proxy did not bind port " + port);
+    await(
+        "proxy binds port " + port,
+        () -> {
+          try (Socket probe = new Socket()) {
+            probe.connect(new InetSocketAddress("127.0.0.1", port), 250);
+            return true;
+          } catch (IOException notUpYet) {
+            return false;
+          }
+        });
   }
 }

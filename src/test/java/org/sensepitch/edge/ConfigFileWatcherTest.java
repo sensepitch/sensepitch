@@ -1,6 +1,7 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.sensepitch.edge.TestingParameters.await;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -49,7 +50,7 @@ class ConfigFileWatcherTest {
   }
 
   @Test
-  void reloadOnlyWhenContentChanged() throws IOException {
+  void reloadOnlyWhenContentChanged() throws Exception {
     Path file = dir.resolve("config.yaml");
     Files.writeString(file, complete("a: 1\n"));
     ConfigFileWatcher watcher = watcher(file);
@@ -75,7 +76,7 @@ class ConfigFileWatcherTest {
   }
 
   @Test
-  void failingReloadIsLoggedAndRetriedOnNextChange() throws IOException {
+  void failingReloadIsLoggedAndRetriedOnNextChange() throws Exception {
     Path file = dir.resolve("config.yaml");
     Files.writeString(file, complete("a: 1\n"));
     ConfigFileWatcher watcher = watcher(file);
@@ -133,17 +134,9 @@ class ConfigFileWatcherTest {
     assertThat(ConfigFileWatcher.hasEndMarker("")).isFalse();
   }
 
-  /// The watch service is polling on some platforms, so allow a generous time
-  void waitUntilReloads(int expected) {
-    long deadline = System.currentTimeMillis() + 15_000;
-    while (reloads.get() < expected && System.currentTimeMillis() < deadline) {
-      try {
-        Thread.sleep(20);
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        return;
-      }
-    }
+  /// Waits for the watch service, including platforms where it polls for changes.
+  void waitUntilReloads(int expected) throws Exception {
+    await("configuration reloaded " + expected + " times", () -> reloads.get() >= expected);
     assertThat(reloads).hasValue(expected);
   }
 }

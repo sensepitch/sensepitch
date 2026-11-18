@@ -110,6 +110,43 @@
   handshakes, GC or RSS behaviour) belong in `*IT`, so `./mvnw test` stays fast. An `*IT` may
   repeat what a unit test covers against the real thing, it does not replace the unit test.
 
+### Concurrent and asynchronous tests
+For every test with more than one thread, process or timer. The assumption: **any action on
+another thread or process, and any step of the test itself, may be delayed by the scheduler for
+up to `TestingParameters.TIMEOUT`.** A test is correct only if it passes under any such delay.
+- Every wait allows the full `TIMEOUT`, never less: `TestingParameters.TIMEOUT`,
+  `TIMEOUT_SECONDS`, `await(description, condition)` and `stop(HttpServer)`, no literals. A
+  hand-picked shorter bound is a flake. Intentional outages (`stop(0)` inside a test) and the
+  class level `@Timeout` as outer guard stay explicit.
+- Never assert a maximum elapsed time. Assert what happened and in which order, not how fast. To
+  show that a call does not wait for another party (e.g. a reload does not wait for the log
+  server), block that party on a latch the test owns so it cannot answer, run the call with
+  `get(TIMEOUT_SECONDS, SECONDS)`, and only then release the latch: if the call waited, it could
+  not return while the party is blocked.
+- Timeouts and other timed behaviour (age limit, flush interval, backoff, drain and shutdown
+  timeout, breaker delays) are tested on a simulated clock: the test moves the clock and never
+  waits real time. `CircuitBreaker` with its `Ticker` shows the seam.
+- Everything that waits real time is an `*IT`. There, asserting that *at least* some time has
+  passed is fine (the timer did not fire early), asserting that *at most* some time has passed is
+  not. A timer that must not fire during a test is set to `TestingParameters.OUT_OF_REACH_MILLIS`
+  (10 × `TIMEOUT`), never a literal.
+- Until a class has the clock seam, its real time unit tests stay for coverage (see above) and
+  are listed under "Timing related tests" in `TODO.md`; do not add new ones.
+- A transient state can be missed. `await` only monotonic conditions (`>=` on a counter) or a
+  state the test freezes by holding the other side (worker, server, upstream on a latch or
+  semaphore); assert while it is held, then release.
+- A negative wait proves nothing ("nothing within 100 ms", "at most 6 in 500 ms"): the unwanted
+  action may just be delayed. Wait for a positive event that would come after it, or count over a
+  held state; a short negative check is at most a cheap extra, never the assertion.
+- React on the event, do not busy wait. The bound is generous, so the normal case must not pay
+  for it: the test is woken by the event it expects, signalled by a mock or fake on the other side
+  (`CountDownLatch`, `Semaphore`, `BlockingQueue`, `CompletableFuture`), e.g. a test log server
+  that releases a semaphore per post, or by the log output the code writes (diagnostic or request
+  log). Polling with `TestingParameters.await` is the fallback where no hook exists, a sleep loop
+  never.
+- A wait or grace period that every run consumes in full is a defect to investigate, not a
+  margin.
+
 ## Design Documents
 
 - A design document in `doc/design/<topic>.md` records why something is built the way it is and

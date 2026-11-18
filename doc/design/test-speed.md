@@ -152,6 +152,29 @@ timers. Each of them trades a few hundred milliseconds for a tighter margin unde
 parallel execution adds load. The answer for these tests is a clock they control, see
 [Planned improvements](#planned-improvements).
 
+### Asynchronous waits share one upper bound
+
+[`TestingParameters`](../../src/test/java/org/sensepitch/edge/TestingParameters.java) bounds
+completion waits at 10 seconds and reports which condition failed. Test HTTP servers use the same
+grace period at teardown: a server queues a received post before writing its answer, so closing it
+immediately can turn a successful test into a late sender failure. The grace costs no wait when
+the server is idle and tolerates scheduling pauses while an exchange finishes. Intentional
+outages, negative assertions, deliberate pauses and outer test guards retain their own timing.
+The timeout is a failure bound, not a substitute for the planned fake clock. It is also the
+assumed worst case delay of any single action, which the rules for concurrent tests in
+[`AGENTS.md`](../../AGENTS.md) build on: no maximum time is asserted, timers that must not fire
+are set to `OUT_OF_REACH_MILLIS` (10 × `TIMEOUT`). The tests that still break these rules are
+listed in [`TODO.md`](../../TODO.md).
+
+One baseline/final run on 2026-11-17 in the scheduled x86_64 sandbox (2 available CPUs,
+Oracle Java 25.0.5, Node 26.12.1), measured with `/usr/bin/time -v ./mvnw -o clean verify`,
+took 62.72 / 75.85 seconds. `ShadedJarIT` rose from 10.34 to 29.83 seconds; its two
+`sigtermKeepsFinalShutdownDiagnostic` cases each took about 12.85 seconds after the change.
+The wider collector teardown grace is the inferred cause; an HTTP server can consume its grace
+while a connection is still ending. Both gates passed with identical coverage. These single
+runs establish the observed cost, not a stable performance estimate. A grace that is consumed in
+full every run is a defect; finding its cause is in [`TODO.md`](../../TODO.md).
+
 ### Flaky tests are fixed at the cause
 
 Faster and concurrent runs surfaced three faults that had been there before. None was fixed by a

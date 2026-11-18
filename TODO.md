@@ -11,28 +11,6 @@ implementation.
 
 ## Scheduled Cleanup and Refactorings
 
-- [ ] One central test timeout instead of literal waits
-  - P2: the flake fix (see Done, `badRequestGivesUpTheBatch`) stops the test log server with
-    `stop(1)`. The grace is released by the dispatcher thread of the JDK `HttpServer`
-    (`ServerImpl.stop` waits on `finishedLatch` until no exchange runs and no request is being
-    read, JDK 25.0.5), so a scheduling pause over 1 s on a cloud machine brings the flake back. In
-    the normal case `stop` returns at once, so a generous value costs nothing.
-  - A test class `TestingParameters` with `TIMEOUT_SECONDS = 10` and `TIMEOUT`, the pattern of
-    cache2k `PinpointParameters`: the maximum time a test waits for something another thread or
-    process does. Next to it `await(description, condition)` (moved from
-    `OtlpLogDestinationTest.await`) and `stop(HttpServer)` = `stop(TIMEOUT_SECONDS)`.
-  - Use it for: the server stop at the end of a test (`OtlpLogDestinationTest`,
-    `ReloadableRequestLoggerTest`, `RequestLoggerFactoryTest`, `HttpBatchSenderTest`,
-    `ProxyOptionsTest`, `ProxyShutdownIT`, `ShadedJarIT`, `ExternalTcpIT`, `OtlpAllocationIT`,
-    `OtlpSlowStartIT`); the `poll`/`get`/`await(10, SECONDS)` calls; the hand written deadline loops
-    (10 s, `ConfigFileWatcherTest` 15 s, `ShadedJarIT` 30 s, `ExternalTcpIT` 5 s); the unbounded
-    `received.take()` and `Thread.sleep(5)` loops without deadline in `OtlpLogDestinationTest` and
-    `ReloadableRequestLoggerTest`.
-  - Not changed: intentional outages with `stop(0)` inside a test (`outageLosesNothing`,
-    `finishDuringAnOutage`, `ProxyShutdownIT.unsentRecordsAreReported`), negative waits ("nothing
-    within 100 ms"), deliberate pauses, and the class level `@Timeout` as the outer guard of a test
-    with several waits.
-  - Add a line to the testing guidelines in `AGENTS.md`: no literal timeouts in tests.
 - [ ] Move the real server tests of `OtlpLogDestinationTest` and `ReloadableRequestLoggerTest` to
   `*IT` where the unit tests keep their coverage
   - P2: the full move was undone 2026-11-14 because the unit tests lost coverage (see "Timing
@@ -292,6 +270,44 @@ the failure threshold for upstreams is under Upstream.
     test covers.
   - Write the converted tests as step chains (`*BDDTest`).
   - P2.
+- [ ] Load sensitive timing assertions in tests, against the rules for concurrent tests in
+  `AGENTS.md`
+  - P2: each one can fail on a loaded machine although the code is right.
+  - Maximum elapsed time, drop it: `ReloadableRequestLoggerTest`
+    `replacedDestinationSendsItsBacklog` and `removedDestinationDoesNotBlockTheReload` (reload
+    `< 500` ms, instead hold the log server on a latch during the reload), `ProxyShutdownIT`
+    (`< 5_000` twice, `< 2_500` in `slowRequestIsAbortedAndStillLogged`), `ShadedJarIT` (exit
+    `< 4_000` after `destroy()`). The minimum times in `*IT` (`>= 900`) stay.
+  - Short configured timings that race the test's own steps:
+    `ReloadableRequestLoggerTest.finishedDestinationEndsWhenItsRecordsAgedOut` (age 300 ms, then
+    `awaitAttempts(1)`: a pause over 300 ms may age the records out before the first attempt,
+    inferred, not reproduced), `OtlpLogDestinationTest.agedBatchIsDiscarded` (age 200 ms).
+  - Rate over a real time window: `OtlpLogDestinationTest` "probes in 500 ms, with 10 more
+    batches waiting" `<= 6` after `Thread.sleep(500)`.
+  - Sleep then assert, cannot fail but proves little and costs time: `Thread.sleep(100)` before
+    `maxInFlight` in `OtlpLogDestinationTest` and `OtlpSlowStartIT`, `poll(100 ms)` is null in
+    `OtlpLogDestinationTest` and `ReloadableRequestLoggerTest.awaitReceived`, `Thread.sleep(200)`
+    before `isNotDone()` in `ProxyShutdownIT.shutdownWaitsForReload`.
+  - Remedy for the timers, ages, backoff and the probe rate: the simulated clock, see "Timing
+    related tests". The `TimeBox` of cache2k pinpoint (below) for maximum times is not needed
+    any more, maximum times are not asserted at all.
+- [ ] Event driven waits instead of polling
+  - P2, test speed and clarity: `LogCapture`/`LogSink` and `RequestLogCapture` cannot wait for
+    an entry, so `ExternalTcpIT` (`awaitLogged`, `awaitRequestLog`, `awaitHandshakeErrors`),
+    `ShadedJarIT.awaitOutput` (reads the stderr file) and the counter and gauge `await`s in
+    `OtlpLogDestinationTest` and `ReloadableRequestLoggerTest` poll, as does
+    `ConfigFileWatcherTest.waitUntilReloads`.
+  - Remedy: a blocking wait for an entry on the captures (notify when added), test log servers
+    that signal each post with a `Semaphore` or queue (several have a `received` queue already),
+    a latch in the reload callback. `TestingParameters.await` stays where no hook exists.
+- [ ] `ShadedJarIT` waits the full stop grace of its test servers
+  - P2: with `TestingParameters.stop(HttpServer)` the class went from 10.3 s to 29.8 s, about
+    12.85 s per `sigtermKeepsFinalShutdownDiagnostic` case, see
+    [test speed design](doc/design/test-speed.md#asynchronous-waits-share-one-upper-bound). A
+    connection of the child JVM is the suspected cause, not verified.
+  - The wait for the child JVM to listen went from 30 s to the 10 s `TIMEOUT`. A JVM start is
+    many steps, not one action, so it needs its own bound, a multiple of `TIMEOUT` in
+    `TestingParameters`.
 - [ ] Investigate cache2k pinpoint for the test patterns
   - P3: `cache2k-pinpoint` (module of cache2k, 2.6.1) has `PinpointParameters.TIMEOUT`,
     `Await` with a `TimeoutError` naming the condition, `TimeBox` (timing assertions only count when
@@ -343,6 +359,12 @@ the failure threshold for upstreams is under Upstream.
 - [ ] add CONTRIBUTING.md
 
 ## Done
+
+- [x] One central test timeout instead of literal waits (2026-11-17): `TestingParameters`
+  supplies the 10-second completion bound, descriptive `await` and graceful HTTP server stop.
+  Replaced the listed completion waits, deadline loops and unbounded queue reads; intentional
+  outages, negative waits, deliberate pauses and outer test guards remain explicit. See
+  [test speed design](doc/design/test-speed.md#asynchronous-waits-share-one-upper-bound).
 
 - [x] Log4j2 shutdown hook ran concurrently with ours and dropped the shutdown reports on
   `SIGTERM` (2026-11-17), see [doc/design/diagnostic-logging.md](doc/design/diagnostic-logging.md).

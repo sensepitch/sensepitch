@@ -1,10 +1,11 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.sensepitch.edge.OtlpLogDestinationTest.await;
 import static org.sensepitch.edge.OtlpLogDestinationTest.decode;
 import static org.sensepitch.edge.OtlpLogDestinationTest.framedSize;
 import static org.sensepitch.edge.OtlpLogDestinationTest.request;
+import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
+import static org.sensepitch.edge.TestingParameters.await;
 
 import com.sun.net.httpserver.HttpServer;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
@@ -68,7 +69,7 @@ class OtlpSlowStartIT {
                   .batchBytes(batchBytes)
                   .maxBufferedBytes(64 << 20)
                   .maxConcurrentRequests(8)
-                  .flushIntervalMillis(60_000)
+                  .flushIntervalMillis(OUT_OF_REACH_MILLIS)
                   .build(),
               new RequestLogMetrics(),
               10,
@@ -79,16 +80,16 @@ class OtlpSlowStartIT {
       for (int i = 0; i < total; i++) {
         logger.logRequest(request("/" + i));
       }
-      await(() -> retries(sender) >= 1);
+      await("sender retries after the outage", () -> retries(sender) >= 1);
       assertThat(destination.window()).as("after a failure").isOne();
       available.set(true);
       // the probe alone
-      await(() -> inFlight.get() == 1);
+      await("one recovery probe is in flight", () -> inFlight.get() == 1);
       Thread.sleep(100);
       assertThat(maxInFlight.get()).as("only the probe").isOne();
       // its success allows two
       answers.release();
-      await(() -> inFlight.get() == 2);
+      await("two requests follow the successful probe", () -> inFlight.get() == 2);
       Thread.sleep(100);
       assertThat(maxInFlight.get()).as("two after the probe").isEqualTo(2);
       answers.release(1_000);
@@ -102,7 +103,7 @@ class OtlpSlowStartIT {
         destination.endThread();
         destination.finish();
       }
-      held.stop(0);
+      TestingParameters.stop(held);
     }
   }
 

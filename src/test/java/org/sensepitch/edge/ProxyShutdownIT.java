@@ -1,6 +1,10 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
+import static org.sensepitch.edge.TestingParameters.TIMEOUT;
+import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
+import static org.sensepitch.edge.TestingParameters.await;
 
 import com.sun.net.httpserver.HttpServer;
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
@@ -133,7 +137,7 @@ class ProxyShutdownIT {
                                             "http://127.0.0.1:"
                                                 + logServer.getAddress().getPort()
                                                 + "/v1/logs")
-                                        .flushIntervalMillis(60_000)
+                                        .flushIntervalMillis(OUT_OF_REACH_MILLIS)
                                         .build())
                                 .build()))
                     .build())
@@ -163,10 +167,10 @@ class ProxyShutdownIT {
     }
     testOver.countDown();
     if (upstream != null) {
-      upstream.stop(0);
+      TestingParameters.stop(upstream);
     }
     if (logServer != null) {
-      logServer.stop(0);
+      TestingParameters.stop(logServer);
     }
   }
 
@@ -178,14 +182,14 @@ class ProxyShutdownIT {
     upstreamDelayMillis = 300;
     try (SSLSocket socket = tlsSocket()) {
       send(socket, "upstream.com");
-      assertThat(upstreamGotRequest.await(10, TimeUnit.SECONDS)).isTrue();
+      assertThat(upstreamGotRequest.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
       long start = System.nanoTime();
       CompletableFuture<Void> shutdown = CompletableFuture.runAsync(proxy::shutdown);
       String response = readResponse(socket.getInputStream());
       assertThat(response).startsWith("HTTP/1.1 200").contains("from upstream");
       assertThat(response.toLowerCase(Locale.ROOT)).contains("connection: close");
       assertThat(socket.getInputStream().read()).as("closed after the response").isEqualTo(-1);
-      shutdown.get(10, TimeUnit.SECONDS);
+      shutdown.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
       assertThat(millisSince(start)).as("faster than the timeout").isLessThan(5_000);
     }
     assertThat(requestLog.lines())
@@ -222,7 +226,7 @@ class ProxyShutdownIT {
     upstreamDelayMillis = 5_000;
     try (SSLSocket socket = tlsSocket()) {
       send(socket, "upstream.com");
-      assertThat(upstreamGotRequest.await(10, TimeUnit.SECONDS)).isTrue();
+      assertThat(upstreamGotRequest.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
       long start = System.nanoTime();
       proxy.shutdown();
       long took = millisSince(start);
@@ -284,10 +288,10 @@ class ProxyShutdownIT {
       Thread.sleep(200);
       assertThat(shutdown).isNotDone();
       try (Socket probe = new Socket()) {
-        probe.connect(new InetSocketAddress("127.0.0.1", port), 1_000);
+        probe.connect(new InetSocketAddress("127.0.0.1", port), (int) TIMEOUT.toMillis());
       }
     }
-    shutdown.get(10, TimeUnit.SECONDS);
+    shutdown.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
     assertThat(proxy.reload(config).applied()).isFalse();
   }
 
@@ -345,8 +349,8 @@ class ProxyShutdownIT {
         },
         new SecureRandom());
     SSLSocket socket = (SSLSocket) context.getSocketFactory().createSocket();
-    socket.connect(new InetSocketAddress("127.0.0.1", port), 5_000);
-    socket.setSoTimeout(10_000);
+    socket.connect(new InetSocketAddress("127.0.0.1", port), (int) TIMEOUT.toMillis());
+    socket.setSoTimeout((int) TIMEOUT.toMillis());
     return socket;
   }
 
@@ -356,17 +360,17 @@ class ProxyShutdownIT {
     }
   }
 
-  @SuppressWarnings("BusyWait")
+  /// Waits for the listener before a test opens its client connection.
   private void awaitListening() throws Exception {
-    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-    while (System.nanoTime() < deadline) {
-      try (Socket probe = new Socket()) {
-        probe.connect(new InetSocketAddress("127.0.0.1", port), 250);
-        return;
-      } catch (IOException notUpYet) {
-        Thread.sleep(25);
-      }
-    }
-    throw new IllegalStateException("proxy did not bind port " + port);
+    await(
+        "proxy binds port " + port,
+        () -> {
+          try (Socket probe = new Socket()) {
+            probe.connect(new InetSocketAddress("127.0.0.1", port), 250);
+            return true;
+          } catch (IOException notUpYet) {
+            return false;
+          }
+        });
   }
 }

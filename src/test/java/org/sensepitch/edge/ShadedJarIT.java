@@ -1,6 +1,9 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.sensepitch.edge.TestingParameters.TIMEOUT;
+import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
+import static org.sensepitch.edge.TestingParameters.await;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -56,7 +59,7 @@ class ShadedJarIT {
   void stopProcess() throws InterruptedException {
     if (process != null) {
       process.destroy();
-      if (!process.waitFor(10, TimeUnit.SECONDS)) {
+      if (!process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
         process.destroyForcibly();
       }
     }
@@ -138,7 +141,7 @@ class ShadedJarIT {
       assertThat(get(port)).startsWith("HTTP/1.1 200");
       long start = System.nanoTime();
       process.destroy();
-      assertThat(process.waitFor(10, TimeUnit.SECONDS)).as("exited").isTrue();
+      assertThat(process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)).as("exited").isTrue();
       assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start))
           .as("faster than the shutdown timeout")
           .isLessThan(4_000);
@@ -146,7 +149,7 @@ class ShadedJarIT {
       assertThat(records.get()).as("OTLP record sent before the exit").isOne();
       assertThat(Files.readAllLines(stderr)).noneMatch(line -> line.contains("Shutdown:"));
     } finally {
-      logServer.stop(0);
+      TestingParameters.stop(logServer);
     }
   }
 
@@ -165,7 +168,7 @@ class ShadedJarIT {
           exchange.getRequestBody().readAllBytes();
           exportStarted.countDown();
           try {
-            releaseExport.await(10, TimeUnit.SECONDS);
+            releaseExport.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
           } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
           } finally {
@@ -203,14 +206,18 @@ class ShadedJarIT {
       awaitOutput(stderr, "Proxy listening on 127.0.0.1:" + port);
       assertThat(get(port)).startsWith("HTTP/1.1 200");
       process.destroy();
-      assertThat(exportStarted.await(5, TimeUnit.SECONDS)).as("shutdown export started").isTrue();
-      assertThat(process.waitFor(10, TimeUnit.SECONDS)).as("exited after draining").isTrue();
+      assertThat(exportStarted.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+          .as("shutdown export started")
+          .isTrue();
+      assertThat(process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+          .as("exited after draining")
+          .isTrue();
       assertThat(Files.readString(stderr))
           .contains("Shutdown: request log not drained after")
           .contains("unsent records");
     } finally {
       releaseExport.countDown();
-      collector.stop(0);
+      TestingParameters.stop(collector);
     }
   }
 
@@ -315,19 +322,20 @@ class ShadedJarIT {
     return target;
   }
 
-  @SuppressWarnings("BusyWait")
+  /// Waits for startup in the child JVM, reporting an early exit immediately.
   private void awaitOutput(Path log, String text) throws Exception {
-    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-    while (!Files.readString(log).contains(text)) {
-      if (!process.isAlive()) {
-        throw new IllegalStateException(
-            "JAR exited with " + process.exitValue() + ":\n" + Files.readString(log));
-      }
-      if (System.nanoTime() > deadline) {
-        throw new IllegalStateException("JAR did not log: " + text + "\n" + Files.readString(log));
-      }
-      Thread.sleep(50);
-    }
+    await(
+        "JAR logs " + text,
+        () -> {
+          if (Files.readString(log).contains(text)) {
+            return true;
+          }
+          if (!process.isAlive()) {
+            throw new IllegalStateException(
+                "JAR exited with " + process.exitValue() + ":\n" + Files.readString(log));
+          }
+          return false;
+        });
   }
 
   private static String get(int port) throws Exception {
@@ -352,7 +360,7 @@ class ShadedJarIT {
         null);
     try (SSLSocket socket =
         (SSLSocket) context.getSocketFactory().createSocket("127.0.0.1", port)) {
-      socket.setSoTimeout(10_000);
+      socket.setSoTimeout((int) TIMEOUT.toMillis());
       socket
           .getOutputStream()
           .write(

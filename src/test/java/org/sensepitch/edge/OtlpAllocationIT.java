@@ -1,6 +1,7 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
 
 import com.sun.net.httpserver.HttpServer;
 import io.netty.handler.codec.http.HttpHeaderNames;
@@ -99,7 +100,7 @@ class OtlpAllocationIT {
             "otlp",
             OtlpConfig.builder()
                 .endpoint("http://127.0.0.1:" + server.getAddress().getPort() + "/v1/logs")
-                .flushIntervalMillis(60_000)
+                .flushIntervalMillis(OUT_OF_REACH_MILLIS)
                 .build());
     RequestLogger logger = new OtlpRequestLogger(destination);
     if (anonymize) {
@@ -110,7 +111,7 @@ class OtlpAllocationIT {
       assertThat(bytes).as("bytes allocated per record").isLessThanOrEqualTo(MAX_BYTES_PER_RECORD);
     } finally {
       logger.close();
-      server.stop(0);
+      TestingParameters.stop(server);
     }
   }
 }

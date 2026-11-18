@@ -1,6 +1,8 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
+import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
 
 import com.sun.net.httpserver.HttpServer;
 import io.netty.handler.codec.http.HttpMethod;
@@ -85,8 +87,8 @@ class HttpBatchSenderTest {
             batchBytes,
             maxBufferedBytes,
             2,
-            60_000,
-            60_000,
+            OUT_OF_REACH_MILLIS,
+            OUT_OF_REACH_MILLIS,
             false,
             new Backoff(10, 50)),
         new TextPayload(),
@@ -97,7 +99,7 @@ class HttpBatchSenderTest {
   /// way a shutdown does it for an event loop
   static void close(HttpBatchSender<?> sender) throws Exception {
     sender.endThread();
-    sender.finish().get(10, TimeUnit.SECONDS);
+    sender.finish().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
   }
 
   /// No log server listens on port 1, connecting fails at once
@@ -220,16 +222,16 @@ class HttpBatchSenderTest {
       late.log(request("/late"));
       early.close();
       CompletableFuture<Void> stopped = busy.finish();
-      assertThat(bodies.poll(10, TimeUnit.SECONDS)).isEqualTo("/early\n");
+      assertThat(bodies.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/early\n");
       assertThat(stopped).as("one batcher still open").isNotDone();
       assertThat(late.log(request("/accepted"))).as("open batchers still log").isTrue();
       late.close();
       late.close();
-      stopped.get(10, TimeUnit.SECONDS);
-      assertThat(bodies.poll(10, TimeUnit.SECONDS)).isEqualTo("/late\n/accepted\n");
+      stopped.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      assertThat(bodies.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/late\n/accepted\n");
       assertThat(busy.droppedCount()).isZero();
     } finally {
-      server.stop(0);
+      TestingParameters.stop(server);
     }
   }
 
@@ -272,12 +274,12 @@ class HttpBatchSenderTest {
         logger.logRequest(request(path));
       }
       logger.close();
-      sender.stopped().get(10, TimeUnit.SECONDS);
+      sender.stopped().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
       assertThat(bodies.poll()).isEqualTo("/a\n/b\n/c\n");
       assertThat(contentTypes.poll()).isEqualTo("text/plain");
       assertThat(sender.droppedCount()).isZero();
     } finally {
-      server.stop(0);
+      TestingParameters.stop(server);
     }
   }
 }

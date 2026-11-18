@@ -2,6 +2,9 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
+import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
+import static org.sensepitch.edge.TestingParameters.await;
 
 import com.sun.net.httpserver.HttpServer;
 import io.netty.handler.codec.http.HttpMethod;
@@ -67,8 +70,7 @@ class ReloadableRequestLoggerTest {
     if (logger != null) {
       logger.close();
     }
-    // lets a running exchange write its answer, see `OtlpLogDestinationTest.stop()`
-    server.stop(1);
+    TestingParameters.stop(server);
   }
 
   RequestLogDestinationConfig otlp(String name, int flushIntervalMillis) {
@@ -113,10 +115,11 @@ class ReloadableRequestLoggerTest {
   @Test
   void unchangedDestinationsAreKept() {
     logger =
-        RequestLoggerFactory.create(config(stdout(false), otlp("vl", 60_000)), stdout, metrics);
+        RequestLoggerFactory.create(
+            config(stdout(false), otlp("vl", OUT_OF_REACH_MILLIS)), stdout, metrics);
     List<ReloadableRequestLogger.Destination> before = logger.destinations();
     logOneRequest();
-    reload(config(stdout(false), otlp("vl", 60_000)));
+    reload(config(stdout(false), otlp("vl", OUT_OF_REACH_MILLIS)));
     assertThat(logger.destinations()).containsExactlyElementsOf(before);
     assertThat(received).as("nothing sent, the buffer is kept").isEmpty();
   }
@@ -124,17 +127,19 @@ class ReloadableRequestLoggerTest {
   /// A changed destination is replaced, the old one sends what it buffered when closed
   @Test
   void changedDestinationIsReplaced() throws Exception {
-    logger = RequestLoggerFactory.create(config(otlp("vl", 60_000)), stdout, metrics);
+    logger = RequestLoggerFactory.create(config(otlp("vl", OUT_OF_REACH_MILLIS)), stdout, metrics);
     var before = logger.destinations().getFirst();
     logOneRequest();
     reload(config(otlp("vl", 30_000)));
     assertThat(logger.destinations().getFirst()).isNotSameAs(before);
-    assertThat(received.poll(10, TimeUnit.SECONDS))
+    assertThat(received.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS))
         .as("buffered record sent by the old destination after the end marker")
         .isOne();
     logOneRequest();
     logger.close();
-    assertThat(received.poll(10, TimeUnit.SECONDS)).as("the new destination logs").isOne();
+    assertThat(received.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+        .as("the new destination logs")
+        .isOne();
   }
 
   /// A removed destination finishes after the grace period, nothing is buffered, so its gauge
@@ -142,13 +147,11 @@ class ReloadableRequestLoggerTest {
   @Test
   void removedDestinationIsClosed() throws Exception {
     logger =
-        RequestLoggerFactory.create(config(stdout(false), otlp("vl", 60_000)), stdout, metrics);
+        RequestLoggerFactory.create(
+            config(stdout(false), otlp("vl", OUT_OF_REACH_MILLIS)), stdout, metrics);
     assertThat(queuedDestinations()).contains("vl");
     reload(config(stdout(true)));
-    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-    while (queuedDestinations().contains("vl") && System.nanoTime() < deadline) {
-      Thread.sleep(10);
-    }
+    await("removed destination ended", () -> !queuedDestinations().contains("vl"));
     assertThat(queuedDestinations()).doesNotContain("vl");
     logOneRequest();
     assertThat(stdout.lines()).singleElement().asString().startsWith("RQ0 ");
@@ -157,13 +160,13 @@ class ReloadableRequestLoggerTest {
   /// Switching the request log off ends its destinations, switching it on creates them again
   @Test
   void disableAndEnableByReload() throws Exception {
-    logger = RequestLoggerFactory.create(config(otlp("vl", 60_000)), stdout, metrics);
+    logger = RequestLoggerFactory.create(config(otlp("vl", OUT_OF_REACH_MILLIS)), stdout, metrics);
     logOneRequest();
     reload(RequestLogConfig.builder().disabled(true).build());
     assertThat(logger.destinations()).isEmpty();
     assertThat(awaitReceived(1)).as("sent after the end marker").isOne();
     logOneRequest();
-    reload(config(otlp("vl", 60_000)));
+    reload(config(otlp("vl", OUT_OF_REACH_MILLIS)));
     logOneRequest();
     logger.close();
     assertThat(awaitReceived(1)).as("only the record after enabling").isOne();
@@ -174,9 +177,9 @@ class ReloadableRequestLoggerTest {
   @Test
   void finishCoversDrainingDestinations() throws Exception {
     status = 503;
-    logger = RequestLoggerFactory.create(config(otlp("old", 60_000)), stdout, metrics);
+    logger = RequestLoggerFactory.create(config(otlp("old", OUT_OF_REACH_MILLIS)), stdout, metrics);
     logOneRequest();
-    reload(config(otlp("new", 60_000)));
+    reload(config(otlp("new", OUT_OF_REACH_MILLIS)));
     logOneRequest();
     logger.endThread();
     CompletableFuture<Void> finished = logger.finish();
@@ -184,23 +187,19 @@ class ReloadableRequestLoggerTest {
     assertThat(finished).isNotDone();
     assertThat(logger.unsent()).containsExactlyInAnyOrderEntriesOf(Map.of("old", 1, "new", 1));
     status = 200;
-    finished.get(10, TimeUnit.SECONDS);
+    finished.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
     assertThat(logger.unsent()).isEmpty();
     assertThat(awaitReceived(2)).isEqualTo(2);
   }
 
-  void awaitAttempts(int expected) throws InterruptedException {
-    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-    while (attempts.get() < expected && System.nanoTime() < deadline) {
-      Thread.sleep(5);
-    }
-    assertThat(attempts.get()).isGreaterThanOrEqualTo(expected);
+  void awaitAttempts(int expected) throws Exception {
+    await("at least " + expected + " export attempts", () -> attempts.get() >= expected);
   }
 
   /// A configuration that fails closes only the destinations created for it, the active ones stay
   @Test
   void failingPrepareKeepsTheActiveDestinations() {
-    logger = RequestLoggerFactory.create(config(otlp("vl", 60_000)), stdout, metrics);
+    logger = RequestLoggerFactory.create(config(otlp("vl", OUT_OF_REACH_MILLIS)), stdout, metrics);
     List<ReloadableRequestLogger.Destination> before = logger.destinations();
     RequestLogDestinationConfig noEndpoint =
         RequestLogDestinationConfig.builder()
@@ -208,7 +207,9 @@ class ReloadableRequestLoggerTest {
             .name("broken")
             .otlp(OtlpConfig.builder().build())
             .build();
-    assertThatThrownBy(() -> logger.prepare(config(otlp("vl", 60_000), otlp("new", 1), noEndpoint)))
+    assertThatThrownBy(
+            () ->
+                logger.prepare(config(otlp("vl", OUT_OF_REACH_MILLIS), otlp("new", 1), noEndpoint)))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("endpoint missing");
     assertThat(queuedDestinations())
@@ -222,18 +223,20 @@ class ReloadableRequestLoggerTest {
   }
 
   /// Sum of the records received, waiting until the expected number arrived
-  int awaitReceived(int expected) throws InterruptedException {
-    int sum = 0;
-    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-    while (sum < expected && System.nanoTime() < deadline) {
-      Integer records = received.poll(100, TimeUnit.MILLISECONDS);
-      if (records != null) {
-        sum += records;
-      }
-    }
+  int awaitReceived(int expected) throws Exception {
+    int[] sum = {0};
+    await(
+        "at least " + expected + " received records",
+        () -> {
+          Integer records;
+          while (sum[0] < expected && (records = received.poll()) != null) {
+            sum[0] += records;
+          }
+          return sum[0] >= expected;
+        });
     // anything arriving late would be a duplicate
     Integer more = received.poll(100, TimeUnit.MILLISECONDS);
-    return more == null ? sum : sum + more;
+    return more == null ? sum[0] : sum[0] + more;
   }
 
   String endpoint() {
@@ -250,9 +253,7 @@ class ReloadableRequestLoggerTest {
     for (int i = 0; i < 50; i++) {
       logOneRequest();
     }
-    while (attempts.get() == 0) {
-      Thread.sleep(5);
-    }
+    awaitAttempts(1);
     long start = System.nanoTime();
     reload(config(otlp("vl", 2)));
     assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start))
@@ -272,9 +273,7 @@ class ReloadableRequestLoggerTest {
     for (int i = 0; i < 20; i++) {
       logOneRequest();
     }
-    while (attempts.get() == 0) {
-      Thread.sleep(5);
-    }
+    awaitAttempts(1);
     long start = System.nanoTime();
     reload(config(stdout(false)));
     assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start))
@@ -299,14 +298,9 @@ class ReloadableRequestLoggerTest {
     for (int i = 0; i < 10; i++) {
       logOneRequest();
     }
-    while (attempts.get() == 0) {
-      Thread.sleep(5);
-    }
+    awaitAttempts(1);
     reload(config(stdout(false)));
-    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-    while (queuedDestinations().contains("vl") && System.nanoTime() < deadline) {
-      Thread.sleep(10);
-    }
+    await("removed destination ended", () -> !queuedDestinations().contains("vl"));
     assertThat(queuedDestinations()).as("the destination ended").doesNotContain("vl");
     assertThat(dropped("vl")).isEqualTo(10);
   }
@@ -316,7 +310,7 @@ class ReloadableRequestLoggerTest {
   @Test
   void lateRecordGoesToTheOldDestination() throws Exception {
     OtlpConfig otlpConfig =
-        OtlpConfig.builder().endpoint(endpoint()).flushIntervalMillis(60_000).build();
+        OtlpConfig.builder().endpoint(endpoint()).flushIntervalMillis(OUT_OF_REACH_MILLIS).build();
     OtlpRequestLogger old =
         new OtlpRequestLogger(new OtlpLogDestination("old", otlpConfig, metrics));
     old.logRequest(TestRequestLogInfo.of(HttpMethod.GET, 200));
@@ -324,7 +318,7 @@ class ReloadableRequestLoggerTest {
     old.logRequest(TestRequestLogInfo.of(HttpMethod.GET, 200));
     assertThat(stopped).as("waits for the end marker").isNotDone();
     old.endThread();
-    stopped.get(10, TimeUnit.SECONDS);
+    stopped.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
     assertThat(awaitReceived(2)).isEqualTo(2);
     assertThat(dropped("old")).isZero();
   }
@@ -334,7 +328,7 @@ class ReloadableRequestLoggerTest {
   @Test
   void finishedDestinationAllocatesNoBatch() throws Exception {
     OtlpConfig otlpConfig =
-        OtlpConfig.builder().endpoint(endpoint()).flushIntervalMillis(60_000).build();
+        OtlpConfig.builder().endpoint(endpoint()).flushIntervalMillis(OUT_OF_REACH_MILLIS).build();
     OtlpLogDestination destination = new OtlpLogDestination("old", otlpConfig, metrics);
     OtlpRequestLogger old = new OtlpRequestLogger(destination);
     destination.finish();
@@ -351,7 +345,10 @@ class ReloadableRequestLoggerTest {
   @Test
   void closeClosesAll() {
     logger =
-        RequestLoggerFactory.create(config(otlp("a", 60_000), otlp("b", 60_000)), stdout, metrics);
+        RequestLoggerFactory.create(
+            config(otlp("a", OUT_OF_REACH_MILLIS), otlp("b", OUT_OF_REACH_MILLIS)),
+            stdout,
+            metrics);
     logger.close();
     assertThat(queuedDestinations()).isEmpty();
     logger = null;
