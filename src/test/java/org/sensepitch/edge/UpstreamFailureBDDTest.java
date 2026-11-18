@@ -24,6 +24,7 @@ import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.Promise;
 import java.io.IOException;
+import java.lang.System.Logger.Level;
 import java.net.ConnectException;
 import java.util.ArrayList;
 import java.util.List;
@@ -51,7 +52,8 @@ class UpstreamFailureBDDTest {
           .when_the_upstream_write_fails()
           .then_the_client_received_only_a_bad_gateway("Upstream write problem")
           .then_the_connections_are_closed()
-          .then_the_outcome_is(RequestOutcome.UPSTREAM_WRITE_FAILED);
+          .then_the_outcome_is(RequestOutcome.UPSTREAM_WRITE_FAILED)
+          .then_the_failure_is_reported_at_debug(RequestOutcome.UPSTREAM_WRITE_FAILED);
     }
   }
 
@@ -63,7 +65,8 @@ class UpstreamFailureBDDTest {
           .when_the_upstream_connect_fails()
           .then_the_client_received_only_a_bad_gateway("Upstream connection problem")
           .then_the_client_connection_is_closed()
-          .then_the_outcome_is(RequestOutcome.UPSTREAM_CONNECT_FAILED);
+          .then_the_outcome_is(RequestOutcome.UPSTREAM_CONNECT_FAILED)
+          .then_the_failure_is_reported_at_debug(RequestOutcome.UPSTREAM_CONNECT_FAILED);
     }
   }
 
@@ -76,7 +79,8 @@ class UpstreamFailureBDDTest {
           .when_the_upstream_write_fails()
           .then_the_client_received_only_the_upstream_response(0)
           .then_the_connections_are_closed()
-          .then_the_outcome_is(RequestOutcome.UPSTREAM_WRITE_FAILED);
+          .then_the_outcome_is(RequestOutcome.UPSTREAM_WRITE_FAILED)
+          .then_the_failure_is_reported_at_debug(RequestOutcome.UPSTREAM_WRITE_FAILED);
     }
   }
 
@@ -91,7 +95,8 @@ class UpstreamFailureBDDTest {
           .when_the_upstream_write_fails()
           .then_the_client_received_only_the_upstream_response(2)
           .then_the_connections_are_closed()
-          .then_the_outcome_is(RequestOutcome.UPSTREAM_WRITE_FAILED);
+          .then_the_outcome_is(RequestOutcome.UPSTREAM_WRITE_FAILED)
+          .then_the_failure_is_reported_at_debug(RequestOutcome.UPSTREAM_WRITE_FAILED);
     }
   }
 
@@ -109,7 +114,8 @@ class UpstreamFailureBDDTest {
           .then_the_client_received_the_complete_response()
           .then_the_client_connection_is_open()
           .then_the_upstream_is_closed()
-          .then_the_outcome_is(RequestOutcome.COMPLETED);
+          .then_the_outcome_is(RequestOutcome.COMPLETED)
+          .then_the_late_failure_is_ignored();
     }
   }
 
@@ -136,13 +142,17 @@ class UpstreamFailureBDDTest {
           .when_the_client_sends_another_request()
           .when_the_upstream_connect_fails()
           .then_the_client_received_only_a_bad_request()
-          .then_the_client_connection_is_closed();
+          .then_the_client_connection_is_closed()
+          .then_the_outcome_is(RequestOutcome.COMPLETED)
+          .then_the_late_failure_is_ignored();
     }
   }
 
-  static class Steps implements AutoCloseable {
+  class Steps implements AutoCloseable {
     private final ProxyMetrics metrics = new ProxyMetrics();
     private final RequestLogCapture requestLog = new RequestLogCapture();
+    private final List<Throwable> loggedErrors = new ArrayList<>();
+    private Throwable failure;
     private final HoldLastContentWrite heldWrite = new HoldLastContentWrite();
     private EmbeddedChannel ingress;
     private EmbeddedChannel upstream;
@@ -167,10 +177,16 @@ class UpstreamFailureBDDTest {
 
     /// Sends a request without content through the ingress pipeline, shared by the givens
     private void startRequest(Upstream upstreamConnector) {
+      RequestLogger logger = requestLog.plainText();
       ingress =
           new EmbeddedChannel(
               new TimeoutsTest.FakeSslHandler(),
-              new RequestLoggingHandler(metrics, requestLog.plainText()),
+              new RequestLoggingHandler(
+                  metrics,
+                  info -> {
+                    loggedErrors.add(info.error());
+                    logger.logRequest(info);
+                  }),
               new HttpServerKeepAliveHandler(),
               new DownstreamHandler(upstreamConnector, metrics),
               new ExceptionHandler(metrics));
@@ -208,14 +224,16 @@ class UpstreamFailureBDDTest {
 
     @Step
     Steps when_the_upstream_write_fails() {
-      heldWrite.promise.setFailure(new IOException("Broken pipe"));
+      failure = new IOException("Broken pipe");
+      heldWrite.promise.setFailure(failure);
       ingress.runPendingTasks();
       return this;
     }
 
     @Step
     Steps when_the_upstream_connect_fails() {
-      connecting.setFailure(new ConnectException("Connection refused"));
+      failure = new ConnectException("Connection refused");
+      connecting.setFailure(failure);
       ingress.runPendingTasks();
       return this;
     }
@@ -311,6 +329,40 @@ class UpstreamFailureBDDTest {
     @Step
     Steps then_the_outcome_is(RequestOutcome outcome) {
       assertThat(requestLog.outcomes()).containsExactly(outcome);
+      assertThat(metrics.requestOutcomeCounter.collect().getDataPoints())
+          .singleElement()
+          .satisfies(
+              point -> {
+                assertThat(point.getLabels().get("outcome")).isEqualTo(outcome.value());
+                assertThat(point.getValue()).isEqualTo(1);
+              });
+      return this;
+    }
+
+    @Step
+    Steps then_the_failure_is_reported_at_debug(RequestOutcome outcome) {
+      assertThat(loggedErrors).containsExactly(failure);
+      assertThat(logs.entries())
+          .filteredOn(entry -> entry.source().equals(DownstreamHandler.class.getName()))
+          .singleElement()
+          .satisfies(
+              entry -> {
+                assertThat(entry.info().level()).isEqualTo(Level.DEBUG);
+                assertThat(entry.message())
+                    .contains(
+                        "upstream failure",
+                        "outcome=" + outcome,
+                        failure.getClass().getName(),
+                        failure.getMessage());
+              });
+      return this;
+    }
+
+    @Step
+    Steps then_the_late_failure_is_ignored() {
+      assertThat(loggedErrors).containsExactly((Throwable) null);
+      assertThat(logs.messages(DownstreamHandler.class))
+          .noneMatch(message -> message.contains("upstream failure"));
       return this;
     }
 

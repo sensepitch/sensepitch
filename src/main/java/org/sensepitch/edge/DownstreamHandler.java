@@ -150,7 +150,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       LOG.trace(ctx.channel(), "upstream failure after the exchange ended: " + cause);
       return;
     }
-    LOG.error(ctx.channel(), "upstream failure, outcome=" + outcome, cause);
+    LOG.debug(ctx.channel(), "upstream failure, outcome=" + outcome + ": " + cause);
     RequestLoggingHandler requestLog = RequestLoggingHandler.find(ctx);
     if (requestLog != null) {
       requestLog.setException(cause);

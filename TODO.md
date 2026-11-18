@@ -28,10 +28,6 @@ implementation.
 - [ ] Flaky, not investigated: `ProxyShutdownIT`,
   `ShadedJarIT.sigtermSendsTheRequestLogAndExits`
   - P2: also the `SIGTERM` path.
-- [ ] Error log flood while an upstream is down: `DownstreamHandler.failExchange` logs every
-  upstream connect or write failure as error with stack trace, one per request
-  - P2: an operator sees one error per request. A misbehaving upstream is counted and logged at
-    debug at most, see the log levels in `AGENTS.md`; the general review is under Upstream.
 - [ ] `RequestLoggingHandler.write` / `log`: on a write error, switch the response, log a
   different status code, or log content length 0?
   - P2: change status to 499 although if its written already, log bytes delivered, we already
@@ -161,7 +157,7 @@ Decisions, alternatives and limitations are in
     of one, see [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md).
 - [ ] Review the existing log statements against the log levels in `AGENTS.md`: a misbehaving
   client or upstream is counted and logged at debug at most. E.g. `ExceptionHandler` logs "other"
-  errors; `DownstreamHandler.failExchange` is under Bugs.
+  errors.
 
 ## Circuit breaker
 
@@ -359,6 +355,11 @@ the failure threshold for upstreams is under Upstream.
 - [ ] add CONTRIBUTING.md
 
 ## Done
+
+- [x] Error log flood while an upstream is down (2026-11-17):
+  `DownstreamHandler.failExchange` logs upstream connect and write failures at debug with the
+  outcome, exception type and message. Request-log exceptions, outcomes, metrics and response
+  behavior are preserved. `UpstreamFailureBDDTest` checks these reports and ignored late failures.
 
 - [x] Accept grace at shutdown (2026-11-17): `shutdownAcceptGraceMillis` (default 0) keeps
   accepting and serving after readiness turned `503`, within the shutdown deadline and without
