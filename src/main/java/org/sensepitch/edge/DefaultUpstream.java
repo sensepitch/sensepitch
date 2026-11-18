@@ -23,11 +23,13 @@ public class DefaultUpstream implements Upstream {
   private final String name;
   private final String target;
   private final Bootstrap bootstrap;
+  private final ProxyMetrics metrics;
 
   /// @param name identifies the upstream within the configuration, see [UpstreamRegistry]
   public DefaultUpstream(ProxyContext ctx, String name, UpstreamConfig cfg) {
     this.name = name;
     this.target = cfg.target();
+    this.metrics = ctx.metrics();
     String[] sa = cfg.target().split(":");
     int port = 80;
     String target = sa[0];
@@ -86,9 +88,16 @@ public class DefaultUpstream implements Upstream {
                   @Override
                   public void initChannel(SocketChannel ch) {
                     addHttpHandler(ch.pipeline());
-                    ch.pipeline().addLast("forward", new ForwardHandler(ingress));
+                    ch.pipeline()
+                        .addLast("forward", new ForwardHandler(ingress, metrics, metricsName()));
                   }
                 });
     return bs.connect();
+  }
+
+  /// Label of the upstream metrics, the name or, without one, the target, as in
+  /// [ProxyMetrics#upstreamRequestsInFlight(Upstream)]
+  private String metricsName() {
+    return name != null ? name : target;
   }
 }

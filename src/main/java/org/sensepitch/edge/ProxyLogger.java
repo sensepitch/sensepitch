@@ -3,21 +3,37 @@ package org.sensepitch.edge;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import java.lang.System.Logger.Level;
-import java.net.InetSocketAddress;
 
 /// Logging facade of the proxy, with methods that render channel ids consistently.
 ///
 /// Messages are forwarded to Log4j2 via [LogTarget], which also explains why diagnostics and
 /// the request log go to different streams.
 ///
-/// Levels:
-/// - `ERROR`: a fault of ours or something an operator has to act on.
+/// ## Levels
+///
+/// This is the central description of the log levels; the log methods refer to it.
+///
+/// - `ERROR`: a fault of ours or something an operator has to act on, e.g. a configuration that
+///   cannot be applied or a request log export that loses records. Never for a request level
+///   event, see below.
 /// - `WARNING`: a problem in our own setup or state that may need action, never for a misbehaving
 ///   client or upstream.
 /// - `INFO`: lifecycle, e.g. start, configuration, shutdown.
-/// - `DEBUG`: helps operators find root causes, for unusual events that do not happen for every
-///   request, e.g. a client or upstream misbehaving. Off in the default configuration.
+/// - `DEBUG`: what an operator needs to find the root cause of a request level event: channel,
+///   phase, cause and stack trace. Off in the default configuration.
 /// - `TRACE`: internals, several lines per request.
+///
+/// **Request level events are logged at `DEBUG`, never at `INFO` or above, errors included.** A
+/// request level event is one that can happen for a request or a connection: a client or upstream
+/// misbehaving, an upstream outage, a timeout, but also an unexpected exception that may be a bug
+/// of ours. Such an event can repeat for every request, thousands of times per second, e.g.
+/// during an outage or an attack. At `ERROR` it would flood the log, bury the lifecycle messages
+/// and cost I/O on the event loops.
+///
+/// **Every request level event is counted in a metric**, see [ProxyMetrics], or recorded in the
+/// request log, so it is never silent: the metric is what an operator watches and alerts on, and
+/// `DEBUG` is switched on to investigate. An `ERROR` is for faults that do not repeat per
+/// request; one that may, e.g. a failing request log export, logs once and counts the rest.
 ///
 /// Tracing is available by default: every logger is a [WithTracing] instance that asks Log4j2, so
 /// the configured level decides, at the cost of a level check per trace call. The level is set in
@@ -54,39 +70,58 @@ public interface ProxyLogger {
     return get(source.getName());
   }
 
+  /// Whether `TRACE` is on, to skip building trace messages, see [ProxyLogger] "Levels"
   boolean isTraceEnabled();
 
+  /// Logs a record at its own level, see [ProxyLogger] "Levels" for which level to use
   void log(LogInfo record);
 
+  /// At `TRACE`, for internals, see [ProxyLogger] "Levels"
   void trace(String message);
 
+  /// At `TRACE`, for internals, see [ProxyLogger] "Levels"
   void trace(Channel downstream, String message);
 
+  /// At `TRACE`, the type of a message read from a channel, see [ProxyLogger] "Levels"
   void traceChannelRead(ChannelHandlerContext ctx, Object msg);
 
+  /// At `TRACE`, for internals, see [ProxyLogger] "Levels"
   void trace(Channel downstream, Channel upstream, String message);
 
+  /// At `INFO`, for lifecycle messages, see [ProxyLogger] "Levels"
   void info(String message);
 
+  /// At `WARNING`, for a problem in our own setup, see [ProxyLogger] "Levels"
   void warn(String message);
 
+  /// At `DEBUG`, for a request level event that is counted in a metric, see [ProxyLogger] "Levels"
   void debug(Channel channel, String message);
 
+  /// At `DEBUG` with the stack trace, for a request level event that is counted in a metric, see
+  /// [ProxyLogger] "Levels"
+  void debug(Channel channel, String message, Throwable cause);
+
+  /// At `DEBUG` with the stack trace, for a request level event without a channel, see
+  /// [ProxyLogger] "Levels"
+  void debug(String message, Throwable cause);
+
+  /// At `ERROR`, never for a request level event, see [ProxyLogger] "Levels"
   void error(Channel channel, Throwable cause);
 
+  /// At `ERROR`, never for a request level event, see [ProxyLogger] "Levels"
   void error(Channel channel, String msg, Throwable cause);
 
+  /// At `ERROR`, never for a request level event, see [ProxyLogger] "Levels"
   void error(Channel downstream, Channel upstream, String msg, Throwable cause);
 
+  /// At `ERROR`, never for a request level event, see [ProxyLogger] "Levels"
   void error(Channel channel, String msg);
 
+  /// At `ERROR`, never for a request level event, see [ProxyLogger] "Levels"
   void error(String msg);
 
+  /// At `ERROR`, never for a request level event, see [ProxyLogger] "Levels"
   void error(String msg, Throwable cause);
-
-  void downstreamError(Channel downstream, String msg, Throwable cause);
-
-  void upstreamError(Channel upstream, String msg, Throwable cause);
 
   default String channelId(Channel channel) {
     return LogTarget.localChannelId(channel);
@@ -103,26 +138,6 @@ public interface ProxyLogger {
 
     LogTarget target() {
       return target;
-    }
-
-    @Override
-    public void downstreamError(Channel downstream, String msg, Throwable cause) {
-      String remoteHost = "-";
-      if (downstream.remoteAddress() instanceof InetSocketAddress) {
-        InetSocketAddress addr = (InetSocketAddress) downstream.remoteAddress();
-        remoteHost = addr.getAddress().getHostAddress();
-      }
-      error(downstream, "DOWNSTREAM ERROR " + msg + " " + remoteHost + " " + cause, cause);
-    }
-
-    @Override
-    public void upstreamError(Channel upstream, String msg, Throwable cause) {
-      String remoteHost = "-";
-      if (upstream.remoteAddress() instanceof InetSocketAddress) {
-        InetSocketAddress addr = (InetSocketAddress) upstream.remoteAddress();
-        remoteHost = addr.getAddress().getHostAddress();
-      }
-      error(upstream, "UPSTREAM ERROR " + msg + " " + remoteHost + " " + cause);
     }
 
     @Override
@@ -226,6 +241,22 @@ public interface ProxyLogger {
     @Override
     public void debug(Channel channel, String message) {
       log(LogInfo.builder().level(Level.DEBUG).channel(channel).message(message).build());
+    }
+
+    @Override
+    public void debug(Channel channel, String message, Throwable cause) {
+      log(
+          LogInfo.builder()
+              .level(Level.DEBUG)
+              .channel(channel)
+              .message(message)
+              .error(cause)
+              .build());
+    }
+
+    @Override
+    public void debug(String message, Throwable cause) {
+      log(LogInfo.builder().level(Level.DEBUG).message(message).error(cause).build());
     }
   }
 

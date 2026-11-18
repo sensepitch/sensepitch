@@ -179,6 +179,8 @@ sensepitch_ingress_response_size_bytes_bucket{ingress="example.com",le="2097152.
 sensepitch_ingress_response_size_bytes_bucket{ingress="example.com",le="+Inf"} 2
 sensepitch_ingress_response_size_bytes_count{ingress="example.com"} 2
 sensepitch_ingress_response_size_bytes_sum{ingress="example.com"} 200.0
+# TYPE sensepitch_ip_lookup_errors_total counter
+sensepitch_ip_lookup_errors_total 0.0
 # HELP sensepitch_netty_allocator_used_memory_bytes Memory used by the netty byte buffer allocators
 # TYPE sensepitch_netty_allocator_used_memory_bytes gauge
 sensepitch_netty_allocator_used_memory_bytes{allocator="default",type="direct"} <bytes>
@@ -194,6 +196,8 @@ sensepitch_request_log_buffered_bytes{destination="otlp"} 4096.0
 # TYPE sensepitch_request_log_dropped_total counter
 sensepitch_request_log_dropped_total{destination="otlp"} 2.0
 sensepitch_request_log_dropped_total{destination="stdout"} 0.0
+# TYPE sensepitch_request_log_errors_total counter
+sensepitch_request_log_errors_total 0.0
 # HELP sensepitch_request_log_export_failed_total Batches of request log records given up, because retrying cannot succeed
 # TYPE sensepitch_request_log_export_failed_total counter
 sensepitch_request_log_export_failed_total{destination="otlp"} 1.0

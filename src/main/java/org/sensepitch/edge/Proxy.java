@@ -384,7 +384,7 @@ public class Proxy implements ProxyContext {
                   pipeline.addLast(trackIngressConnectionsHandler);
                   if (ja4Config.enable()) {
                     // must see the raw ClientHello, so before TLS is terminated
-                    pipeline.addLast(new Ja4Handler());
+                    pipeline.addLast(new Ja4Handler(metrics));
                   }
                   pipeline.addLast(new SniHandler(sniMapping));
                   pipeline.addLast(new CountByteIoHandler());

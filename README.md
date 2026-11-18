@@ -256,6 +256,23 @@ Requests by traffic type and client country. `flavor` is the value of the `Sp-Tr
 header: `human`, `bot` or `unknown`, also when no protection handled the request. Before the
 `Sp-*` headers, the values were `user`, `crawler`, `deflect` and `unknown`.
 
+### Request level errors
+
+A failure that can happen per request or connection is never logged as an error, an outage or an
+attack would flood the log. It is counted, and logged at debug level with the details:
+
+- `sensepitch_ingress_request_errors_total{ingress,phase,type}`: exceptions on the client
+  connection. `type="other"` is an unexpected exception, possibly a bug, worth an alert; `ja4` a
+  failed TLS fingerprint.
+- `sensepitch_upstream_errors_total{upstream,type}`: an upstream that closed during a request
+  (`closed_in_flight`), sent data after the response (`unexpected_data`) or failed after it
+  (`exception_without_request`).
+- `sensepitch_request_log_errors_total`: request log records that could not be written.
+- `sensepitch_ip_lookup_errors_total`: failed lookups in an IP database, e.g. a corrupt file.
+
+To see the details, enable debug for the package `org.sensepitch.edge` in the Log4j2
+configuration.
+
 ### `sensepitch_request_log_dropped_total{destination="..."}`
 
 Request log records dropped because a destination could not keep up, by `destination`: `stdout`,

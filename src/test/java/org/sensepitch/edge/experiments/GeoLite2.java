@@ -6,6 +6,7 @@ import org.sensepitch.edge.GeoIp2Config;
 import org.sensepitch.edge.IpLookupConfig;
 import org.sensepitch.edge.IpTraits;
 import org.sensepitch.edge.IpTraitsLookup;
+import org.sensepitch.edge.ProxyMetrics;
 
 /// Play with GeoLite2 and see what responses we get.
 ///
@@ -33,7 +34,7 @@ public class GeoLite2 {
             //          .ipInfoPath( System.getenv("HOME")
             //          + "/proj/ipinfo-lite/ipinfo_lite.mmdb")
             .build();
-    traitsLookup = new CombinedIpTraitsLookup(cfg);
+    traitsLookup = new CombinedIpTraitsLookup(cfg, new ProxyMetrics());
     final String address = "80.187.82.121";
     lookup(address);
     lookup("93.189.29.26");

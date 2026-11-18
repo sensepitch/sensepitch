@@ -13,14 +13,16 @@ public class CombinedIpTraitsLookupTest {
 
   @RegisterExtension LogCapture logs = new LogCapture();
 
+  ProxyMetrics metrics = new ProxyMetrics();
+
   @Test
   public void test() throws IOException {
-    var x = new CombinedIpTraitsLookup(IpLookupConfig.builder().build());
+    var x = new CombinedIpTraitsLookup(IpLookupConfig.builder().build(), metrics);
   }
 
   @Test
   public void crawlerName() throws IOException {
-    var lookup = new CombinedIpTraitsLookup(IpLookupConfig.builder().build());
+    var lookup = new CombinedIpTraitsLookup(IpLookupConfig.builder().build(), metrics);
     IpTraits amazonbot = lookup(lookup, "3.210.223.61");
     assertThat(amazonbot.crawlerName()).isEqualTo("amazon:amazonbot");
     IpTraits googlebot = lookup(lookup, "192.178.4.1");
@@ -32,7 +34,7 @@ public class CombinedIpTraitsLookupTest {
 
   @Test
   public void crawlerNameIpv6() throws IOException {
-    var lookup = new CombinedIpTraitsLookup(IpLookupConfig.builder().build());
+    var lookup = new CombinedIpTraitsLookup(IpLookupConfig.builder().build(), metrics);
     assertThat(lookup(lookup, "2001:4860:4801:10::1").crawlerName()).isEqualTo("google:googlebot");
     assertThat(lookup(lookup, "2001:db8::1").isCrawler()).isFalse();
   }
@@ -51,7 +53,8 @@ public class CombinedIpTraitsLookupTest {
         new CombinedIpTraitsLookup(
             List.of(
                 CombinedIpTraitsLookup.asnTraits(addr -> 15169),
-                CombinedIpTraitsLookup.countryTraits(addr -> "US")));
+                CombinedIpTraitsLookup.countryTraits(addr -> "US")),
+            metrics);
     IpTraits traits = lookup(lookup, "192.178.4.1");
     assertThat(traits.asn()).isEqualTo(15169);
     assertThat(traits.isoCountry()).isEqualTo("US");
@@ -65,7 +68,8 @@ public class CombinedIpTraitsLookupTest {
         new CombinedIpTraitsLookup(
             List.of(
                 CombinedIpTraitsLookup.asnTraits(addr -> -1),
-                CombinedIpTraitsLookup.countryTraits(addr -> null)));
+                CombinedIpTraitsLookup.countryTraits(addr -> null)),
+            metrics);
     IpTraits traits = lookup(lookup, "10.0.0.1");
     assertThat(traits.isAsnKnown()).isFalse();
     assertThat(traits.isoCountry()).isNull();
@@ -78,12 +82,13 @@ public class CombinedIpTraitsLookupTest {
         new CombinedIpTraitsLookup(
             List.of(
                 CombinedIpTraitsLookup.countryTraits(addr -> "DE"),
-                CombinedIpTraitsLookup.countryTraits(addr -> "AT")));
+                CombinedIpTraitsLookup.countryTraits(addr -> "AT")),
+            metrics);
     assertThat(lookup(lookup, "1.2.3.4").isoCountry()).isEqualTo("AT");
   }
 
-  /// A broken database must not fail the request: the error is logged and the other lookups and
-  /// the crawler lists still apply.
+  /// A broken database must not fail the request: the error is counted and logged at debug, the
+  /// other lookups and the crawler lists still apply.
   @Test
   public void failingLookupIsLoggedAndSkipped() throws IOException {
     var lookup =
@@ -93,13 +98,23 @@ public class CombinedIpTraitsLookupTest {
                     addr -> {
                       throw new IOException("database corrupt");
                     }),
-                CombinedIpTraitsLookup.countryTraits(addr -> "US")));
+                CombinedIpTraitsLookup.countryTraits(addr -> "US")),
+            metrics);
     IpTraits traits = lookup(lookup, "192.178.4.1");
     assertThat(traits.isAsnKnown()).isFalse();
     assertThat(traits.isoCountry()).isEqualTo("US");
     assertThat(traits.crawlerName()).isEqualTo("google:googlebot");
-    assertThat(logs.messages(CombinedIpTraitsLookup.class))
-        .anySatisfy(m -> assertThat(m).contains("database corrupt"));
+    assertThat(metrics.ipLookupErrorCounter.collect().getDataPoints().getFirst().getValue())
+        .isOne();
+    assertThat(logs.errors()).isEmpty();
+    assertThat(logs.entries())
+        .filteredOn(e -> e.info().level() == System.Logger.Level.DEBUG)
+        .singleElement()
+        .satisfies(
+            e -> {
+              assertThat(e.source()).isEqualTo(CombinedIpTraitsLookup.class.getName());
+              assertThat(e.error()).hasMessage("database corrupt");
+            });
   }
 
   private static IpTraits lookup(CombinedIpTraitsLookup lookup, String address) throws IOException {

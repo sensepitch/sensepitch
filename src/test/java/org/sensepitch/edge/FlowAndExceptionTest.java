@@ -30,6 +30,8 @@ import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.Promise;
+import java.io.IOException;
+import java.lang.System.Logger.Level;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.net.SocketException;
@@ -275,8 +277,33 @@ public class FlowAndExceptionTest {
     ingressChannel.finishAndReleaseAll();
     assertThat(upstreamChannel.isOpen()).isFalse();
     assertThat(stray.refCnt()).isZero();
-    assertThat(logs.messages(ForwardHandler.class))
-        .anySatisfy(m -> assertThat(m).contains("downstream is null"));
+    assertThat(logs.entries())
+        .filteredOn(e -> e.source().equals(ForwardHandler.class.getName()))
+        .singleElement()
+        .satisfies(
+            e -> {
+              assertThat(e.info().level()).isEqualTo(Level.DEBUG);
+              assertThat(e.info().channel()).isSameAs(upstreamChannel);
+              assertThat(e.message()).contains("downstream is null", "DefaultHttpContent");
+            });
+    assertThat(upstreamErrors("unexpected_data")).isOne();
+    assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.COMPLETED);
+    assertThat(logs.errors()).isEmpty();
+  }
+
+  /// An exception after the response reaches no ingress handler, so it is counted here
+  @Test
+  public void upstreamExceptionAfterTheResponseIsCounted() {
+    EmbeddedChannel upstream =
+        new EmbeddedChannel(new ForwardHandler(null, proxyMetrics, "upstream"));
+    upstream.pipeline().fireExceptionCaught(new IOException("late failure"));
+    assertThat(upstreamErrors("exception_without_request")).isOne();
+    assertThat(upstream.isOpen()).isFalse();
+    assertThat(logs.errors()).isEmpty();
+  }
+
+  double upstreamErrors(String type) {
+    return proxyMetrics.upstreamErrorCounter.labelValues("upstream", type).get();
   }
 
   @Test
@@ -299,6 +326,17 @@ public class FlowAndExceptionTest {
     HttpResponse response = ingressChannel.readOutbound();
     assertThat(response.status().code()).isEqualTo(400);
     assertThat(ingressChannel.isOpen()).isFalse();
+    assertThat(requestLogCapture.lines()).isNotEmpty();
+    assertThat(logs.entries())
+        .filteredOn(e -> e.source().equals(DownstreamHandler.class.getName()))
+        .singleElement()
+        .satisfies(
+            e -> {
+              assertThat(e.info().level()).isEqualTo(Level.DEBUG);
+              assertThat(e.info().channel()).isSameAs(ingressChannel);
+              assertThat(e.message()).contains("another request is unexpected", "phase=waiting");
+            });
+    assertThat(logs.errors()).isEmpty();
   }
 
   /// Body content without a request has no upstream to go to.
@@ -360,6 +398,82 @@ public class FlowAndExceptionTest {
     assertThat(response.status().code()).isEqualTo(502);
     assertThat(ingressChannel.isOpen()).isFalse();
     assertThat(upstreamChannel.isOpen()).isFalse();
+    assertThat(requestLogCapture.lines()).singleElement().asString().contains("Connection reset");
+    assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.EDGE_ERROR);
+    assertThat(
+            proxyMetrics
+                .ingressErrorCounter
+                .labelValues(SanitizeHostHandler.MISSING_HOST, "waiting", "other")
+                .get())
+        .isEqualTo(1);
+    assertThat(logs.entries())
+        .filteredOn(
+            e ->
+                e.source().equals(ForwardHandler.class.getName())
+                    && e.info().message().startsWith("upstream failure"))
+        .singleElement()
+        .satisfies(
+            e -> {
+              assertThat(e.info().level()).isEqualTo(Level.DEBUG);
+              assertThat(e.info().channel()).isSameAs(upstreamChannel);
+              assertThat(e.message()).contains("downstream=", "Connection reset");
+            });
+    assertThat(logs.errors()).isEmpty();
+  }
+
+  @Test
+  /// A possible bug of ours is a request level event as well: counted as ingress error `other`,
+  /// logged at debug with its stack trace, see [ProxyLogger]
+  public void upstreamInternalFailureIsCountedAnd502() {
+    sendGetRequest();
+    IllegalStateException cause = new IllegalStateException("upstream handler bug");
+    upstreamChannel.pipeline().fireExceptionCaught(cause);
+    rattle();
+    HttpResponse response = ingressChannel.readOutbound();
+    assertThat(response.status().code()).isEqualTo(502);
+    assertThat(ingressChannel.isOpen()).isFalse();
+    assertThat(upstreamChannel.isOpen()).isFalse();
+    assertThat(requestLogCapture.lines())
+        .singleElement()
+        .asString()
+        .contains("upstream handler bug");
+    assertThat(
+            proxyMetrics
+                .ingressErrorCounter
+                .labelValues(SanitizeHostHandler.MISSING_HOST, "waiting", "other")
+                .get())
+        .isOne();
+    assertThat(logs.errors()).isEmpty();
+    assertThat(logs.entries())
+        .filteredOn(e -> e.source().equals(ExceptionHandler.class.getName()))
+        .singleElement()
+        .satisfies(
+            e -> {
+              assertThat(e.info().level()).isEqualTo(Level.DEBUG);
+              assertThat(e.error()).hasCause(cause);
+            });
+  }
+
+  @Test
+  public void prematureUpstreamClosureIsDebugAndRequestStillReportedOnClientClose() {
+    sendGetRequest();
+    upstreamChannel.unsafe().close(upstreamChannel.voidPromise());
+    assertThat(logs.entries())
+        .filteredOn(e -> e.source().equals(ForwardHandler.class.getName()))
+        .singleElement()
+        .satisfies(
+            e -> {
+              assertThat(e.info().level()).isEqualTo(Level.DEBUG);
+              assertThat(e.info().channel()).isSameAs(upstreamChannel);
+              assertThat(e.message())
+                  .contains("request still in flight", "downstream=", "upstream=");
+            });
+    assertThat(ingressChannel.isOpen()).isTrue();
+    assertThat((Object) ingressChannel.readOutbound()).isNull();
+    assertThat(upstreamErrors("closed_in_flight")).isOne();
+    closeByPeer();
+    assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.CLIENT_ABORTED);
+    assertThat(logs.errors()).isEmpty();
   }
 
   /// A slow client fills the ingress output buffer. Upstream reading is paused and the buffer is
@@ -562,7 +676,7 @@ public class FlowAndExceptionTest {
   }
 
   Channel upstreamChannel(Channel ingressChannel) {
-    ChannelHandler forward = new ForwardHandler(ingressChannel);
+    ChannelHandler forward = new ForwardHandler(ingressChannel, proxyMetrics, "upstream");
     if (failUpstreamWrites) {
       ChannelHandler failWrites =
           new ChannelOutboundHandlerAdapter() {

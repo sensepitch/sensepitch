@@ -14,13 +14,18 @@ import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.handler.ssl.NotSslRecordException;
 import io.netty.handler.ssl.SslClosedEngineException;
 import java.io.IOException;
+import java.lang.System.Logger.Level;
 import java.net.SocketException;
 import java.nio.channels.ClosedChannelException;
+import java.util.stream.Stream;
 import javax.net.ssl.SSLHandshakeException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
-/// Classification of ingress exceptions by phase and type, and the reaction to them.
+/// Classification of ingress exceptions by phase and type, and the reaction to them. Every
+/// exception is a request level event: counted, and logged at debug only, see [ProxyLogger].
 ///
 /// @author Jens Wilke
 public class ExceptionHandlerTest {
@@ -48,6 +53,20 @@ public class ExceptionHandlerTest {
 
   /// Count of the errors in the phase and of the type. The ingress is `nil_host` before a request
   /// was read, afterwards `missing_host`, the test requests have no host header.
+  /// The only log line is at debug, on the channel, names the phase and carries the cause
+  void assertDebugLine(EmbeddedChannel channel, String phase, Throwable cause) {
+    assertThat(logs.entries())
+        .singleElement()
+        .satisfies(
+            e -> {
+              assertThat(e.source()).isEqualTo(ExceptionHandler.class.getName());
+              assertThat(e.info().level()).isEqualTo(Level.DEBUG);
+              assertThat(e.info().channel()).isSameAs(channel);
+              assertThat(e.message()).contains("phase=" + phase);
+              assertThat(e.error()).isSameAs(cause);
+            });
+  }
+
   double count(String phase, String type) {
     String ingress =
         phase.equals("handshake") || phase.equals("requesting")
@@ -78,16 +97,14 @@ public class ExceptionHandlerTest {
     assertThat(logs.messages(ExceptionHandler.class)).isEmpty();
   }
 
-  @Test
-  public void handshakeOther() {
+  @ParameterizedTest
+  @MethodSource("failures")
+  public void handshakeOther(Throwable cause) {
     EmbeddedChannel channel = beforeHandshake();
-    channel.pipeline().fireExceptionCaught(new DecoderException(new IllegalStateException()));
+    channel.pipeline().fireExceptionCaught(cause);
     assertThat(count("handshake", "other")).isEqualTo(1);
     assertThat(channel.isOpen()).isFalse();
-    assertThat(logs.messages(ExceptionHandler.class))
-        .singleElement()
-        .asString()
-        .contains("handshake error");
+    assertDebugLine(channel, "handshake", cause);
   }
 
   /// A reset is counted only, there is nobody to respond to.
@@ -101,18 +118,29 @@ public class ExceptionHandlerTest {
     assertThat(logs.messages(ExceptionHandler.class)).isEmpty();
   }
 
-  /// Without a request there is nothing to respond to, so the error is logged.
-  @Test
-  public void otherWhileRequesting() {
+  /// Without a request there is nothing to respond to. An external failure and a possible bug of
+  /// ours are treated alike: counted as `other` and logged at debug.
+  @ParameterizedTest
+  @MethodSource("failures")
+  public void otherWhileRequesting(Throwable cause) {
     EmbeddedChannel channel = afterHandshake();
-    channel.pipeline().fireExceptionCaught(new IllegalStateException("boom"));
+    channel.pipeline().fireExceptionCaught(cause);
     assertThat(count("requesting", "other")).isEqualTo(1);
     assertThat(channel.isOpen()).isFalse();
     assertThat((Object) channel.readOutbound()).isNull();
-    assertThat(logs.messages(ExceptionHandler.class))
-        .singleElement()
-        .asString()
-        .contains("phase=requesting");
+    assertDebugLine(channel, "requesting", cause);
+  }
+
+  static Stream<Throwable> failures() {
+    return Stream.of(
+        new IOException("transport failed"),
+        new SSLHandshakeException("unsupported protocol"),
+        new DecoderException("malformed input"),
+        new DecoderException(new IllegalArgumentException("bad header")),
+        new ForwardHandler.UpstreamException(new IOException("upstream read failed")),
+        new IllegalStateException("boom"),
+        new DecoderException(new IllegalStateException("decoder bug")),
+        new ForwardHandler.UpstreamException(new IllegalStateException("forwarding bug")));
   }
 
   @Test
@@ -132,13 +160,15 @@ public class ExceptionHandlerTest {
     channel.writeInbound(
         new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/"),
         LastHttpContent.EMPTY_LAST_CONTENT);
-    channel.pipeline().fireExceptionCaught(new IllegalStateException("boom"));
+    IllegalStateException cause = new IllegalStateException("boom");
+    channel.pipeline().fireExceptionCaught(cause);
     assertThat(count("waiting", "other")).isEqualTo(1);
     HttpResponse response = channel.readOutbound();
     assertThat(response.status().code()).isEqualTo(502);
     assertThat(channel.isOpen()).isFalse();
     assertThat(requestLog.lines()).singleElement().asString().contains("502");
     assertThat(requestLog.outcomes()).containsExactly(RequestOutcome.EDGE_ERROR);
+    assertDebugLine(channel, "waiting", cause);
   }
 
   /// Exception details are for the log, they must not be sent to the client.
@@ -146,13 +176,15 @@ public class ExceptionHandlerTest {
   public void exceptionDetailsAreNotSentToTheClient() {
     EmbeddedChannel channel = afterHandshake();
     channel.writeInbound(new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, "/"));
-    channel
-        .pipeline()
-        .fireExceptionCaught(new SocketException("Connection refused: /10.1.2.3:8080\r\nX: y"));
+    SocketException cause = new SocketException("Connection refused: /10.1.2.3:8080\r\nX: y");
+    channel.pipeline().fireExceptionCaught(cause);
     HttpResponse response = channel.readOutbound();
     assertThat(response.status()).isEqualTo(HttpResponseStatus.BAD_GATEWAY);
     assertThat(response.status().reasonPhrase()).doesNotContain("10.1.2.3");
     assertThat(channel.isOpen()).isFalse();
+    assertThat(requestLog.lines()).singleElement().asString().contains("Connection refused");
+    assertThat(requestLog.outcomes()).containsExactly(RequestOutcome.EDGE_ERROR);
+    assertDebugLine(channel, "upload", cause);
   }
 
   /// Once the response has started, the only option left is to close the connection.
@@ -164,14 +196,66 @@ public class ExceptionHandlerTest {
         LastHttpContent.EMPTY_LAST_CONTENT);
     channel.writeAndFlush(new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK));
     channel.readOutbound();
-    channel.pipeline().fireExceptionCaught(new IllegalStateException("boom"));
+    IllegalStateException cause = new IllegalStateException("boom");
+    channel.pipeline().fireExceptionCaught(cause);
     assertThat(count("responding", "other")).isEqualTo(1);
     assertThat((Object) channel.readOutbound()).isNull();
     assertThat(channel.isOpen()).isFalse();
-    assertThat(logs.messages(ExceptionHandler.class))
-        .singleElement()
-        .asString()
-        .contains("phase=responding");
+    assertDebugLine(channel, "responding", cause);
+  }
+
+  @Test
+  public void failureAfterResponseStartsIsLoggedAndCounted() {
+    EmbeddedChannel channel = afterHandshake();
+    channel.writeInbound(
+        new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/"),
+        LastHttpContent.EMPTY_LAST_CONTENT);
+    channel.writeAndFlush(new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK));
+    channel.readOutbound();
+    IOException cause = new IOException("transport failed");
+    channel.pipeline().fireExceptionCaught(cause);
+    assertThat(count("responding", "other")).isEqualTo(1);
+    assertThat(channel.isOpen()).isFalse();
+    assertThat((Object) channel.readOutbound()).isNull();
+    assertThat(requestLog.lines()).singleElement().asString().contains("transport failed");
+    assertThat(requestLog.outcomes()).containsExactly(RequestOutcome.EDGE_ERROR);
+    assertDebugLine(channel, "responding", cause);
+  }
+
+  @Test
+  public void responseWriteTimeoutAfterResponseStartsIsDebugAndCounted() {
+    EmbeddedChannel channel = afterHandshake();
+    channel.writeInbound(
+        new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/"),
+        LastHttpContent.EMPTY_LAST_CONTENT);
+    channel.writeAndFlush(new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK));
+    channel.readOutbound();
+    RequestLoggingHandler.reportOutcome(
+        channel.pipeline().context(handler), RequestOutcome.RESPONSE_WRITE_TIMEOUT);
+    var cause = new IngressTimeoutHandler.WriteTimeoutException();
+    channel.pipeline().fireExceptionCaught(cause);
+    assertThat(count("responding", "timeout")).isEqualTo(1);
+    assertThat(requestLog.outcomes()).containsExactly(RequestOutcome.RESPONSE_WRITE_TIMEOUT);
+    assertThat(channel.isOpen()).isFalse();
+    assertDebugLine(channel, "responding", cause);
+  }
+
+  @Test
+  public void upstreamResponseTimeoutIsDebugWith504AndSpecificOutcome() {
+    EmbeddedChannel channel = afterHandshake();
+    channel.writeInbound(
+        new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/"),
+        LastHttpContent.EMPTY_LAST_CONTENT);
+    RequestLoggingHandler.reportOutcome(
+        channel.pipeline().context(handler), RequestOutcome.UPSTREAM_TIMEOUT);
+    var cause = new IngressTimeoutHandler.UpstreamResponseTimeoutException();
+    channel.pipeline().fireExceptionCaught(cause);
+    assertThat(count("waiting", "timeout")).isEqualTo(1);
+    HttpResponse response = channel.readOutbound();
+    assertThat(response.status()).isEqualTo(HttpResponseStatus.GATEWAY_TIMEOUT);
+    assertThat(requestLog.outcomes()).containsExactly(RequestOutcome.UPSTREAM_TIMEOUT);
+    assertThat(channel.isOpen()).isFalse();
+    assertDebugLine(channel, "waiting", cause);
   }
 
   @Test

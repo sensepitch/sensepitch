@@ -12,6 +12,7 @@ import io.netty.handler.codec.http.HttpVersion;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 /// [Ja4Handler] sits in front of TLS termination, so it must pass on every byte unchanged and leave
 /// the pipeline after the ClientHello, whatever arrives.
@@ -19,7 +20,31 @@ import org.junit.jupiter.api.Test;
 /// @author Jens Wilke
 public class Ja4HandlerTest {
 
-  EmbeddedChannel channel = new EmbeddedChannel(new Ja4Handler());
+  @RegisterExtension LogCapture logs = new LogCapture();
+
+  ProxyMetrics metrics = new ProxyMetrics();
+  EmbeddedChannel channel = new EmbeddedChannel(new Ja4Handler(metrics));
+
+  /// A failing fingerprint is a request level event: counted as ingress error `ja4`, logged at
+  /// debug, see [ProxyLogger], and the bytes are passed on unchanged.
+  @Test
+  public void failureIsCountedAndTheBytesPassedOn() {
+    ByteBuf released = Unpooled.wrappedBuffer(new byte[] {22});
+    released.release();
+    channel.writeInbound(released);
+    assertThat((Object) channel.readInbound()).isSameAs(released);
+    assertThat(channel.pipeline().get(Ja4Handler.class)).isNull();
+    assertThat(
+            metrics
+                .ingressErrorCounter
+                .labelValues(SanitizeHostHandler.NIL_HOST, "handshake", "ja4")
+                .get())
+        .isOne();
+    assertThat(logs.errors()).isEmpty();
+    assertThat(logs.entries())
+        .singleElement()
+        .satisfies(e -> assertThat(e.info().level()).isEqualTo(System.Logger.Level.DEBUG));
+  }
 
   @AfterEach
   void tearDown() {

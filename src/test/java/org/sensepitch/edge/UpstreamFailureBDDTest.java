@@ -162,7 +162,9 @@ class UpstreamFailureBDDTest {
     Steps given_a_request_forwarded_upstream() {
       startRequest(
           ctx -> {
-            upstream = new EmbeddedChannel(heldWrite, new ForwardHandler(ctx.channel()));
+            upstream =
+                new EmbeddedChannel(
+                    heldWrite, new ForwardHandler(ctx.channel(), metrics, "upstream"));
             return ctx.executor().newSucceededFuture(upstream);
           });
       assertThat(heldWrite.promise).as("request is written upstream").isNotNull();

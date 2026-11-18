@@ -7,6 +7,10 @@ import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.List;
 
+/// Combines the IP databases and the crawler IP lists. A database that throws on a lookup is a
+/// request level event: it is counted in [ProxyMetrics#ipLookupErrorCounter] and logged at debug,
+/// see [ProxyLogger] for the levels, and the other databases are still queried.
+///
 /// @author Jens Wilke
 public class CombinedIpTraitsLookup implements IpTraitsLookup {
 
@@ -18,15 +22,19 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
 
   private final List<IpTraitsCollector> ipAttributesLookups;
   private final IpLabelLookup ipLabelLookup;
+  private final ProxyMetrics metrics;
 
-  public CombinedIpTraitsLookup(IpLookupConfig ipLookupConfig) throws IOException {
-    this(databaseLookups(ipLookupConfig));
+  public CombinedIpTraitsLookup(IpLookupConfig ipLookupConfig, ProxyMetrics metrics)
+      throws IOException {
+    this(databaseLookups(ipLookupConfig), metrics);
   }
 
   /// @param ipAttributesLookups queried in order for each address, a later one overwrites what an
   ///   earlier one found. Tests pass fakes here instead of databases.
-  CombinedIpTraitsLookup(List<IpTraitsCollector> ipAttributesLookups) throws IOException {
+  CombinedIpTraitsLookup(List<IpTraitsCollector> ipAttributesLookups, ProxyMetrics metrics)
+      throws IOException {
     this.ipAttributesLookups = List.copyOf(ipAttributesLookups);
+    this.metrics = metrics;
     ipLabelLookup = readCrawlerIpLists();
     LOG.info("IP lookup nodes: " + ((TrieIpLabelLookup) ipLabelLookup).getNodeCount());
   }
@@ -102,7 +110,8 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
   }
 
   private void lookupException(Exception e) {
-    LOG.error(e.toString());
+    metrics.countIpLookupError();
+    LOG.debug("IP database lookup failed", e);
   }
 
   @Override

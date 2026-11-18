@@ -82,7 +82,7 @@ record EdgeState(
     if (previous != null && Objects.equals(previous.config.ipLookup(), config.ipLookup())) {
       ipTraitsLookup = previous.ipTraitsLookup;
     } else {
-      ipTraitsLookup = buildIpTraitsLookup(config.ipLookup());
+      ipTraitsLookup = buildIpTraitsLookup(config.ipLookup(), ctx.metrics());
     }
     return new EdgeState(
         config,
@@ -96,12 +96,12 @@ record EdgeState(
         configId(config));
   }
 
-  private static IpTraitsLookup buildIpTraitsLookup(IpLookupConfig cfg) {
+  private static IpTraitsLookup buildIpTraitsLookup(IpLookupConfig cfg, ProxyMetrics metrics) {
     if (cfg == null) {
       return IpTraitsLookup.NONE;
     }
     try {
-      return new CombinedIpTraitsLookup(cfg);
+      return new CombinedIpTraitsLookup(cfg, metrics);
     } catch (IOException e) {
       throw new RuntimeException(e);
     }

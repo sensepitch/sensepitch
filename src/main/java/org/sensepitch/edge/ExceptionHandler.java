@@ -19,6 +19,12 @@ import java.nio.channels.ClosedChannelException;
 import javax.net.ssl.SSLHandshakeException;
 import lombok.extern.slf4j.Slf4j;
 
+/// Counts connection failures in [ProxyMetrics#ingressErrorCounter] and completes the connection
+/// without exposing exception details to the peer. Every failure is a request level event, so it
+/// is logged at debug only, with phase, channel and cause, see [ProxyLogger] for the levels; an
+/// unexpected one, possibly a fault of ours, is counted as type `other`. Resets and common TLS
+/// rejections are counted without a debug line.
+///
 /// @author Jens Wilke
 @Slf4j
 public class ExceptionHandler extends ChannelInboundHandlerAdapter {
@@ -110,7 +116,7 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
         metrics.countIngressError(ctx, phase, "reset");
       } else {
         metrics.countIngressError(ctx, phase, "other");
-        LOG.downstreamError(ctx.channel(), "handshake error", cause);
+        LOG.debug(ctx.channel(), "handshake error, phase=handshake", cause);
       }
       completeAndClose(ctx);
       return;
@@ -142,6 +148,7 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
     metrics.countIngressError(ctx, phase, timeout ? "timeout" : "other");
     // a more specific outcome, e.g. a timeout, was reported before the exception, it wins
     loggingHandler.setOutcome(RequestOutcome.EDGE_ERROR);
+    LOG.debug(ctx.channel(), "phase=" + phase, cause);
     // send a proper response if possible, log via standard request log
     if (loggingHandler.isRequestReceived() && !loggingHandler.isResponseStarted()) {
       // The exception is recorded in the request log. It is not sent to the client, it may reveal
@@ -153,8 +160,6 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
               : HttpResponseStatus.BAD_GATEWAY);
       return;
     }
-    // log if impossible to send normal response
-    LOG.downstreamError(ctx.channel(), "phase=" + phase, cause);
     completeAndClose(ctx);
   }
 

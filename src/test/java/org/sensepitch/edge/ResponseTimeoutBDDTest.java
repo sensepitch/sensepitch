@@ -43,7 +43,7 @@ class ResponseTimeoutBDDTest {
           .then_the_client_waits_for_the_error_write(delayedWrite)
           .when_the_client_accepts_the_response()
           .then_one_gateway_timeout_is_logged_and_the_connection_is_closed();
-      assertThat(logs.messages(ExceptionHandler.class)).isEmpty();
+      assertTimeoutDiagnostic();
     }
   }
 
@@ -57,8 +57,24 @@ class ResponseTimeoutBDDTest {
           .then_one_gateway_timeout_is_logged_and_the_connection_is_closed()
           .when_the_upstream_connection_is_established()
           .then_the_upstream_is_closed();
-      assertThat(logs.messages(ExceptionHandler.class)).isEmpty();
+      assertTimeoutDiagnostic();
     }
+  }
+
+  /// A timeout retains phase/cause context without a default-level diagnostic.
+  private void assertTimeoutDiagnostic() {
+    assertThat(logs.entries())
+        .filteredOn(e -> e.source().equals(ExceptionHandler.class.getName()))
+        .singleElement()
+        .satisfies(
+            e -> {
+              assertThat(e.info().level()).isEqualTo(System.Logger.Level.DEBUG);
+              assertThat(e.info().channel()).isNotNull();
+              assertThat(e.message()).contains("phase=");
+              assertThat(e.error())
+                  .isInstanceOf(IngressTimeoutHandler.UpstreamResponseTimeoutException.class);
+            });
+    assertThat(logs.errors()).isEmpty();
   }
 
   static class Steps implements AutoCloseable {

@@ -35,7 +35,8 @@ public class ProxyMetrics implements HasMultipleMetrics {
 
   /// Exceptions on the ingress connection by ingress, phase and type, see [ExceptionHandler]. The
   /// types are `ssl`, `reset`, `timeout` (upstream response or response write timeout, also in
-  /// [#requestOutcomeCounter]) and `other`, an unexpected exception.
+  /// [#requestOutcomeCounter]), `ja4`, a failed fingerprint, see [Ja4Handler], and `other`, an
+  /// unexpected exception.
   public final Counter ingressErrorCounter =
       metricSet.add(
           Counter.builder()
@@ -46,6 +47,43 @@ public class ProxyMetrics implements HasMultipleMetrics {
   /// Counts an exception on the ingress connection, see [ExceptionHandler]
   public void countIngressError(ChannelHandlerContext ctx, String phase, String type) {
     ingressErrorCounter.labelValues(ingress(ctx), phase, type).inc();
+  }
+
+  /// Events on an upstream connection that reach no ingress exception, by upstream name and type,
+  /// see [ForwardHandler]: `closed_in_flight` (the upstream closed before the response was
+  /// complete; the request ends later by its timeout or abort outcome), `unexpected_data` (data
+  /// after the response) and `exception_without_request` (an exception after the response). An
+  /// exception during an exchange is counted as an ingress error instead.
+  public final Counter upstreamErrorCounter =
+      metricSet.add(
+          Counter.builder()
+              .name("sensepitch_upstream_errors")
+              .labelNames("upstream", "type")
+              .build());
+
+  /// Counts an event on an upstream connection, see [#upstreamErrorCounter]
+  public void countUpstreamError(String upstream, String type) {
+    upstreamErrorCounter.labelValues(upstream, type).inc();
+  }
+
+  /// Request log records that failed to render or write, see [RequestLoggingHandler]. The request
+  /// outcome is counted before, in [#requestOutcomeCounter].
+  public final Counter requestLogErrorCounter =
+      metricSet.add(Counter.builder().name("sensepitch_request_log_errors").build());
+
+  /// Counts a request log record that failed, see [#requestLogErrorCounter]
+  public void countRequestLogError() {
+    requestLogErrorCounter.inc();
+  }
+
+  /// Exceptions of an IP database lookup, see [CombinedIpTraitsLookup]; the other databases are
+  /// still queried
+  public final Counter ipLookupErrorCounter =
+      metricSet.add(Counter.builder().name("sensepitch_ip_lookup_errors").build());
+
+  /// Counts a failed IP database lookup, see [#ipLookupErrorCounter]
+  public void countIpLookupError() {
+    ipLookupErrorCounter.inc();
   }
 
   /// Read timeouts by ingress and phase, `first_request` or `keep_alive`, see

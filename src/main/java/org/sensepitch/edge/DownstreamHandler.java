@@ -59,7 +59,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       // no pipelining, the HttpServerCodec delivers content only between a request and its last
       // content, so a new request while the exchange is active is the only unexpected case
       if (upstreamChannelFuture != null) {
-        LOG.error(ctx.channel(), "another request is unexpected");
+        LOG.debug(ctx.channel(), "another request is unexpected, phase=" + exchangePhase());
         ReferenceCountUtil.release(request);
         completeWithError(
             ctx,

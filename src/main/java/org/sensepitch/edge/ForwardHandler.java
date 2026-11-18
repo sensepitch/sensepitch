@@ -11,22 +11,35 @@ import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.ReferenceCountUtil;
 
-/// Handler for upstream communication, receives response from upstream and pass it on downstream
+/// Handler for upstream communication, receives response from upstream and passes it downstream.
+///
+/// An exception during an exchange is passed to the downstream pipeline as [UpstreamException],
+/// where [ExceptionHandler] counts it. The other events of a misbehaving upstream are counted in
+/// [ProxyMetrics#upstreamErrorCounter] and logged at debug, see [ProxyLogger] for the levels: a
+/// close before the response is complete (the request then ends by its timeout or abort outcome),
+/// data after the response, and an exception after the response.
 ///
 /// @author Jens Wilke
 public class ForwardHandler extends ChannelInboundHandlerAdapter {
 
   private static final ProxyLogger LOG = ProxyLogger.get(ForwardHandler.class);
+  private final ProxyMetrics metrics;
+  private final String upstream;
   private Channel downstream;
 
-  public ForwardHandler(Channel ingress) {
+  /// @param upstream name of the upstream, the label of [ProxyMetrics#upstreamErrorCounter]
+  public ForwardHandler(Channel ingress, ProxyMetrics metrics, String upstream) {
     this.downstream = ingress;
+    this.metrics = metrics;
+    this.upstream = upstream;
   }
 
   @Override
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     if (downstream != null) {
-      LOG.error(
+      metrics.countUpstreamError(upstream, "closed_in_flight");
+      LOG.debug(
+          ctx.channel(),
           "upstream closed but request still in flight, downstream="
               + downstream.id()
               + ", upstream="
@@ -38,7 +51,8 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) {
     if (downstream == null) {
-      LOG.error(
+      metrics.countUpstreamError(upstream, "unexpected_data");
+      LOG.debug(
           ctx.channel(),
           msg.getClass().getName()
               + " -> downstream is null, getting unexpected data from upstream");
@@ -91,10 +105,13 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
 
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-    LOG.upstreamError(ctx.channel(), "downstream=" + LOG.channelId(downstream), cause);
+    LOG.debug(
+        ctx.channel(), "upstream failure, downstream=" + LOG.channelId(downstream) + ": " + cause);
     if (downstream != null) {
       downstream.pipeline().fireExceptionCaught(new UpstreamException(cause));
       downstream = null;
+    } else {
+      metrics.countUpstreamError(upstream, "exception_without_request");
     }
     ctx.close();
   }

@@ -253,10 +253,15 @@ class TimeoutsTest {
     rattle();
     assertThat(ingressChannel.isActive()).isFalse();
     ingressChannel.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT);
-    assertThat(logs.messages(ExceptionHandler.class))
+    assertThat(logs.entries())
+        .filteredOn(e -> e.source().equals(ExceptionHandler.class.getName()))
         .singleElement()
-        .asString()
-        .contains("DOWNSTREAM ERROR phase=responding");
+        .satisfies(
+            e -> {
+              assertThat(e.info().level()).isEqualTo(System.Logger.Level.DEBUG);
+              assertThat(e.message()).contains("phase=responding");
+              assertThat(e.error()).isInstanceOf(IngressTimeoutHandler.WriteTimeoutException.class);
+            });
     // logged when the connection closes, the timeout was reported first
     assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.RESPONSE_WRITE_TIMEOUT);
     assertOutcomeCount(RequestOutcome.RESPONSE_WRITE_TIMEOUT, 1);

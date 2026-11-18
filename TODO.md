@@ -155,9 +155,6 @@ Decisions, alternatives and limitations are in
   - P3: specify thresholds, recovery probes, per-server versus per-upstream state and retry policy.
   - Keep the backoff, `Retry-After`, single probe and metrics, the request log keeps a threshold
     of one, see [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md).
-- [ ] Review the existing log statements against the log levels in `AGENTS.md`: a misbehaving
-  client or upstream is counted and logged at debug at most. E.g. `ExceptionHandler` logs "other"
-  errors.
 
 ## Circuit breaker
 
@@ -319,6 +316,12 @@ the failure threshold for upstreams is under Upstream.
     `ProxyShutdownIT`), and `SupervisedExecutor`/`TaskSuccessGuardian` for exceptions of worker
     threads. It is not on Maven Central (its deploy is skipped), so decide: publish it with a
     cache2k release, or copy the needed classes.
+- [ ] To avoid flooding we made request level errors debug level. That has the effect that 
+    misconfigurations are not immediately visible and will cause frustrartion during initial setup. 
+    Introduce a generic way to log each problem class once at warning level, like 
+    LOG.reqeustLevelProblem(Object type, ....). Use the class or add a constant with <classname>.<problem name>.
+    Maybe unify logging and metrics so there is only one method call and unify with the 
+    instance level logging change. P2
 
 ## Evergreen / Cleanups
 
@@ -355,6 +358,13 @@ the failure threshold for upstreams is under Upstream.
 - [ ] add CONTRIBUTING.md
 
 ## Done
+
+- [x] Request level events are logged at debug and counted (2026-11-17): every failure that can
+  happen per request or connection, an unexpected exception included, is `DEBUG` with channel,
+  phase and stack trace, and counted (`sensepitch_ingress_request_errors` with type `ja4`, new
+  `sensepitch_upstream_errors`, `sensepitch_request_log_errors`, `sensepitch_ip_lookup_errors`).
+  The rule is in the `ProxyLogger` doc and `AGENTS.md`, the reason in
+  [diagnostic logging](doc/design/diagnostic-logging.md).
 
 - [x] Error log flood while an upstream is down (2026-11-17):
   `DownstreamHandler.failExchange` logs upstream connect and write failures at debug with the

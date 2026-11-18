@@ -16,6 +16,10 @@ import io.netty.util.AttributeKey;
 ///
 /// <p>Holds per connection state, a new instance is needed for every channel.
 ///
+/// <p>An unexpected failure of the fingerprinting is counted as ingress error of type `ja4` and
+/// logged at debug, see [ProxyLogger] for the levels; the connection continues without
+/// fingerprint.
+///
 /// @see ClientHelloParser
 public class Ja4Handler extends ChannelInboundHandlerAdapter {
 
@@ -28,7 +32,12 @@ public class Ja4Handler extends ChannelInboundHandlerAdapter {
 
   private static final ProxyLogger LOG = ProxyLogger.get(Ja4Handler.class);
 
+  private final ProxyMetrics metrics;
   private ByteBuf received;
+
+  public Ja4Handler(ProxyMetrics metrics) {
+    this.metrics = metrics;
+  }
 
   /// @return the fingerprint of the connection or {@code null} if there is none, e.g. because the
   ///   ClientHello was malformed or JA4 is not enabled
@@ -43,7 +52,8 @@ public class Ja4Handler extends ChannelInboundHandlerAdapter {
         inspect(ctx, buf);
       } catch (Throwable t) {
         // a fingerprint is never worth losing a connection for
-        LOG.error(ctx.channel(), "JA4 fingerprint failed", t);
+        metrics.countIngressError(ctx, "handshake", "ja4");
+        LOG.debug(ctx.channel(), "JA4 fingerprint failed", t);
         finish(ctx);
       }
     }

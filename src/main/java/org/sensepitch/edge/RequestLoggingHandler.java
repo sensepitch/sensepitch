@@ -233,7 +233,9 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
       logger.logRequest(this);
       requestCount++;
     } catch (Throwable e) {
-      LOG.error(ctx.channel(), "Error logging request", e);
+      // request level, see ProxyLogger: counted, the details at debug
+      metrics.countRequestLogError();
+      LOG.debug(ctx.channel(), "Error logging request", e);
     }
     // reset times for keep alive requests
     requestStartTime = System.currentTimeMillis();
