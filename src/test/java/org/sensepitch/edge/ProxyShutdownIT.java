@@ -17,11 +17,14 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.util.AbstractMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.net.ssl.SSLContext;
@@ -277,21 +280,54 @@ class ProxyShutdownIT {
     assertThat(result.message()).isEqualTo("Shutting down");
   }
 
-  /// A shutdown waits for a reload in progress. The test holds the monitor of the proxy, as a
-  /// reload does, the listener stays open until it is released.
+  /// A shutdown waits for an actual reload paused while reading its configuration. Once the
+  /// shutdown thread is blocked, the listener is still open; releasing the reload lets both end.
   @Test
   void shutdownWaitsForReload() throws Exception {
     startProxy(10_000, 0);
-    CompletableFuture<Void> shutdown;
-    synchronized (proxy) {
-      shutdown = CompletableFuture.runAsync(proxy::shutdown);
-      Thread.sleep(200);
-      assertThat(shutdown).isNotDone();
+    CountDownLatch readingConfig = new CountDownLatch(1);
+    CountDownLatch continueReload = new CountDownLatch(1);
+    Map<String, SiteConfig> pausedSites =
+        new AbstractMap<>() {
+          @Override
+          public Set<Entry<String, SiteConfig>> entrySet() {
+            readingConfig.countDown();
+            try {
+              assertThat(continueReload.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+                  .as("reload configuration released")
+                  .isTrue();
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+              throw new AssertionError("reload interrupted", e);
+            }
+            return config.sites().entrySet();
+          }
+        };
+    ProxyConfig next = config.toBuilder().sites(pausedSites).build();
+    CompletableFuture<ReloadResult> reload =
+        CompletableFuture.supplyAsync(() -> proxy.reload(next));
+    FutureTask<Void> shutdown = new FutureTask<>(proxy::shutdown, null);
+    try {
+      assertThat(readingConfig.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+          .as("reload reading configuration")
+          .isTrue();
+      Thread shutdownThread = Thread.ofPlatform().name("shutdown-during-reload").start(shutdown);
+      TestingParameters.await(
+          "shutdown waits for reload", () -> shutdownThread.getState() == Thread.State.BLOCKED || shutdown.isDone());
+      assertThat(shutdownThread.getState())
+          .as("shutdown waits for reload")
+          .isEqualTo(Thread.State.BLOCKED);
+      assertThat(shutdown.isDone()).isFalse();
+      assertThat(proxy.isShuttingDown()).isFalse();
       try (Socket probe = new Socket()) {
         probe.connect(new InetSocketAddress("127.0.0.1", port), (int) TIMEOUT.toMillis());
       }
+    } finally {
+      continueReload.countDown();
     }
+    assertThat(reload.get(TIMEOUT_SECONDS, TimeUnit.SECONDS).applied()).isTrue();
     shutdown.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertThat(proxy.isShuttingDown()).isTrue();
     assertThat(proxy.reload(config).applied()).isFalse();
   }
 

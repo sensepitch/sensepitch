@@ -40,9 +40,15 @@ import org.yaml.snakeyaml.representer.Representer;
 ///
 /// Routing, known hosts, certificates and the IP lookup live in an [EdgeState], which
 /// [#reload(ProxyConfig)] replaces at runtime. Everything else is fixed at construction.
+///
+/// A private lock serializes reloads and the start of shutdown. State publication and shutdown
+/// completion use atomic references for readers outside that lock. Shutdown drains and waits
+/// after releasing it.
 public class Proxy implements ProxyContext {
 
   private static final ProxyLogger LOG = ProxyLogger.get(Proxy.class);
+
+  private final Object lock = new Object();
 
   private final Dummy404Handler dummy404Handler = new Dummy404Handler();
   private final TrackIngressConnectionsHandler trackIngressConnectionsHandler;
@@ -56,6 +62,7 @@ public class Proxy implements ProxyContext {
   /// `null` if the metrics export is disabled
   private final MetricsServer metricsServer;
 
+  // replacements guarded by lock after construction; readers use the atomic reference
   private final AtomicReference<EdgeState> state = new AtomicReference<>();
 
   /// Delegates to the current state, so the SNI handler picks up reloaded certificates
@@ -63,12 +70,15 @@ public class Proxy implements ProxyContext {
 
   private final EventLoopGroup eventLoopGroup;
 
-  /// Accepts the connections, set by [#start()], closed first on [#shutdown()]
+  /// Accepts the connections, set by [#start()], closed first on [#shutdown()]. Volatile because
+  /// start and shutdown access it without the reload lock, possibly from different threads.
   private volatile EventLoopGroup bossGroup;
 
+  /// Published by `start` and read by shutdown without the reload lock
   private volatile Channel serverChannel;
 
-  /// Completed when the shutdown is done, set by the first [#shutdown()] call
+  /// Completed when the shutdown is done, set under `lock` by the first [#shutdown()] call.
+  /// Read without the lock by [#isShuttingDown()].
   private final AtomicReference<CompletableFuture<Void>> shutdown = new AtomicReference<>();
 
   /// Request log destinations plus the metrics per status code, closed on shutdown
@@ -146,40 +156,42 @@ public class Proxy implements ProxyContext {
   ///
   /// @return applied, or rejected with the reason if the configuration is invalid or the proxy
   ///   shuts down. The error is logged and the current configuration stays active.
-  public synchronized ReloadResult reload(ProxyConfig newConfig) {
-    if (shutdown.get() != null) {
-      LOG.info("Configuration reload skipped, shutting down");
-      return ReloadResult.rejected("Shutting down");
+  public ReloadResult reload(ProxyConfig newConfig) {
+    synchronized (lock) {
+      if (shutdown.get() != null) {
+        LOG.info("Configuration reload skipped, shutting down");
+        return ReloadResult.rejected("Shutting down");
+      }
+      EdgeState current = state.get();
+      EdgeState next;
+      ReloadableRequestLogger.Prepared requestLog;
+      try {
+        newConfig = KeyInjector.injectAllMapKeys(newConfig);
+        warnAboutRestartOnlyChanges(newConfig);
+        newConfig.effectiveDrainTimeoutMillis();
+        next = EdgeState.build(this, newConfig, current);
+        // last, nothing can fail after it, so the destinations it created are always applied
+        requestLog = requestLogDestinations.prepare(newConfig.requestLog());
+      } catch (RuntimeException e) {
+        LOG.error("Configuration rejected, keeping the active configuration: " + e, e);
+        return ReloadResult.rejected("Configuration rejected: " + e.getMessage());
+      }
+      state.set(next);
+      current.closeReplacedBy(next);
+      requestLog.apply();
+      String diff = ConfigDiff.diff(toYaml(current.config()), toYaml(next.config()));
+      if (diff.isEmpty()) {
+        LOG.info("Configuration reloaded, no changes");
+      } else {
+        LOG.info("Configuration reloaded, changes:\n" + diff);
+      }
+      String certificateChanges = Certificates.changes(current.certificates(), next.certificates());
+      // unchanged certificates are the common case, the configuration line above covers the reload
+      if (!certificateChanges.isEmpty()) {
+        LOG.info("Certificates reloaded, changes:" + certificateChanges);
+      }
+      return ReloadResult.APPLIED;
     }
-    EdgeState current = state.get();
-    EdgeState next;
-    ReloadableRequestLogger.Prepared requestLog;
-    try {
-      newConfig = KeyInjector.injectAllMapKeys(newConfig);
-      warnAboutRestartOnlyChanges(newConfig);
-      newConfig.effectiveDrainTimeoutMillis();
-      next = EdgeState.build(this, newConfig, current);
-      // last, nothing can fail after it, so the destinations it created are always applied
-      requestLog = requestLogDestinations.prepare(newConfig.requestLog());
-    } catch (RuntimeException e) {
-      LOG.error("Configuration rejected, keeping the active configuration: " + e, e);
-      return ReloadResult.rejected("Configuration rejected: " + e.getMessage());
-    }
-    state.set(next);
-    current.closeReplacedBy(next);
-    requestLog.apply();
-    String diff = ConfigDiff.diff(toYaml(current.config()), toYaml(next.config()));
-    if (diff.isEmpty()) {
-      LOG.info("Configuration reloaded, no changes");
-    } else {
-      LOG.info("Configuration reloaded, changes:\n" + diff);
-    }
-    String certificateChanges = Certificates.changes(current.certificates(), next.certificates());
-    // unchanged certificates are the common case, the configuration line above covers the reload
-    if (!certificateChanges.isEmpty()) {
-      LOG.info("Certificates reloaded, changes:" + certificateChanges);
-    }
-    return ReloadResult.APPLIED;
   }
 
   private void warnAboutRestartOnlyChanges(ProxyConfig cfg) {
@@ -401,7 +413,7 @@ public class Proxy implements ProxyContext {
     CompletableFuture<Void> done = new CompletableFuture<>();
     CompletableFuture<Void> running;
     // waits for a running reload, see reload()
-    synchronized (this) {
+    synchronized (lock) {
       running = shutdown.compareAndExchange(null, done);
     }
     if (running != null) {

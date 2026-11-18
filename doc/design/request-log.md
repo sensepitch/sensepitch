@@ -59,8 +59,8 @@ buffer as a framed `ScopeLogs.log_records` entry by `OtlpRequestLogSink`. Nothin
 record, and nothing is shared with other threads.
 
 - The batcher is found through a Netty `FastThreadLocal`, an array access on an event loop.
-- The batcher's monitor guards `active`. The only other thread that takes it is the flush timer,
-  once per flush interval, so the lock is uncontended.
+- The batcher's private lock guards `active` and `closed`. The only other thread that takes it is
+  the flush timer, once per flush interval, so the lock is uncontended.
 - A full batch is handed to the sender, which returns an empty one from a pool. The pool keeps one
   batch per thread plus one spare, so allocation stops once sending keeps up, and memory taken
   during an outage is given back afterwards.
@@ -78,9 +78,29 @@ request (`OtlpBatchPayload`).
 - the shared timer of `CompletableFuture` runs the flush and the probe after a backoff;
 - with gzip, the common pool compresses and sends, see below.
 
-One lock, the sender's monitor, guards the queue of waiting posts and the requests in flight. It
+One private lock in the sender guards the queue of waiting posts and the requests in flight. It
 is taken per batch and per completion, never per record. The waiting bytes and records are atomic
 counters, so a thread reserves room for a batch without the lock.
+
+### Private locks preserve ownership and lock ordering
+
+The sender and each batcher have their own private final lock object, so callers cannot hold an
+instance monitor and stall logging. This costs one object per instance; no performance gain is
+claimed. Critical sections keep the same boundaries as the former instance monitors.
+
+A batcher may enter the sender while holding its lock when handing off a full batch. The sender
+collects partial batches and reads their record counts without holding its own lock, so it does
+not take the locks in reverse order. A closing batcher calls `sender.closed` after releasing its
+lock; HTTP sends and the sender's completion dispatch also stay outside the sender lock.
+`finishing` stays volatile because `stopIfDone` reads it without the lock. The other mutable sender
+state in critical sections and the batcher's `active` and `closed` need no volatile reads.
+
+The proxy serializes reloads and shutdown registration with its own private lock, then waits for
+shutdown outside it. `ConfigFileWatcher` keeps file checks and reload callbacks under its private
+lock, including the reentrant initial check from `start`. The metrics registration lock
+serializes replacement and removal of breakers; gauge callbacks still read copy-on-write
+snapshots without it and use the breaker's own accessors for state. These changes preserve the
+existing callback boundaries and nesting.
 
 ### Bounded memory, drop the newest
 

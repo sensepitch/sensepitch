@@ -33,6 +33,9 @@ import java.util.function.ToLongFunction;
 /// still drains, and a label set must not appear twice in a scrape. The counters of both go to
 /// the same series.
 ///
+/// A private lock serializes changes to the breaker registrations. Gauge callbacks iterate
+/// copy-on-write snapshots without that lock, then read each breaker through its accessors.
+///
 /// @author Jens Wilke
 public class CircuitBreakerMetrics implements HasMultipleMetrics {
 
@@ -49,6 +52,9 @@ public class CircuitBreakerMetrics implements HasMultipleMetrics {
     }
   }
 
+  private final Object lock = new Object();
+
+  // mutations guarded by lock; copy-on-write snapshots are read without it
   private final List<Entry> breakers = new CopyOnWriteArrayList<>();
 
   private final Counter calls =
@@ -127,17 +133,21 @@ public class CircuitBreakerMetrics implements HasMultipleMetrics {
 
   /// Reports the gauges of the breaker under the labels, until removed. Replaces a breaker
   /// reported under the same labels.
-  synchronized void add(String component, String name, CircuitBreaker breaker) {
-    List<String> labels = List.of(component, name);
-    breakers.removeIf(entry -> entry.labels().equals(labels));
-    breakers.add(new Entry(component, name, breaker));
+  void add(String component, String name, CircuitBreaker breaker) {
+    synchronized (lock) {
+      List<String> labels = List.of(component, name);
+      breakers.removeIf(entry -> entry.labels().equals(labels));
+      breakers.add(new Entry(component, name, breaker));
+    }
   }
 
   /// Stops reporting the gauges of the breaker, e.g. of a destination removed by a reload. Its
   /// counters keep their values. Does nothing if the breaker was replaced, see
   /// [#add(String, String, CircuitBreaker)].
-  synchronized void remove(CircuitBreaker breaker) {
-    breakers.removeIf(entry -> entry.breaker() == breaker);
+  void remove(CircuitBreaker breaker) {
+    synchronized (lock) {
+      breakers.removeIf(entry -> entry.breaker() == breaker);
+    }
   }
 
   @Override

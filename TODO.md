@@ -348,14 +348,6 @@ the failure threshold for upstreams is under Upstream.
 - [ ] Check on GitHub CI actions and add a TODO or fix right away if something is broken
 - [ ] Improve code according to styling rules
   - Ongoing review principle; record concrete inconsistencies as separate tasks.
-- [ ] Lock on a private lock object, see the locking rule in `AGENTS.md`: `synchronized` methods
-  or `synchronized (this)` remain in `HttpBatchSender` (`synchronized (this)` blocks, `window()`),
-  `ThreadBatcher` (`log`, `takePartial`, `records`, a `synchronized (this)` block),
-  `CircuitBreakerMetrics` (`add`, `remove`), `Proxy` (`reload`, a `synchronized (this)` block) and
-  `ConfigFileWatcher` (`start`, `checkForChange`, `forceReload`). Check their `volatile` fields
-  along the way: volatile only if read without the lock.
-  - P3, no operator-visible effect unless it removes real contention: mechanical;
-    `HttpBatchSender` and `ThreadBatcher` are under the 100% coverage rule.
 - [ ] improve code coverage towards 100%
   - Prioritize uncovered risk and meaningful behavior rather than a percentage alone.
 - [ ] Move a test case that is doing real socket connections or sleeps from test to verify and
@@ -384,6 +376,13 @@ the failure threshold for upstreams is under Upstream.
 - [ ] add CONTRIBUTING.md
 
 ## Done
+
+- [x] Lock on a private lock object (2026-11-17): `HttpBatchSender`, `ThreadBatcher`,
+  `CircuitBreakerMetrics`, `Proxy` and `ConfigFileWatcher` now encapsulate synchronization.
+  Preserved critical sections, lock ordering and callbacks outside locks; retained volatile
+  visibility for reads outside locks. The shutdown/reload integration test coordinates an actual
+  reload without holding the proxy monitor. See
+  [doc/design/request-log.md](doc/design/request-log.md#private-locks-preserve-ownership-and-lock-ordering).
 
 - [x] Configurable OTLP retry backoff (2026-11-17): per-destination
   `initialRetryDelayMillis` and `maxRetryDelayMillis`, defaulting to 1000 ms and 30000 ms.

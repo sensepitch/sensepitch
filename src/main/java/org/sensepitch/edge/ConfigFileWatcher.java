@@ -28,6 +28,9 @@ import java.util.function.Function;
 /// the last loaded content, so unrelated files in the directory, a touch without changes, or the
 /// several events of one replacement trigger at most one reload.
 ///
+/// A private lock guards the reload action and content hashes, and serializes file reads and
+/// reload callbacks. The initial check from `start` reenters the same lock.
+///
 /// @author Jens Wilke
 public class ConfigFileWatcher {
 
@@ -36,7 +39,11 @@ public class ConfigFileWatcher {
   /// Last non-empty line of a complete configuration file, a YAML comment
   public static final String END_MARKER = "#END";
 
+  private final Object lock = new Object();
+
   private final Path file;
+
+  // guarded by lock after construction
   private Function<String, ReloadResult> reloadAction;
   private byte[] lastHash;
 
@@ -54,17 +61,19 @@ public class ConfigFileWatcher {
   /// Starts watching in a daemon thread and checks for a change since construction.
   ///
   /// @param reloadAction parses the passed file content and activates the configuration
-  public synchronized void start(Function<String, ReloadResult> reloadAction) throws IOException {
-    this.reloadAction = reloadAction;
-    WatchService watchService = file.getFileSystem().newWatchService();
-    file.getParent().register(watchService, ENTRY_CREATE, ENTRY_MODIFY, ENTRY_DELETE);
-    Thread.ofPlatform().name("config-file-watcher").daemon().start(() -> watch(watchService));
-    LOG.info(
-        "Watching configuration file for changes, reload requires "
-            + END_MARKER
-            + " as last line: "
-            + file);
-    checkForChange();
+  public void start(Function<String, ReloadResult> reloadAction) throws IOException {
+    synchronized (lock) {
+      this.reloadAction = reloadAction;
+      WatchService watchService = file.getFileSystem().newWatchService();
+      file.getParent().register(watchService, ENTRY_CREATE, ENTRY_MODIFY, ENTRY_DELETE);
+      Thread.ofPlatform().name("config-file-watcher").daemon().start(() -> watch(watchService));
+      LOG.info(
+          "Watching configuration file for changes, reload requires "
+              + END_MARKER
+              + " as last line: "
+              + file);
+      checkForChange();
+    }
   }
 
   private void watch(WatchService watchService) {
@@ -81,14 +90,18 @@ public class ConfigFileWatcher {
   }
 
   /// Reloads if the file content changed since the last reload and is complete.
-  synchronized void checkForChange() {
-    reload(false);
+  void checkForChange() {
+    synchronized (lock) {
+      reload(false);
+    }
   }
 
   /// Reloads also if the content is unchanged, which re-reads the certificate files, e.g. via
   /// [AdminServer]. The content still needs the end marker. Call only after [#start].
-  public synchronized ReloadResult forceReload() {
-    return reload(true);
+  public ReloadResult forceReload() {
+    synchronized (lock) {
+      return reload(true);
+    }
   }
 
   private ReloadResult reload(boolean force) {

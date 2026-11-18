@@ -71,9 +71,9 @@ import java.util.concurrent.atomic.AtomicLong;
 /// sender stops when it is finishing, all batchers are closed and nothing waits anymore, and
 /// completes [#stopped()]. Who waits for that, and how long, is up to the caller.
 ///
-/// Concurrency: one lock, the monitor of this object, guards the queue and the requests in
-/// flight. It is taken per batch and per completion, never per record. The bytes and records
-/// waiting are atomic counters, the threads reserve a batch with a compare and set, so the limit
+/// Concurrency: one private lock guards the queue and the requests in flight. It is taken per
+/// batch and per completion, never per record. The bytes and records waiting are atomic counters,
+/// the threads reserve a batch with a compare and set, so the limit
 /// holds without the lock. A batch is counted as waiting before it leaves its batcher, so the
 /// sender cannot stop while a batch is on its way.
 ///
@@ -141,6 +141,8 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
 
   private static final double NANOS_PER_SECOND = TimeUnit.SECONDS.toNanos(1);
 
+  private final Object lock = new Object();
+
   // the class of the destination, e.g. OtlpLogDestination
   private final ProxyLogger log = ProxyLogger.get(getClass());
   private final String name;
@@ -188,12 +190,12 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   private final AtomicBoolean failureReported = new AtomicBoolean();
 
   /// No new batchers are registered, see [#finish()]. Written under the lock, so a batcher is
-  /// either registered before or refused after.
+  /// either registered before or refused after. Volatile for the read in `stopIfDone()`.
   private volatile boolean finishing;
 
   private final CompletableFuture<Void> stopped = new CompletableFuture<>();
 
-  // guarded by this
+  // guarded by lock
 
   /// Posts waiting for a free request slot or for the breaker, oldest first. They are sent by
   /// [#takeDispatchable()] when a request completes (a full slot always has a request in flight,
@@ -285,7 +287,7 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   ThreadBatcher<B> newBatcher() {
     ThreadBatcher<B> batcher =
         new ThreadBatcher<>(this, Thread.currentThread(), payload.newEncoder());
-    synchronized (this) {
+    synchronized (lock) {
       if (!finishing) {
         batchers.add(batcher);
         return batcher;
@@ -364,7 +366,7 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   ///
   /// @return completed when the sender stopped, see [#stopped()]
   public CompletableFuture<Void> finish() {
-    synchronized (this) {
+    synchronized (lock) {
       finishing = true;
     }
     // a last attempt right away, also during a backoff, retries then wait as usual
@@ -442,7 +444,7 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   /// Sends the post if a request slot is free and the breaker lets it through, else queues it
   private void submit(Post<B> post) {
     boolean send;
-    synchronized (this) {
+    synchronized (lock) {
       // older posts that wait go first, they wait only while the breaker refuses
       send = parked.isEmpty() && inFlight < window && endpoint.breaker().tryAcquire();
       if (send) {
@@ -459,7 +461,7 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   /// Drops aged batches, sends what may be sent, stops if all is done
   private void dispatch() {
     List<Post<B>> next;
-    synchronized (this) {
+    synchronized (lock) {
       discardAged(System.nanoTime());
       next = takeDispatchable();
     }
@@ -631,7 +633,7 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   /// @param durationNanos time the request took, for the latency metric
   private void complete(Post<B> post, long wireBytes, long durationNanos, Result result) {
     postDuration.observe(durationNanos / NANOS_PER_SECOND);
-    synchronized (this) {
+    synchronized (lock) {
       CircuitBreaker.State before = null;
       inFlight--;
       CircuitBreaker breaker = endpoint.breaker();
@@ -767,8 +769,10 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   }
 
   /// Requests allowed in flight, see the slow start, for tests
-  synchronized int window() {
-    return window;
+  int window() {
+    synchronized (lock) {
+      return window;
+    }
   }
 
   /// Empty batches kept for reuse, for tests

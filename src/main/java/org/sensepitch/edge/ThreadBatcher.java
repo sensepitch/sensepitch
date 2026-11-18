@@ -11,7 +11,7 @@ package org.sensepitch.edge;
 /// - If the sender refuses the handoff, because the batches waiting to be sent reached the
 ///   limit, the thread keeps its full batch and drops new records until the sender has room. So
 ///   the newest records are dropped, the waiting ones are kept.
-/// - The monitor of this object guards `active`. Only the sender's flush timer competes for it,
+/// - A private lock guards `active` and `closed`. Only the sender's flush timer competes for it,
 ///   once per flush interval.
 /// - The thread closes its batcher when it ends, or when a reload asks it to, see [#close()]. This
 ///   is the end marker the sender waits for.
@@ -19,10 +19,14 @@ package org.sensepitch.edge;
 /// @author Jens Wilke
 final class ThreadBatcher<B extends Batch> {
 
+  private final Object lock = new Object();
+
   private final HttpBatchSender<B> sender;
   private final Thread owner;
   private final RecordEncoder<B> encoder;
   private final int batchBytes;
+
+  // guarded by lock
 
   /// `null` before the first record, after a partial batch was taken, and after [#close()]. A
   /// batch is taken by [#log] only, unless closed, so a batcher refused by a finishing sender
@@ -47,23 +51,25 @@ final class ThreadBatcher<B extends Batch> {
   /// @return `false` if this batcher is closed, the caller counts the record as dropped.
   ///   A record dropped because the waiting batches reached the limit is counted here and returns
   ///   `true`, it is handled.
-  synchronized boolean log(RequestLogInfo info) {
-    if (closed) {
-      return false;
-    }
-    if (active == null) {
-      active = sender.emptyBatch();
-    } else if (active.size() >= batchBytes && !handOff()) {
-      // no room for waiting batches, drop the newest record
-      sender.countDropped(1);
+  boolean log(RequestLogInfo info) {
+    synchronized (lock) {
+      if (closed) {
+        return false;
+      }
+      if (active == null) {
+        active = sender.emptyBatch();
+      } else if (active.size() >= batchBytes && !handOff()) {
+        // no room for waiting batches, drop the newest record
+        sender.countDropped(1);
+        return true;
+      }
+      encoder.encode(active, info);
+      active.added();
+      if (active.size() >= batchBytes) {
+        handOff();
+      }
       return true;
     }
-    encoder.encode(active, info);
-    active.added();
-    if (active.size() >= batchBytes) {
-      handOff();
-    }
-    return true;
   }
 
   /// Hands the active batch to the sender and continues with the empty batch it returns.
@@ -82,19 +88,23 @@ final class ThreadBatcher<B extends Batch> {
   /// waiting batches have room for it. The thread takes a new batch with its next record.
   ///
   /// @return the batch, already counted as waiting, or `null`
-  synchronized B takePartial() {
-    // a closed batcher has no active batch
-    if (active == null || active.records == 0 || !sender.reserve(active)) {
-      return null;
+  B takePartial() {
+    synchronized (lock) {
+      // a closed batcher has no active batch
+      if (active == null || active.records == 0 || !sender.reserve(active)) {
+        return null;
+      }
+      B partial = active;
+      active = null;
+      return partial;
     }
-    B partial = active;
-    active = null;
-    return partial;
   }
 
   /// Records in the active batch, for the queue length metric
-  synchronized int records() {
-    return active != null ? active.records : 0;
+  int records() {
+    synchronized (lock) {
+      return active != null ? active.records : 0;
+    }
   }
 
   /// The end marker: no more records are accepted, the last batch goes to the sender. Called by
@@ -104,7 +114,7 @@ final class ThreadBatcher<B extends Batch> {
   /// it is sent. Can be called more than once.
   void close() {
     B last;
-    synchronized (this) {
+    synchronized (lock) {
       if (closed) {
         return;
       }
