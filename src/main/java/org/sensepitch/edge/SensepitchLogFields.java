@@ -15,7 +15,8 @@ public final class SensepitchLogFields {
   /// Why the request ended, see [RequestOutcome]
   public static final String REQUEST_OUTCOME = "sensepitch.request.outcome";
 
-  /// Status of the upstream response when the edge replaced it with a fallback page
+  /// Status of the upstream response when the logged response differs from it: the status
+  /// replaced by a fallback page, or the upstream status of an aborted delivery
   public static final String UPSTREAM_STATUS = "sensepitch.upstream.status";
 
   /// Short hash of the configuration active when the request started, the same on every node

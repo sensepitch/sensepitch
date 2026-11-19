@@ -14,11 +14,6 @@ implementation.
 - [ ] Flaky, not investigated: `ProxyShutdownIT`,
   `ShadedJarIT.sigtermSendsTheRequestLogAndExits`
   - P2: also the `SIGTERM` path.
-- [ ] `RequestLoggingHandler.write` / `log`: on a write error, switch the response, log a
-  different status code, or log content length 0?
-  - P2: change status to 499 although if its written already, log bytes delivered, we already
-    log original upstream status somewhere, double check. comment that original upstream status
-    is logged for fallback or aborted writes
 - [ ] unify timeout with keep alive handler: `IngressTimeoutHandler` only works with
   `HttpKeepAliveHandler` next; corner case when the ingress still sends while the upstream is
   responding (could answer with `Connection: close`)
@@ -342,6 +337,13 @@ the failure threshold for upstreams is under Upstream.
 - [ ] add CONTRIBUTING.md
 
 ## Done
+
+- [x] Failed response writes are logged as aborted deliveries (2026-11-18):
+  `RequestLoggingHandler` reports 499 and `CLIENT_ABORTED` when the final write fails, counts the
+  request as aborted instead of completed, and logs only content written before the failed write.
+  The upstream response status, or the upstream status replaced by a fallback page, remains in
+  `sensepitch.upstream.status`. Covered by `RequestLoggingHandlerTest` for a full response, a
+  streamed body, a fallback and a completed write.
 
 - [x] `Retry-After` as an HTTP date (2026-11-17): `Backoff` converts dates against the current
   wall clock, with an explicit time input for tests. Seconds, the 300 s cap and the minimum

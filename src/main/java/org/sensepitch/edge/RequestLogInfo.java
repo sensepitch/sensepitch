@@ -44,8 +44,10 @@ public interface RequestLogInfo {
   /// Why the request ended, never `null`
   RequestOutcome outcome();
 
-  /// Status of the upstream response when the edge replaced it with a fallback page, `0`
-  /// otherwise, see [RequestOutcome#FALLBACK]
+  /// Status of the upstream response when the logged response differs from it: the status
+  /// replaced by a fallback page, or the upstream status of a response whose delivery to the
+  /// client was aborted. `0` when no upstream status applies, see [RequestOutcome#FALLBACK] and
+  /// [RequestOutcome#CLIENT_ABORTED]
   int upstreamStatus();
 
   /// The matched route: the path pattern of the routing, e.g. `/api/*`, or the `uri` pattern of
