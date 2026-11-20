@@ -23,7 +23,6 @@ import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
-import io.netty.handler.codec.http.HttpServerKeepAliveHandler;
 import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
@@ -80,7 +79,7 @@ public class FlowAndExceptionTest {
       ingressFlushBlocker,
       new TimeoutsTest.FakeSslHandler(),
       new RequestLoggingHandler(proxyMetrics, requestLog),
-      new HttpServerKeepAliveHandler(),
+      new IngressTimeoutHandler(ConnectionConfig.DEFAULT, proxyMetrics),
       new DownstreamHandler(new MockUpstream(), proxyMetrics),
       new ExceptionHandler(proxyMetrics)
     };
@@ -322,7 +321,8 @@ public class FlowAndExceptionTest {
     upstreamChannel.writeInbound(response, content, new DefaultLastHttpContent());
     rattle();
     assertThat((Object) ingressChannel.readOutbound()).isSameAs(response);
-    assertThat(response.headers().contains(HttpHeaderNames.KEEP_ALIVE)).isFalse();
+    // the upstream's value is dropped, IngressTimeoutHandler sets the one of the proxy
+    assertThat(response.headers().get(HttpHeaderNames.KEEP_ALIVE)).isNotEqualTo("timeout=5");
     HttpContent received = ingressChannel.readOutbound();
     assertThat(received.content().readableBytes()).isEqualTo(3);
     received.release();

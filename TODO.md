@@ -14,10 +14,6 @@ implementation.
 - [ ] Flaky, not investigated: `ProxyShutdownIT`,
   `ShadedJarIT.sigtermSendsTheRequestLogAndExits`
   - P2: also the `SIGTERM` path.
-- [ ] unify timeout with keep alive handler: `IngressTimeoutHandler` only works with
-  `HttpKeepAliveHandler` next; corner case when the ingress still sends while the upstream is
-  responding (could answer with `Connection: close`)
-  - P3: QUIC support is more important
 
 ## Kubernetes
 
@@ -173,6 +169,12 @@ the failure threshold for upstreams is under Upstream.
   - P3: scope protocol negotiation, stream lifecycle, backpressure and compatibility tests.
 - [ ] quic support
   - P3
+- [ ] Upstream informational responses (1xx, e.g. `100 Continue`): `DownstreamHandler.write` ends
+  the exchange and closes the upstream at every response `LastHttpContent`, also the one of a 1xx,
+  so the final response would be lost (by reading the code, not tested end to end; Netty's client
+  codec is expected to pass a 1xx on as response and empty last content).
+  `IngressTimeoutHandler` already lets a 1xx pass as not final.
+  - P3, together with the `Expect: 100-continue` choice of the request size limits
 - [ ] Request size limits: decide the options below, then implement the chosen ones. Research,
   measurements and sources in the draft
   [request-body-limit-draft.md](doc/design/request-body-limit-draft.md)
@@ -357,6 +359,11 @@ the failure threshold for upstreams is under Upstream.
   - Ongoing review principle; record concrete inconsistencies as separate tasks.
 - [ ] improve code coverage towards 100%
   - Prioritize uncovered risk and meaningful behavior rather than a percentage alone.
+  - `IngressTimeoutHandler.TimeoutTask` (2026-11-21): the `assert future == null` branch in
+    `schedule` and the `!ctx.channel().isOpen()` early return in `run` are not covered. The timer
+    is cancelled in `channelInactive`, so the return may be reachable only between `close` and
+    the inactive event; decide whether to test it or remove it (not verified).
+    - P3
 - [ ] Move a test case that is doing real socket connections or sleeps from test to verify and
   maintain code coverage
   - Goal: `./mvnw test` at about 5 s wall time. The classes run in parallel, the methods of a
@@ -383,6 +390,12 @@ the failure threshold for upstreams is under Upstream.
 - [ ] add CONTRIBUTING.md
 
 ## Done
+
+- [x] Unify timeout and keep-alive handling (2026-11-20). `IngressTimeoutHandler` decides
+  keep-alive itself, `HttpServerKeepAliveHandler` left the pipeline. A response that starts while
+  the client still sends the request body gets `Connection: close`; the connection is closed after
+  the rest of the body was read, or after the read timeout (phase `after_response` of
+  `sensepitch_ingress_receive_timeout`), instead of waiting for another request.
 
 - [x] Resume client reads paused by upstream backpressure when the response finishes before
   the upstream becomes writable again (2026-11-20).

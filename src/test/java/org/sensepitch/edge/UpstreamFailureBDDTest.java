@@ -18,7 +18,6 @@ import io.netty.handler.codec.http.HttpHeaderValues;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
-import io.netty.handler.codec.http.HttpServerKeepAliveHandler;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.ReferenceCountUtil;
@@ -189,7 +188,7 @@ class UpstreamFailureBDDTest {
                     loggedErrors.add(info.error());
                     logger.logRequest(info);
                   }),
-              new HttpServerKeepAliveHandler(),
+              new IngressTimeoutHandler(ConnectionConfig.DEFAULT, metrics),
               new DownstreamHandler(upstreamConnector, metrics),
               new ExceptionHandler(metrics));
       ingress.runPendingTasks();

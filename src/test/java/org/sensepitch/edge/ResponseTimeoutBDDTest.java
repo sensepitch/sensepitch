@@ -11,7 +11,6 @@ import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaderValues;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
-import io.netty.handler.codec.http.HttpServerKeepAliveHandler;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.concurrent.MockTicker;
@@ -113,7 +112,6 @@ class ResponseTimeoutBDDTest {
                   new IngressTimeoutHandler(
                       ConnectionConfig.DEFAULT.toBuilder().responseTimeoutSeconds(30).build(),
                       metrics),
-                  new HttpServerKeepAliveHandler(),
                   new DownstreamHandler(upstreamConnector, metrics),
                   new ExceptionHandler(metrics))
               .build();

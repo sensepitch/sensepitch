@@ -86,6 +86,8 @@ What happens at the limits:
   Since the measurements above, `84fc75a` made the proxy ignore upstream writability notifications
   after the final response, and `4bc202a` made it resume client reads paused by upstream backpressure
   when an early response finishes, e.g. when the upstream answers 413 before the body is complete.
+  Such an early response now gets `Connection: close`; the connection is closed after the rest of
+  the body was read, or after the read timeout (`IngressTimeoutHandler`).
 - No class in `src/main/java` handles `Expect: 100-continue` (grep). What reaches the client in
   that case was not checked.
 

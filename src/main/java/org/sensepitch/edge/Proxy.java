@@ -586,11 +586,10 @@ public class Proxy implements ProxyContext {
     pipeline.addLast(STRIP_EDGE_HEADERS_HANDLER);
     pipeline.addLast(sanitizeHostHandler);
     // logger sits between codec and rest so it sees header modifications
-    // from timeout and keep alive below
+    // from the timeout and keep-alive handling below
     pipeline.addLast(
         new RequestLoggingHandler(metrics, requestLogger, trustTraceparent, configIds));
     pipeline.addLast(new IngressTimeoutHandler(connectionConfig, metrics));
-    pipeline.addLast(new HttpServerKeepAliveHandler());
     pipeline.addLast(new IpTraitsHandler(state.get().ipTraitsLookup()));
     pipeline.addLast(ja4HeaderHandler);
     // Resolve these per request so reloads apply to existing keep-alive connections.
