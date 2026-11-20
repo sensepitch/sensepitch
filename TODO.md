@@ -165,7 +165,8 @@ the failure threshold for upstreams is under Upstream.
 
 ## Metrics, logging
 
-- [ ] Consolidate all sensepitch metrics prefixes as constants into one place including their descritpion
+- [ ] Cleanup: Consolidate all sensepitch metrics prefixes as constants into one place including their descritpion P3
+- [ ] Cleanup: First occurance logging should be better structured. Don't repeat the class names, use the metric name as the designator for event itself. The LOG already knows the class so just do LOG.warnOnce(METRIC_NAME_AS_EVENT_DESIGNATOR, .....) P3
 
 ## Configuration, operations
 
@@ -293,12 +294,11 @@ the failure threshold for upstreams is under Upstream.
     `ProxyShutdownIT`), and `SupervisedExecutor`/`TaskSuccessGuardian` for exceptions of worker
     threads. It is not on Maven Central (its deploy is skipped), so decide: publish it with a
     cache2k release, or copy the needed classes.
-- [ ] To avoid flooding we made request level errors debug level. That has the effect that 
-    misconfigurations are not immediately visible and will cause frustrartion during initial setup. 
-    Introduce a generic way to log each problem class once at warning level, like 
-    LOG.reqeustLevelProblem(Object type, ....). Use the class or add a constant with <classname>.<problem name>.
-    Maybe unify logging and metrics so there is only one method call and unify with the 
-    instance level logging change. P2
+- [ ] Unify request level logging and metrics, so a request problem is reported with one method
+    call that logs and counts, see `ProxyLogger.requestProblem`, and unify it with the instance
+    level logging change. The `RequestProblem` constants already name the metric that counts them.
+    `RequestLoggingHandler` now reports request-log failures with a `RequestProblem` and
+    increments the error counter separately. P3
 
 ## Evergreen / Cleanups
 
@@ -335,6 +335,11 @@ the failure threshold for upstreams is under Upstream.
 - [ ] add CONTRIBUTING.md
 
 ## Done
+
+- [x] Log each request level problem once at warning level (2026-11-19). The first occurrence in
+  the JVM is logged at `WARNING` and names the metric that counts it. Subsequent occurrences
+  are logged at `DEBUG`. Uses include downstream, upstream and exception handling, JA4, IP
+  traits lookup, and request-log writer failures. Follow-up in Build, tests.
 
 - [x] `sensepitch_edge_server_live` per ingress (2026-11-19): one series with the value 1 and the
   label `ingress` per known host, the hosts `SanitizeHostHandler` accepts (sites and

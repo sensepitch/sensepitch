@@ -9,7 +9,8 @@ import java.util.List;
 
 /// Combines the IP databases and the crawler IP lists. A database that throws on a lookup is a
 /// request level event: it is counted in [ProxyMetrics#ipLookupErrorCounter] and logged at debug,
-/// see [ProxyLogger] for the levels, and the other databases are still queried.
+/// the first one at warning, see [ProxyLogger] for the levels, and the other databases are still
+/// queried.
 ///
 /// @author Jens Wilke
 public class CombinedIpTraitsLookup implements IpTraitsLookup {
@@ -19,6 +20,10 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
   static final String UNKNOWN_CRAWLER_NAME = "unknown";
 
   private static final ProxyLogger LOG = ProxyLogger.get(CombinedIpTraitsLookup.class);
+
+  static final ProxyLogger.RequestProblem LOOKUP_FAILED =
+      new ProxyLogger.RequestProblem(
+          "CombinedIpTraitsLookup.lookupFailed", "sensepitch_ip_lookup_errors");
 
   private final List<IpTraitsCollector> ipAttributesLookups;
   private final IpLabelLookup ipLabelLookup;
@@ -111,7 +116,7 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
 
   private void lookupException(Exception e) {
     metrics.countIpLookupError();
-    LOG.debug("IP database lookup failed", e);
+    LOG.requestProblem(LOOKUP_FAILED, null, "IP database lookup failed", e);
   }
 
   @Override

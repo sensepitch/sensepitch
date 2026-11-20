@@ -23,6 +23,20 @@ import io.netty.util.ReferenceCountUtil;
 public class ForwardHandler extends ChannelInboundHandlerAdapter {
 
   private static final ProxyLogger LOG = ProxyLogger.get(ForwardHandler.class);
+
+  static final ProxyLogger.RequestProblem CLOSED_IN_FLIGHT =
+      new ProxyLogger.RequestProblem(
+          "ForwardHandler.closedInFlight", "sensepitch_upstream_errors{type=\"closed_in_flight\"}");
+
+  static final ProxyLogger.RequestProblem UNEXPECTED_DATA =
+      new ProxyLogger.RequestProblem(
+          "ForwardHandler.unexpectedData", "sensepitch_upstream_errors{type=\"unexpected_data\"}");
+
+  static final ProxyLogger.RequestProblem UPSTREAM_EXCEPTION =
+      new ProxyLogger.RequestProblem(
+          "ForwardHandler.upstreamException",
+          "sensepitch_ingress_request_errors, without a request in sensepitch_upstream_errors");
+
   private final ProxyMetrics metrics;
   private final String upstream;
   private Channel downstream;
@@ -38,7 +52,8 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     if (downstream != null) {
       metrics.countUpstreamError(upstream, "closed_in_flight");
-      LOG.debug(
+      LOG.requestProblem(
+          CLOSED_IN_FLIGHT,
           ctx.channel(),
           "upstream closed but request still in flight, downstream="
               + downstream.id()
@@ -52,7 +67,8 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
   public void channelRead(ChannelHandlerContext ctx, Object msg) {
     if (downstream == null) {
       metrics.countUpstreamError(upstream, "unexpected_data");
-      LOG.debug(
+      LOG.requestProblem(
+          UNEXPECTED_DATA,
           ctx.channel(),
           msg.getClass().getName()
               + " -> downstream is null, getting unexpected data from upstream");
@@ -105,8 +121,10 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
 
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-    LOG.debug(
-        ctx.channel(), "upstream failure, downstream=" + LOG.channelId(downstream) + ": " + cause);
+    LOG.requestProblem(
+        UPSTREAM_EXCEPTION,
+        ctx.channel(),
+        "upstream failure, downstream=" + LOG.channelId(downstream) + ": " + cause);
     if (downstream != null) {
       downstream.pipeline().fireExceptionCaught(new UpstreamException(cause));
       downstream = null;

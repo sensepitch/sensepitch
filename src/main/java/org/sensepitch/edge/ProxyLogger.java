@@ -16,24 +16,32 @@ import java.lang.System.Logger.Level;
 /// - `ERROR`: a fault of ours or something an operator has to act on, e.g. a configuration that
 ///   cannot be applied or a request log export that loses records. Never for a request level
 ///   event, see below.
-/// - `WARNING`: a problem in our own setup or state that may need action, never for a misbehaving
-///   client or upstream.
+/// - `WARNING`: a problem in our own setup or state that may need action. For a request level
+///   event only its first occurrence, see below.
 /// - `INFO`: lifecycle, e.g. start, configuration, shutdown.
 /// - `DEBUG`: what an operator needs to find the root cause of a request level event: channel,
 ///   phase, cause and stack trace. Off in the default configuration.
 /// - `TRACE`: internals, several lines per request.
 ///
-/// **Request level events are logged at `DEBUG`, never at `INFO` or above, errors included.** A
-/// request level event is one that can happen for a request or a connection: a client or upstream
-/// misbehaving, an upstream outage, a timeout, but also an unexpected exception that may be a bug
-/// of ours. Such an event can repeat for every request, thousands of times per second, e.g.
-/// during an outage or an attack. At `ERROR` it would flood the log, bury the lifecycle messages
-/// and cost I/O on the event loops.
+/// **Request level events are logged at `DEBUG`, errors included, except the first occurrence of
+/// each kind at `WARNING`, see below, never at `INFO` or `ERROR`.** A request level event is one
+/// that can happen for a request or a connection: a client or upstream misbehaving, an upstream
+/// outage, a timeout, but also an unexpected exception that may be a bug of ours. Such an event can
+/// repeat for every request, thousands of times per second, e.g. during an outage or an attack. At
+/// `ERROR` it would flood the log, bury the lifecycle messages and cost I/O on the event loops.
 ///
 /// **Every request level event is counted in a metric**, see [ProxyMetrics], or recorded in the
 /// request log, so it is never silent: the metric is what an operator watches and alerts on, and
 /// `DEBUG` is switched on to investigate. An `ERROR` is for faults that do not repeat per
 /// request; one that may, e.g. a failing request log export, logs once and counts the rest.
+///
+/// **The first occurrence of each kind of request level event is logged at `WARNING`.** With
+/// `DEBUG` off, as in the default configuration, a misconfiguration that makes every request fail,
+/// e.g. an unreachable upstream during the initial setup, would otherwise leave no trace in the
+/// log. A kind of event is a [RequestProblem], a constant of the class that reports it, logged
+/// with [#requestProblem(RequestProblem, Channel, String, Throwable)]. The first occurrence in the
+/// JVM is logged at `WARNING` and names the metric that counts the further ones, which are logged
+/// at `DEBUG`. So the log shows each kind of problem once, however often it repeats.
 ///
 /// Tracing is available by default: every logger is a [WithTracing] instance that asks Log4j2, so
 /// the configured level decides, at the cost of a level check per trace call. The level is set in
@@ -94,16 +102,43 @@ public interface ProxyLogger {
   /// At `WARNING`, for a problem in our own setup, see [ProxyLogger] "Levels"
   void warn(String message);
 
-  /// At `DEBUG`, for a request level event that is counted in a metric, see [ProxyLogger] "Levels"
-  void debug(Channel channel, String message);
-
   /// At `DEBUG` with the stack trace, for a request level event that is counted in a metric, see
-  /// [ProxyLogger] "Levels"
+  /// [ProxyLogger] "Levels". Prefer [#requestProblem(RequestProblem, Channel, String, Throwable)],
+  /// which shows the first occurrence at `WARNING`.
   void debug(Channel channel, String message, Throwable cause);
 
-  /// At `DEBUG` with the stack trace, for a request level event without a channel, see
+  /// Request level event of the kind `problem`, counted in the metric the problem names: at
+  /// `WARNING` the first time the problem occurs in the JVM, afterwards at `DEBUG`, see
   /// [ProxyLogger] "Levels"
-  void debug(String message, Throwable cause);
+  ///
+  /// @param channel the channel of the event, or `null` if there is none
+  /// @param cause the exception with the stack trace, or `null` if there is none
+  void requestProblem(RequestProblem problem, Channel channel, String message, Throwable cause);
+
+  /// Request level event of the kind `problem` without a cause, see
+  /// [#requestProblem(RequestProblem, Channel, String, Throwable)]
+  default void requestProblem(RequestProblem problem, Channel channel, String message) {
+    requestProblem(problem, channel, message, null);
+  }
+
+  /// A kind of request level event, see [ProxyLogger] "Levels". Keep it in a `static final` field
+  /// of the class that reports it, the key must be unique in the JVM.
+  ///
+  /// @param key unique name, `<simple class name>.<problem name>`, e.g.
+  ///     `ExceptionHandler.handshakeError`
+  /// @param countedIn where the occurrences are counted, the metric with its labels, named in the
+  ///     first log line so an operator knows where to look for the further ones
+  record RequestProblem(String key, String countedIn) {
+
+    /// The hint appended to the message of the first occurrence
+    String firstOccurrenceHint() {
+      return " (first occurrence of "
+          + key
+          + ", further ones are logged at DEBUG and counted in "
+          + countedIn
+          + ")";
+    }
+  }
 
   /// At `ERROR`, never for a request level event, see [ProxyLogger] "Levels"
   void error(Channel channel, Throwable cause);
@@ -239,11 +274,6 @@ public interface ProxyLogger {
     }
 
     @Override
-    public void debug(Channel channel, String message) {
-      log(LogInfo.builder().level(Level.DEBUG).channel(channel).message(message).build());
-    }
-
-    @Override
     public void debug(Channel channel, String message, Throwable cause) {
       log(
           LogInfo.builder()
@@ -254,9 +284,19 @@ public interface ProxyLogger {
               .build());
     }
 
+    /// The check for the first occurrence costs a hash lookup without locking and allocation, see
+    /// [LogTarget#firstOccurrence(String)], the message is only extended for the first one.
     @Override
-    public void debug(String message, Throwable cause) {
-      log(LogInfo.builder().level(Level.DEBUG).message(message).error(cause).build());
+    public void requestProblem(
+        RequestProblem problem, Channel channel, String message, Throwable cause) {
+      boolean first = target.firstOccurrence(problem.key());
+      log(
+          LogInfo.builder()
+              .level(first ? Level.WARNING : Level.DEBUG)
+              .channel(channel)
+              .message(first ? message + problem.firstOccurrenceHint() : message)
+              .error(cause)
+              .build());
     }
   }
 

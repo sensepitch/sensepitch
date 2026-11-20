@@ -31,6 +31,19 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
 
   private static final ProxyLogger LOG = ProxyLogger.get(ExceptionHandler.class);
 
+  static final ProxyLogger.RequestProblem HANDSHAKE_ERROR =
+      new ProxyLogger.RequestProblem(
+          "ExceptionHandler.handshakeError",
+          "sensepitch_ingress_request_errors{phase=\"handshake\",type=\"other\"}");
+
+  static final ProxyLogger.RequestProblem TIMEOUT =
+      new ProxyLogger.RequestProblem(
+          "ExceptionHandler.timeout", "sensepitch_ingress_request_errors{type=\"timeout\"}");
+
+  static final ProxyLogger.RequestProblem EXCEPTION =
+      new ProxyLogger.RequestProblem(
+          "ExceptionHandler.exception", "sensepitch_ingress_request_errors{type=\"other\"}");
+
   private boolean sslHandshakeComplete;
   private final ProxyMetrics metrics;
 
@@ -116,7 +129,8 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
         metrics.countIngressError(ctx, phase, "reset");
       } else {
         metrics.countIngressError(ctx, phase, "other");
-        LOG.debug(ctx.channel(), "handshake error, phase=handshake", cause);
+        LOG.requestProblem(
+            HANDSHAKE_ERROR, ctx.channel(), "handshake error, phase=handshake", cause);
       }
       completeAndClose(ctx);
       return;
@@ -148,7 +162,7 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
     metrics.countIngressError(ctx, phase, timeout ? "timeout" : "other");
     // a more specific outcome, e.g. a timeout, was reported before the exception, it wins
     loggingHandler.setOutcome(RequestOutcome.EDGE_ERROR);
-    LOG.debug(ctx.channel(), "phase=" + phase, cause);
+    LOG.requestProblem(timeout ? TIMEOUT : EXCEPTION, ctx.channel(), "phase=" + phase, cause);
     // send a proper response if possible, log via standard request log
     if (loggingHandler.isRequestReceived() && !loggingHandler.isResponseStarted()) {
       // The exception is recorded in the request log. It is not sent to the client, it may reveal

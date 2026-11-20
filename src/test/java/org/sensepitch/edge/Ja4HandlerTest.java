@@ -46,6 +46,38 @@ public class Ja4HandlerTest {
         .satisfies(e -> assertThat(e.info().level()).isEqualTo(System.Logger.Level.DEBUG));
   }
 
+  /// The first failure in the JVM is logged at `WARNING`, so it is visible in the default
+  /// configuration, further ones at `DEBUG`, see [ProxyLogger] "Levels"
+  @Test
+  public void firstFailureIsAWarning() {
+    logs.warnProblems();
+    failFingerprint(channel);
+    EmbeddedChannel second = new EmbeddedChannel(new Ja4Handler(metrics));
+    failFingerprint(second);
+    second.finishAndReleaseAll();
+    assertThat(logs.entries().stream().map(e -> e.info().level()).toList())
+        .containsExactly(System.Logger.Level.WARNING, System.Logger.Level.DEBUG);
+    assertThat(logs.messages().getFirst())
+        .contains(
+            "JA4 fingerprint failed (first occurrence of Ja4Handler.fingerprintFailed",
+            "sensepitch_ingress_request_errors{phase=\"handshake\",type=\"ja4\"}");
+    assertThat(logs.messages().getLast()).endsWith("JA4 fingerprint failed");
+    assertThat(
+            metrics
+                .ingressErrorCounter
+                .labelValues(SanitizeHostHandler.NIL_HOST, "handshake", "ja4")
+                .get())
+        .isEqualTo(2);
+  }
+
+  /// Sends a buffer the handler cannot read and checks that it is passed on
+  private static void failFingerprint(EmbeddedChannel channel) {
+    ByteBuf released = Unpooled.wrappedBuffer(new byte[] {22});
+    released.release();
+    channel.writeInbound(released);
+    assertThat((Object) channel.readInbound()).isSameAs(released);
+  }
+
   @AfterEach
   void tearDown() {
     channel.finishAndReleaseAll();

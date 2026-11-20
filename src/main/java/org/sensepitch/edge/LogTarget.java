@@ -2,6 +2,8 @@ package org.sensepitch.edge;
 
 import io.netty.channel.Channel;
 import java.lang.System.Logger.Level;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -92,6 +94,29 @@ public interface LogTarget {
 
   /// True, if records of the level are processed
   boolean isEnabled(Level level);
+
+  /// True the first time the key is passed in the JVM, for the first occurrence of a
+  /// [ProxyLogger.RequestProblem]. Thread safe: of concurrent first calls with the same key
+  /// exactly one returns `true`. Once a key was seen, a call is a lookup in a concurrent hash set,
+  /// without locking or allocation.
+  default boolean firstOccurrence(String key) {
+    return FirstOccurrences.add(key);
+  }
+
+  /// The keys passed to [#firstOccurrence(String)] in this JVM. The set only grows, the keys are
+  /// constants and their number is fixed by the code.
+  final class FirstOccurrences {
+
+    private static final Set<String> SEEN = ConcurrentHashMap.newKeySet();
+
+    private FirstOccurrences() {}
+
+    /// True if the key was not seen before. `contains` first: it does not lock, while `add`
+    /// locks the hash bin even if the key is present.
+    static boolean add(String key) {
+      return !SEEN.contains(key) && SEEN.add(key);
+    }
+  }
 
   void log(LogInfo info);
 

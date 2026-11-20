@@ -58,6 +58,8 @@
   `java -jar target/sensepitch-edge-*-with-dependencies.jar`
 
 ## Coding Style & Naming Conventions
+- DRY, establish speaking constants for magic numbers and strings, get the class name from the class object and
+  don't repeat it
 - Java 25 is the target (`maven.compiler.release` set to 25).
 - Formatting uses Spotless with Google Java Format; prefer 2-space indentation and standard Google style.
   Spotless leaves doc comments alone (`formatJavadoc` is off), so wrap `///` lines at 100 columns by hand.
@@ -226,9 +228,15 @@ up to `TestingParameters.TIMEOUT`.** A test is correct only if it passes under a
   log by passing a `RequestLogCapture` (a `RequestLogOutput`) to `Proxy` or the request logger.
 - Log levels and the reasons are described in the `ProxyLogger` class doc ("Levels"), the log
   methods link there. The important rule: **never log a request level event at `INFO` or above,
-  errors included**. A request level event is anything that can happen per request or
-  connection: a misbehaving client or upstream, a timeout, but also an unexpected exception that
-  may be a bug of ours. Log it at `DEBUG`, for root cause analysis.
+  errors included**, except the first occurrence of each kind at `WARNING`, see below. A request
+  level event is anything that can happen per request or connection: a misbehaving client or
+  upstream, a timeout, but also an unexpected exception that may be a bug of ours. Log it at
+  `DEBUG`, for root cause analysis, via `ProxyLogger.requestProblem` with a
+  `ProxyLogger.RequestProblem` constant of the reporting class (key
+  `<SimpleClassName>.<problemName>`, plus the metric that counts it): the first occurrence in the
+  JVM is logged at `WARNING` and names the metric, so a misconfiguration during the initial setup is
+  visible without `DEBUG`, the further ones at `DEBUG`. In tests every occurrence is at `DEBUG`;
+  `LogCapture.warnProblems()` switches the first `WARNING` on for one test.
 - **Every request level event is counted in a metric** (or recorded in the request log), so it is
   never silent and can be investigated when needed. A new request level log line comes with its
   counter and a test that asserts both.

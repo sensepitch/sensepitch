@@ -2,8 +2,10 @@ package org.sensepitch.edge;
 
 import java.lang.System.Logger.Level;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.core.LoggerContext;
@@ -37,12 +39,24 @@ final class LogSink implements LogTarget {
   private static final class Buffer {
     private final List<Entry> entries = new ArrayList<>();
 
+    /// Problem keys seen since the warnings were switched on, `null` while they are off
+    private Set<String> problemKeys;
+
     synchronized void add(Entry entry) {
       entries.add(entry);
     }
 
     synchronized void clear() {
       entries.clear();
+      problemKeys = null;
+    }
+
+    synchronized void warnProblems() {
+      problemKeys = new HashSet<>();
+    }
+
+    synchronized boolean firstOccurrence(String key) {
+      return problemKeys != null && problemKeys.add(key);
     }
 
     synchronized void copyTo(List<Entry> target) {
@@ -85,6 +99,15 @@ final class LogSink implements LogTarget {
     return true;
   }
 
+  /// Per thread and test, not per JVM: off, so the request problems are logged at `DEBUG`,
+  /// unless a test switched the warnings on via [LogCapture#warnProblems()]. Then the first
+  /// occurrence of each problem in the test is the one at `WARNING`. A JVM wide state, as in
+  /// production, would make the level depend on the tests that ran before.
+  @Override
+  public boolean firstOccurrence(String key) {
+    return BUFFER.get().firstOccurrence(key);
+  }
+
   @Override
   public void log(LogInfo info) {
     if (forward != null) {
@@ -105,6 +128,10 @@ final class LogSink implements LogTarget {
 
   static void clearCurrentThread() {
     BUFFER.get().clear();
+  }
+
+  static void warnProblemsOfCurrentThread() {
+    BUFFER.get().warnProblems();
   }
 
   static void clearAllThreads() {

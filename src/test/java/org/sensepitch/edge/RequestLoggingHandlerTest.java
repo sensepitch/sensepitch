@@ -23,15 +23,14 @@ import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.Future;
 import java.io.IOException;
+import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
-/// Request log failures and the log of a response that could not be delivered completely. A
-/// failing log destination is a request level event: counted, logged at debug, see [ProxyLogger],
-/// and the request outcome is counted before.
+/// Verifies diagnostics and accounting for request log failures and aborted response deliveries.
 class RequestLoggingHandlerTest {
 
   @RegisterExtension LogCapture logs = new LogCapture();
@@ -67,7 +66,8 @@ class RequestLoggingHandlerTest {
   }
 
   @Test
-  void failingRequestLogIsCounted() {
+  void failingRequestLogWarnsOnceAndCountsEveryFailure() {
+    logs.warnProblems();
     ProxyMetrics metrics = new ProxyMetrics();
     IllegalStateException cause = new IllegalStateException("broken destination");
     EmbeddedChannel channel =
@@ -77,20 +77,24 @@ class RequestLoggingHandlerTest {
                 info -> {
                   throw cause;
                 }));
-    channel.writeInbound(
-        new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/"),
-        LastHttpContent.EMPTY_LAST_CONTENT);
-    channel.writeOutbound(new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK));
-    assertThat(metrics.requestLogErrorCounter.get()).isOne();
-    assertThat(logs.errors()).isEmpty();
-    assertThat(logs.entries())
-        .singleElement()
-        .satisfies(
-            e -> {
-              assertThat(e.info().level()).isEqualTo(System.Logger.Level.DEBUG);
-              assertThat(e.error()).isSameAs(cause);
-            });
-    channel.finishAndReleaseAll();
+    try {
+      for (int i = 0; i < 2; i++) {
+        channel.writeInbound(
+            new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/"),
+            LastHttpContent.EMPTY_LAST_CONTENT);
+        channel.writeOutbound(
+            new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK));
+      }
+      var entries = logs.entries();
+      assertThat(entries)
+          .extracting(e -> e.info().level())
+          .containsExactly(Level.WARNING, Level.DEBUG);
+      assertThat(entries.getFirst().message()).contains("sensepitch_request_log_errors_total");
+      assertThat(entries).allSatisfy(e -> assertThat(e.error()).isSameAs(cause));
+      assertThat(metrics.requestLogErrorCounter.get()).isEqualTo(2);
+    } finally {
+      channel.finishAndReleaseAll();
+    }
   }
 
   /// The client did not receive the complete response, so the record reports the aborted delivery

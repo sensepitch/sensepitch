@@ -32,6 +32,11 @@ public class Ja4Handler extends ChannelInboundHandlerAdapter {
 
   private static final ProxyLogger LOG = ProxyLogger.get(Ja4Handler.class);
 
+  static final ProxyLogger.RequestProblem FINGERPRINT_FAILED =
+      new ProxyLogger.RequestProblem(
+          "Ja4Handler.fingerprintFailed",
+          "sensepitch_ingress_request_errors{phase=\"handshake\",type=\"ja4\"}");
+
   private final ProxyMetrics metrics;
   private ByteBuf received;
 
@@ -53,7 +58,7 @@ public class Ja4Handler extends ChannelInboundHandlerAdapter {
       } catch (Throwable t) {
         // a fingerprint is never worth losing a connection for
         metrics.countIngressError(ctx, "handshake", "ja4");
-        LOG.debug(ctx.channel(), "JA4 fingerprint failed", t);
+        LOG.requestProblem(FINGERPRINT_FAILED, ctx.channel(), "JA4 fingerprint failed", t);
         finish(ctx);
       }
     }

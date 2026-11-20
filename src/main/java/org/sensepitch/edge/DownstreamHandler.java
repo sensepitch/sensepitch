@@ -29,6 +29,18 @@ public class DownstreamHandler extends ChannelDuplexHandler {
 
   private static final ProxyLogger LOG = ProxyLogger.get(DownstreamHandler.class);
 
+  static final ProxyLogger.RequestProblem ANOTHER_REQUEST =
+      new ProxyLogger.RequestProblem(
+          "DownstreamHandler.anotherRequest", "the request log, status 400");
+
+  static final ProxyLogger.RequestProblem UPSTREAM_FAILURE =
+      new ProxyLogger.RequestProblem(
+          "DownstreamHandler.upstreamFailure", "sensepitch_ingress_request_outcomes");
+
+  static final ProxyLogger.RequestProblem UNEXPECTED_CLOSE =
+      new ProxyLogger.RequestProblem(
+          "DownstreamHandler.unexpectedClose", "sensepitch_ingress_requests_aborted");
+
   private final Upstream upstream;
 
   /// The upstream connection of the active exchange, `null` when no exchange is active. A listener
@@ -59,7 +71,10 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       // no pipelining, the HttpServerCodec delivers content only between a request and its last
       // content, so a new request while the exchange is active is the only unexpected case
       if (upstreamChannelFuture != null) {
-        LOG.debug(ctx.channel(), "another request is unexpected, phase=" + exchangePhase());
+        LOG.requestProblem(
+            ANOTHER_REQUEST,
+            ctx.channel(),
+            "another request is unexpected, phase=" + exchangePhase());
         ReferenceCountUtil.release(request);
         completeWithError(
             ctx,
@@ -150,7 +165,8 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       LOG.trace(ctx.channel(), "upstream failure after the exchange ended: " + cause);
       return;
     }
-    LOG.debug(ctx.channel(), "upstream failure, outcome=" + outcome + ": " + cause);
+    LOG.requestProblem(
+        UPSTREAM_FAILURE, ctx.channel(), "upstream failure, outcome=" + outcome + ": " + cause);
     RequestLoggingHandler requestLog = RequestLoggingHandler.find(ctx);
     if (requestLog != null) {
       requestLog.setException(cause);
@@ -289,7 +305,8 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     if (upstreamChannelFuture != null) {
       if (!closeRequested) {
-        LOG.debug(
+        LOG.requestProblem(
+            UNEXPECTED_CLOSE,
             ctx.channel(),
             "unexpected close during the exchange, phase="
                 + exchangePhase()
