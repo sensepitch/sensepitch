@@ -336,6 +336,12 @@ public class FlowAndExceptionTest {
               assertThat(e.info().channel()).isSameAs(ingressChannel);
               assertThat(e.message()).contains("another request is unexpected", "phase=waiting");
             });
+    assertThat(
+            proxyMetrics
+                .ingressErrorCounter
+                .labelValues(SanitizeHostHandler.MISSING_HOST, "waiting", "another_request")
+                .get())
+        .isOne();
     assertThat(logs.errors()).isEmpty();
   }
 
@@ -419,6 +425,75 @@ public class FlowAndExceptionTest {
               assertThat(e.message()).contains("downstream=", "Connection reset");
             });
     assertThat(logs.errors()).isEmpty();
+  }
+
+  /// With the production levels, an upstream exception during an exchange gives one `WARNING`: by
+  /// the [ExceptionHandler] that counts it, naming its series. The [ForwardHandler] that sees it
+  /// first logs it at `DEBUG` only, so one event is not reported at `WARNING` twice. The upstream
+  /// close that follows is no `closed_in_flight`, the event is counted once.
+  @Test
+  public void upstreamExceptionDuringTheExchangeWarnsOnceNamingTheSeries() {
+    logs.warnProblems();
+    sendGetRequest();
+    upstreamChannel.pipeline().fireExceptionCaught(new SocketException("Connection reset"));
+    rattle();
+    assertThat(logs.entries())
+        .filteredOn(e -> e.info().level() == Level.WARNING)
+        .singleElement()
+        .satisfies(
+            e -> {
+              assertThat(e.source()).isEqualTo(ExceptionHandler.class.getName());
+              assertThat(e.info().message())
+                  .endsWith(
+                      " (first occurrence counted in sensepitch_ingress_request_errors_total"
+                          + "{ingress=\"missing_host\",phase=\"waiting\",type=\"other\"}, further"
+                          + " ones are logged at DEBUG)")
+                  .doesNotContain("ExceptionHandler");
+            });
+    assertThat(logs.entries())
+        .filteredOn(e -> e.source().equals(ForwardHandler.class.getName()))
+        .extracting(e -> e.info().level())
+        .containsOnly(Level.DEBUG);
+    assertThat(upstreamErrors("closed_in_flight")).isZero();
+  }
+
+  /// A failed connect and a failed write are counted by their outcome. Each is its own kind of
+  /// event and warns once, naming its series; the repeated connect failure is at `DEBUG`.
+  @Test
+  public void upstreamConnectAndWriteFailuresWarnOnTheirOwn() {
+    logs.warnProblems();
+    connectFailure = new SocketException("Connection refused");
+    sendGetRequest();
+    rattle();
+    ingressChannel = ingressChannel(null);
+    sendGetRequest();
+    rattle();
+    connectFailure = null;
+    failUpstreamWrites = true;
+    ingressChannel = ingressChannel(null);
+    sendGetRequest();
+    rattle();
+    String connectFailed = "upstream failure, outcome=" + RequestOutcome.UPSTREAM_CONNECT_FAILED;
+    String writeFailed = "upstream failure, outcome=" + RequestOutcome.UPSTREAM_WRITE_FAILED;
+    assertThat(logs.entries())
+        .filteredOn(e -> e.source().equals(DownstreamHandler.class.getName()))
+        .extracting(e -> e.info().level() + " " + e.info().message())
+        .satisfiesExactly(
+            m ->
+                assertThat(m)
+                    .startsWith("WARNING " + connectFailed)
+                    .endsWith(
+                        " (first occurrence counted in sensepitch_ingress_request_outcomes_total"
+                            + "{ingress=\"missing_host\",outcome=\"upstream_connect_failed\"}, further ones"
+                            + " are logged at DEBUG)"),
+            m -> assertThat(m).startsWith("DEBUG " + connectFailed).doesNotContain("first"),
+            m ->
+                assertThat(m)
+                    .startsWith("WARNING " + writeFailed)
+                    .endsWith(
+                        " (first occurrence counted in sensepitch_ingress_request_outcomes_total"
+                            + "{ingress=\"missing_host\",outcome=\"upstream_write_failed\"}, further ones"
+                            + " are logged at DEBUG)"));
   }
 
   @Test

@@ -37,10 +37,6 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
 
   private static final ProxyLogger LOG = ProxyLogger.get(RequestLoggingHandler.class);
 
-  private static final ProxyLogger.RequestProblem REQUEST_LOG_ERROR =
-      new ProxyLogger.RequestProblem(
-          "RequestLoggingHandler.requestLogError", "sensepitch_request_log_errors_total");
-
   private static final CountByteIoHandler DUMMY_COUNT_BYTE_IO_HANDLER = new CountByteIoHandler();
 
   /// Construct a mock http request in case we don't have a request, which can happen if the request
@@ -257,8 +253,12 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
       logger.logRequest(this);
       requestCount++;
     } catch (Throwable e) {
-      metrics.countRequestLogError();
-      LOG.requestProblem(REQUEST_LOG_ERROR, ctx.channel(), "Error logging request", e);
+      LOG.incrementAndWarnOnce(
+          metrics.requestLogErrorCounter,
+          ProxyLogger.NO_LABELS,
+          ctx.channel(),
+          "Error logging request",
+          e);
     }
     // reset times for keep alive requests
     requestStartTime = System.currentTimeMillis();

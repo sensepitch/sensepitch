@@ -231,11 +231,17 @@ up to `TestingParameters.TIMEOUT`.** A test is correct only if it passes under a
   errors included**, except the first occurrence of each kind at `WARNING`, see below. A request
   level event is anything that can happen per request or connection: a misbehaving client or
   upstream, a timeout, but also an unexpected exception that may be a bug of ours. Log it at
-  `DEBUG`, for root cause analysis, via `ProxyLogger.requestProblem` with a
-  `ProxyLogger.RequestProblem` constant of the reporting class (key
-  `<SimpleClassName>.<problemName>`, plus the metric that counts it): the first occurrence in the
-  JVM is logged at `WARNING` and names the metric, so a misconfiguration during the initial setup is
-  visible without `DEBUG`, the further ones at `DEBUG`. In tests every occurrence is at `DEBUG`;
+  `DEBUG`, for root cause analysis, via
+  `LOG.incrementAndWarnOnce(counter, labelValues, channel, message, cause)`: it counts the event
+  in that series of the counter and logs it, one call, so counting and logging cannot drift apart.
+  The label values come from the label enums, e.g. `IngressErrorType.TIMEOUT.label`. An event that
+  another place counts, e.g. the request outcome counted when the request is logged, is logged
+  with `LOG.warnOnce(...)`, same arguments, which does not count. Do not repeat the class name,
+  the logger names it. The first occurrence of each series in the JVM (each data point, so e.g.
+  once per ingress) is logged at `WARNING` and names the series, so a misconfiguration during the
+  initial setup is visible without `DEBUG`, the further ones at `DEBUG`. An event another handler
+  counts and warns about, e.g. an upstream exception passed to the `ExceptionHandler`, is logged
+  with `LOG.debug` only. In tests every occurrence is at `DEBUG`;
   `LogCapture.warnProblems()` switches the first `WARNING` on for one test.
 - **Every request level event is counted in a metric** (or recorded in the request log), so it is
   never silent and can be investigated when needed. A new request level log line comes with its

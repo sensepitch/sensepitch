@@ -58,9 +58,12 @@ public class Ja4HandlerTest {
     assertThat(logs.entries().stream().map(e -> e.info().level()).toList())
         .containsExactly(System.Logger.Level.WARNING, System.Logger.Level.DEBUG);
     assertThat(logs.messages().getFirst())
-        .contains(
-            "JA4 fingerprint failed (first occurrence of Ja4Handler.fingerprintFailed",
-            "sensepitch_ingress_request_errors{phase=\"handshake\",type=\"ja4\"}");
+        .endsWith(
+            "JA4 fingerprint failed (first occurrence counted in"
+                + " sensepitch_ingress_request_errors_total"
+                + "{ingress=\"nil_host\",phase=\"handshake\",type=\"ja4\"}, further ones are"
+                + " logged at DEBUG)")
+        .doesNotContain("Ja4Handler");
     assertThat(logs.messages().getLast()).endsWith("JA4 fingerprint failed");
     assertThat(
             metrics

@@ -1,5 +1,9 @@
 package org.sensepitch.edge;
 
+import static org.sensepitch.edge.ProxyMetrics.UpstreamErrorType.CLOSED_IN_FLIGHT;
+import static org.sensepitch.edge.ProxyMetrics.UpstreamErrorType.EXCEPTION_WITHOUT_REQUEST;
+import static org.sensepitch.edge.ProxyMetrics.UpstreamErrorType.UNEXPECTED_DATA;
+
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelException;
@@ -14,28 +18,17 @@ import io.netty.util.ReferenceCountUtil;
 /// Handler for upstream communication, receives response from upstream and passes it downstream.
 ///
 /// An exception during an exchange is passed to the downstream pipeline as [UpstreamException],
-/// where [ExceptionHandler] counts it. The other events of a misbehaving upstream are counted in
-/// [ProxyMetrics#upstreamErrorCounter] and logged at debug, see [ProxyLogger] for the levels: a
-/// close before the response is complete (the request then ends by its timeout or abort outcome),
-/// data after the response, and an exception after the response.
+/// where [ExceptionHandler] counts it and logs its first occurrence at warning, so here it is
+/// logged at debug only, with the upstream channel. The other events of a misbehaving upstream are
+/// counted in [ProxyMetrics#upstreamErrorCounter] and logged at debug, see [ProxyLogger] for the
+/// levels: a close before the response is complete (the request then ends by its timeout or abort
+/// outcome), data after the response, and an exception after the response. Their first
+/// occurrences are logged at warning, see [ProxyLogger#incrementAndWarnOnce].
 ///
 /// @author Jens Wilke
 public class ForwardHandler extends ChannelInboundHandlerAdapter {
 
   private static final ProxyLogger LOG = ProxyLogger.get(ForwardHandler.class);
-
-  static final ProxyLogger.RequestProblem CLOSED_IN_FLIGHT =
-      new ProxyLogger.RequestProblem(
-          "ForwardHandler.closedInFlight", "sensepitch_upstream_errors{type=\"closed_in_flight\"}");
-
-  static final ProxyLogger.RequestProblem UNEXPECTED_DATA =
-      new ProxyLogger.RequestProblem(
-          "ForwardHandler.unexpectedData", "sensepitch_upstream_errors{type=\"unexpected_data\"}");
-
-  static final ProxyLogger.RequestProblem UPSTREAM_EXCEPTION =
-      new ProxyLogger.RequestProblem(
-          "ForwardHandler.upstreamException",
-          "sensepitch_ingress_request_errors, without a request in sensepitch_upstream_errors");
 
   private final ProxyMetrics metrics;
   private final String upstream;
@@ -51,9 +44,9 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
   @Override
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     if (downstream != null) {
-      metrics.countUpstreamError(upstream, "closed_in_flight");
-      LOG.requestProblem(
-          CLOSED_IN_FLIGHT,
+      LOG.incrementAndWarnOnce(
+          metrics.upstreamErrorCounter,
+          new String[] {upstream, CLOSED_IN_FLIGHT.label},
           ctx.channel(),
           "upstream closed but request still in flight, downstream="
               + downstream.id()
@@ -66,9 +59,9 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) {
     if (downstream == null) {
-      metrics.countUpstreamError(upstream, "unexpected_data");
-      LOG.requestProblem(
-          UNEXPECTED_DATA,
+      LOG.incrementAndWarnOnce(
+          metrics.upstreamErrorCounter,
+          new String[] {upstream, UNEXPECTED_DATA.label},
           ctx.channel(),
           msg.getClass().getName()
               + " -> downstream is null, getting unexpected data from upstream");
@@ -121,15 +114,19 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
 
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-    LOG.requestProblem(
-        UPSTREAM_EXCEPTION,
-        ctx.channel(),
-        "upstream failure, downstream=" + LOG.channelId(downstream) + ": " + cause);
+    String message = "upstream failure, downstream=" + LOG.channelId(downstream) + ": " + cause;
     if (downstream != null) {
-      downstream.pipeline().fireExceptionCaught(new UpstreamException(cause));
+      LOG.debug(ctx.channel(), message, null);
+      // cleared first: the exception handling closes the upstream, which is no close in flight
+      Channel exchangeDownstream = downstream;
       downstream = null;
+      exchangeDownstream.pipeline().fireExceptionCaught(new UpstreamException(cause));
     } else {
-      metrics.countUpstreamError(upstream, "exception_without_request");
+      LOG.incrementAndWarnOnce(
+          metrics.upstreamErrorCounter,
+          new String[] {upstream, EXCEPTION_WITHOUT_REQUEST.label},
+          ctx.channel(),
+          message);
     }
     ctx.close();
   }

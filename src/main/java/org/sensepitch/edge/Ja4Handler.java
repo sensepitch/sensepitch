@@ -1,5 +1,8 @@
 package org.sensepitch.edge;
 
+import static org.sensepitch.edge.ProxyMetrics.HANDSHAKE_PHASE;
+import static org.sensepitch.edge.ProxyMetrics.IngressErrorType.JA4;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
@@ -32,11 +35,6 @@ public class Ja4Handler extends ChannelInboundHandlerAdapter {
 
   private static final ProxyLogger LOG = ProxyLogger.get(Ja4Handler.class);
 
-  static final ProxyLogger.RequestProblem FINGERPRINT_FAILED =
-      new ProxyLogger.RequestProblem(
-          "Ja4Handler.fingerprintFailed",
-          "sensepitch_ingress_request_errors{phase=\"handshake\",type=\"ja4\"}");
-
   private final ProxyMetrics metrics;
   private ByteBuf received;
 
@@ -57,8 +55,12 @@ public class Ja4Handler extends ChannelInboundHandlerAdapter {
         inspect(ctx, buf);
       } catch (Throwable t) {
         // a fingerprint is never worth losing a connection for
-        metrics.countIngressError(ctx, "handshake", "ja4");
-        LOG.requestProblem(FINGERPRINT_FAILED, ctx.channel(), "JA4 fingerprint failed", t);
+        LOG.incrementAndWarnOnce(
+            metrics.ingressErrorCounter,
+            new String[] {ProxyMetrics.ingress(ctx), HANDSHAKE_PHASE, JA4.label},
+            ctx.channel(),
+            "JA4 fingerprint failed",
+            t);
         finish(ctx);
       }
     }

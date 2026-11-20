@@ -186,7 +186,6 @@ the failure threshold for upstreams is under Upstream.
 ## Metrics, logging
 
 - [ ] Cleanup: Consolidate all sensepitch metrics prefixes as constants into one place including their descritpion P3
-- [ ] Cleanup: First occurance logging should be better structured. Don't repeat the class names, use the metric name as the designator for event itself. The LOG already knows the class so just do LOG.warnOnce(METRIC_NAME_AS_EVENT_DESIGNATOR, .....) P3
 
 ## Configuration, operations
 
@@ -355,6 +354,19 @@ the failure threshold for upstreams is under Upstream.
 - [ ] add CONTRIBUTING.md
 
 ## Done
+
+- [x] Cleanup: first occurrence logging per metric series, counted by the logger (2026-11-20).
+  `LOG.incrementAndWarnOnce(counter, labelValues, channel, message, cause)` replaces
+  `requestProblem` and its `RequestProblem` record: it counts the event and logs it in one call.
+  `LOG.warnOnce(...)` logs an event that is counted elsewhere (request outcome, aborted). The first
+  occurrence is per series (data point, e.g. per ingress), and the `WARNING` names the series, e.g.
+  `sensepitch_ingress_request_errors_total{ingress="a",phase="waiting",type="timeout"}`, instead
+  of a `<Class>.<problem>` key. Label values come from the enums `IngressErrorType`,
+  `UpstreamErrorType`, `RequestOutcome`. A second request during an exchange is now counted in
+  `sensepitch_ingress_request_errors_total{type="another_request"}`. Upstream connect and write
+  failures warn separately, by their `outcome`. An upstream exception during an exchange is logged
+  by `ForwardHandler` at `DEBUG` only, since `ExceptionHandler` counts it and warns. It is no longer
+  counted a second time as upstream `closed_in_flight` when the upstream is closed afterwards.
 
 - [x] Log each request level problem once at warning level (2026-11-19). The first occurrence in
   the JVM is logged at `WARNING` and names the metric that counts it. Subsequent occurrences

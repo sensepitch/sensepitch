@@ -1,5 +1,11 @@
 package org.sensepitch.edge;
 
+import static org.sensepitch.edge.ProxyMetrics.HANDSHAKE_PHASE;
+import static org.sensepitch.edge.ProxyMetrics.IngressErrorType.OTHER;
+import static org.sensepitch.edge.ProxyMetrics.IngressErrorType.RESET;
+import static org.sensepitch.edge.ProxyMetrics.IngressErrorType.SSL;
+import static org.sensepitch.edge.ProxyMetrics.IngressErrorType.TIMEOUT;
+
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
@@ -30,19 +36,6 @@ import lombok.extern.slf4j.Slf4j;
 public class ExceptionHandler extends ChannelInboundHandlerAdapter {
 
   private static final ProxyLogger LOG = ProxyLogger.get(ExceptionHandler.class);
-
-  static final ProxyLogger.RequestProblem HANDSHAKE_ERROR =
-      new ProxyLogger.RequestProblem(
-          "ExceptionHandler.handshakeError",
-          "sensepitch_ingress_request_errors{phase=\"handshake\",type=\"other\"}");
-
-  static final ProxyLogger.RequestProblem TIMEOUT =
-      new ProxyLogger.RequestProblem(
-          "ExceptionHandler.timeout", "sensepitch_ingress_request_errors{type=\"timeout\"}");
-
-  static final ProxyLogger.RequestProblem EXCEPTION =
-      new ProxyLogger.RequestProblem(
-          "ExceptionHandler.exception", "sensepitch_ingress_request_errors{type=\"other\"}");
 
   private boolean sslHandshakeComplete;
   private final ProxyMetrics metrics;
@@ -122,15 +115,18 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
     // connection reset might include the IP address, not good
     boolean connectionReset = isConnectionReset(cause);
     if (!sslHandshakeComplete) {
-      String phase = "handshake";
+      String phase = HANDSHAKE_PHASE;
       if (isSslDecoderException(cause)) {
-        metrics.countIngressError(ctx, phase, "ssl");
+        metrics.countIngressError(ctx, phase, SSL);
       } else if (connectionReset) {
-        metrics.countIngressError(ctx, phase, "reset");
+        metrics.countIngressError(ctx, phase, RESET);
       } else {
-        metrics.countIngressError(ctx, phase, "other");
-        LOG.requestProblem(
-            HANDSHAKE_ERROR, ctx.channel(), "handshake error, phase=handshake", cause);
+        LOG.incrementAndWarnOnce(
+            metrics.ingressErrorCounter,
+            new String[] {ProxyMetrics.ingress(ctx), phase, OTHER.label},
+            ctx.channel(),
+            "handshake error, phase=" + phase,
+            cause);
       }
       completeAndClose(ctx);
       return;
@@ -151,7 +147,7 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
     }
     // for connection reset we don't log or respond, just count
     if (connectionReset) {
-      metrics.countIngressError(ctx, phase, "reset");
+      metrics.countIngressError(ctx, phase, RESET);
       completeAndClose(ctx);
       return;
     }
@@ -159,10 +155,15 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
     boolean timeout =
         cause instanceof IngressTimeoutHandler.UpstreamResponseTimeoutException
             || cause instanceof IngressTimeoutHandler.WriteTimeoutException;
-    metrics.countIngressError(ctx, phase, timeout ? "timeout" : "other");
+    ProxyMetrics.IngressErrorType type = timeout ? TIMEOUT : OTHER;
     // a more specific outcome, e.g. a timeout, was reported before the exception, it wins
     loggingHandler.setOutcome(RequestOutcome.EDGE_ERROR);
-    LOG.requestProblem(timeout ? TIMEOUT : EXCEPTION, ctx.channel(), "phase=" + phase, cause);
+    LOG.incrementAndWarnOnce(
+        metrics.ingressErrorCounter,
+        new String[] {ProxyMetrics.ingress(ctx), phase, type.label},
+        ctx.channel(),
+        "phase=" + phase,
+        cause);
     // send a proper response if possible, log via standard request log
     if (loggingHandler.isRequestReceived() && !loggingHandler.isResponseStarted()) {
       // The exception is recorded in the request log. It is not sent to the client, it may reveal

@@ -29,19 +29,8 @@ public class DownstreamHandler extends ChannelDuplexHandler {
 
   private static final ProxyLogger LOG = ProxyLogger.get(DownstreamHandler.class);
 
-  static final ProxyLogger.RequestProblem ANOTHER_REQUEST =
-      new ProxyLogger.RequestProblem(
-          "DownstreamHandler.anotherRequest", "the request log, status 400");
-
-  static final ProxyLogger.RequestProblem UPSTREAM_FAILURE =
-      new ProxyLogger.RequestProblem(
-          "DownstreamHandler.upstreamFailure", "sensepitch_ingress_request_outcomes");
-
-  static final ProxyLogger.RequestProblem UNEXPECTED_CLOSE =
-      new ProxyLogger.RequestProblem(
-          "DownstreamHandler.unexpectedClose", "sensepitch_ingress_requests_aborted");
-
   private final Upstream upstream;
+  private final ProxyMetrics metrics;
 
   /// The upstream connection of the active exchange, `null` when no exchange is active. A listener
   /// compares it with the future it was added to, to tell whether its exchange is still active.
@@ -63,6 +52,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
 
   public DownstreamHandler(Upstream upstream, ProxyMetrics metrics) {
     this.upstream = upstream;
+    this.metrics = metrics;
   }
 
   @Override
@@ -71,10 +61,14 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       // no pipelining, the HttpServerCodec delivers content only between a request and its last
       // content, so a new request while the exchange is active is the only unexpected case
       if (upstreamChannelFuture != null) {
-        LOG.requestProblem(
-            ANOTHER_REQUEST,
+        String phase = exchangePhase();
+        LOG.incrementAndWarnOnce(
+            metrics.ingressErrorCounter,
+            new String[] {
+              ProxyMetrics.ingress(ctx), phase, ProxyMetrics.IngressErrorType.ANOTHER_REQUEST.label
+            },
             ctx.channel(),
-            "another request is unexpected, phase=" + exchangePhase());
+            "another request is unexpected, phase=" + phase);
         ReferenceCountUtil.release(request);
         completeWithError(
             ctx,
@@ -165,8 +159,12 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       LOG.trace(ctx.channel(), "upstream failure after the exchange ended: " + cause);
       return;
     }
-    LOG.requestProblem(
-        UPSTREAM_FAILURE, ctx.channel(), "upstream failure, outcome=" + outcome + ": " + cause);
+    // counted when the request is logged
+    LOG.warnOnce(
+        metrics.requestOutcomeCounter,
+        new String[] {ProxyMetrics.ingress(ctx), outcome.value()},
+        ctx.channel(),
+        "upstream failure, outcome=" + outcome + ": " + cause);
     RequestLoggingHandler requestLog = RequestLoggingHandler.find(ctx);
     if (requestLog != null) {
       requestLog.setException(cause);
@@ -305,8 +303,10 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     if (upstreamChannelFuture != null) {
       if (!closeRequested) {
-        LOG.requestProblem(
-            UNEXPECTED_CLOSE,
+        // counted when the request is logged
+        LOG.warnOnce(
+            metrics.ingressRequestsAborted,
+            new String[] {ProxyMetrics.ingress(ctx)},
             ctx.channel(),
             "unexpected close during the exchange, phase="
                 + exchangePhase()

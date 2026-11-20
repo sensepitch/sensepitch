@@ -1,5 +1,6 @@
 package org.sensepitch.edge;
 
+import io.prometheus.metrics.core.datapoints.CounterDataPoint;
 import java.lang.System.Logger.Level;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -40,7 +41,7 @@ final class LogSink implements LogTarget {
     private final List<Entry> entries = new ArrayList<>();
 
     /// Problem keys seen since the warnings were switched on, `null` while they are off
-    private Set<String> problemKeys;
+    private Set<CounterDataPoint> problemKeys;
 
     synchronized void add(Entry entry) {
       entries.add(entry);
@@ -55,7 +56,7 @@ final class LogSink implements LogTarget {
       problemKeys = new HashSet<>();
     }
 
-    synchronized boolean firstOccurrence(String key) {
+    synchronized boolean firstOccurrence(CounterDataPoint key) {
       return problemKeys != null && problemKeys.add(key);
     }
 
@@ -104,7 +105,7 @@ final class LogSink implements LogTarget {
   /// occurrence of each problem in the test is the one at `WARNING`. A JVM wide state, as in
   /// production, would make the level depend on the tests that ran before.
   @Override
-  public boolean firstOccurrence(String key) {
+  public boolean firstOccurrence(CounterDataPoint key) {
     return BUFFER.get().firstOccurrence(key);
   }
 

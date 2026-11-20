@@ -1,6 +1,7 @@
 package org.sensepitch.edge;
 
 import io.netty.channel.Channel;
+import io.prometheus.metrics.core.datapoints.CounterDataPoint;
 import java.lang.System.Logger.Level;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -95,25 +96,25 @@ public interface LogTarget {
   /// True, if records of the level are processed
   boolean isEnabled(Level level);
 
-  /// True the first time the key is passed in the JVM, for the first occurrence of a
-  /// [ProxyLogger.RequestProblem]. Thread safe: of concurrent first calls with the same key
-  /// exactly one returns `true`. Once a key was seen, a call is a lookup in a concurrent hash set,
-  /// without locking or allocation.
-  default boolean firstOccurrence(String key) {
+  /// True the first time the series is passed in the JVM, for the first occurrence of a request
+  /// level event, see [ProxyLogger#incrementAndWarnOnce]. Thread safe: of concurrent first calls
+  /// with the same series exactly one returns `true`. Once a series was seen, a call is a lookup in
+  /// a concurrent hash set by identity, without locking or allocation.
+  default boolean firstOccurrence(CounterDataPoint key) {
     return FirstOccurrences.add(key);
   }
 
-  /// The keys passed to [#firstOccurrence(String)] in this JVM. The set only grows, the keys are
-  /// constants and their number is fixed by the code.
+  /// The series passed to [#firstOccurrence(CounterDataPoint)] in this JVM. The set only
+  /// grows, bounded by the label values of the counters.
   final class FirstOccurrences {
 
-    private static final Set<String> SEEN = ConcurrentHashMap.newKeySet();
+    private static final Set<CounterDataPoint> SEEN = ConcurrentHashMap.newKeySet();
 
     private FirstOccurrences() {}
 
     /// True if the key was not seen before. `contains` first: it does not lock, while `add`
     /// locks the hash bin even if the key is present.
-    static boolean add(String key) {
+    static boolean add(CounterDataPoint key) {
       return !SEEN.contains(key) && SEEN.add(key);
     }
   }

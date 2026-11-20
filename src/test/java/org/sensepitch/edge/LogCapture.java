@@ -23,9 +23,10 @@ import org.junit.jupiter.api.parallel.Isolated;
 /// other tests log, so its test class must be `@Isolated`: it then runs while no other class
 /// does.
 ///
-/// The first occurrence of a [ProxyLogger.RequestProblem] is logged at `WARNING` once per JVM in
-/// production. In tests every occurrence is at `DEBUG`, so the level does not depend on which
-/// tests ran before; [#warnProblems()] switches the production behaviour on for one test.
+/// The first occurrence of each kind of request level event, see `ProxyLogger.incrementAndWarnOnce`, is logged
+/// at `WARNING` once per JVM in production. In tests every occurrence is at `DEBUG`, so the level
+/// does not depend on which tests ran before; [#warnProblems()] switches the production behaviour
+/// on for one test.
 ///
 /// Only `DEBUG` and above is captured, see [LogSink], trace is no acceptance criterion. Messages
 /// of Netty, JUL and other libraries do not pass the proxy's loggers, [Log4jCapture] sees them.
@@ -87,9 +88,9 @@ public class LogCapture implements BeforeEachCallback {
     }
   }
 
-  /// From now on until the end of the test, the first occurrence of each
-  /// [ProxyLogger.RequestProblem] in the test's thread is logged at `WARNING`, as the first one in
-  /// a JVM in production. Only for captures of the test's own thread.
+  /// From now on until the end of the test, the first occurrence of each kind of request level
+  /// event in the test's thread is logged at `WARNING`, as the first one in a JVM in production,
+  /// see `ProxyLogger.incrementAndWarnOnce`. Only for captures of the test's own thread.
   public void warnProblems() {
     if (allThreads) {
       throw new IllegalStateException("only for the thread of the test");

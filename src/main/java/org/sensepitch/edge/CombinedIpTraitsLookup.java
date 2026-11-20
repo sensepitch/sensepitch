@@ -22,10 +22,6 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
 
   private static final ProxyLogger LOG = ProxyLogger.get(CombinedIpTraitsLookup.class);
 
-  static final ProxyLogger.RequestProblem LOOKUP_FAILED =
-      new ProxyLogger.RequestProblem(
-          "CombinedIpTraitsLookup.lookupFailed", "sensepitch_ip_lookup_errors");
-
   private final List<IpTraitsCollector> ipAttributesLookups;
   private final IpLabelLookup ipLabelLookup;
   private final ProxyMetrics metrics;
@@ -121,8 +117,8 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
   }
 
   private void lookupException(Exception e) {
-    metrics.countIpLookupError();
-    LOG.requestProblem(LOOKUP_FAILED, null, "IP database lookup failed", e);
+    LOG.incrementAndWarnOnce(
+        metrics.ipLookupErrorCounter, ProxyLogger.NO_LABELS, null, "IP database lookup failed", e);
   }
 
   @Override
