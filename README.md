@@ -959,6 +959,34 @@ then has no effect. The former variable `SENSEPITCH_EDGE_LOG_LEVEL` is no longer
 The integration tests run with `./mvnw verify` and require Node.js 22 or newer on `PATH` for
 the challenge JavaScript suite. See [its test README](src/test/javascript/README.md).
 
+## Container image
+
+Build and run the image with Docker (or a compatible builder such as Podman):
+
+````
+docker build -t ghcr.io/sensepitch/sensepitch-edge .
+docker run --rm -p 17443:17443 \
+  -v $PWD/config.yml:/etc/sensepitch/config/config.yml:ro \
+  ghcr.io/sensepitch/sensepitch-edge
+````
+
+The image runs the shaded JAR on a Temurin 25 JRE as a non-root user, with `java` as PID 1 so
+`SIGTERM` reaches the graceful shutdown. Files the configuration references (TLS keys and
+certificate, the IPinfo database) must be mounted as well. The base-image and registry choices
+are in [doc/design/oci-image.md](doc/design/oci-image.md); the proposed CI build-and-push
+workflow is `DOT-GITHUB-UPDATED/.github/workflows/build-and-push-image.yml`.
+
+To smoke-test a local image through Docker:
+
+```bash
+docker build -t sensepitch-edge:oci-smoke .
+./mvnw verify -Poci-image
+```
+
+The profile uses the existing image and requires Docker access, Bash, and curl. Set
+`-DociImage=<local-image-tag>` to test a different image. The standard Maven gate skips this
+test. With the profile enabled, failure to start the container fails the build.
+
 ## Local testing
 
 ````

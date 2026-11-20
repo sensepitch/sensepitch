@@ -727,6 +727,26 @@
 
   <profiles>
     <profile>
+      <id>oci-image</id>
+      <properties>
+        <ociImage>sensepitch-edge:oci-smoke</ociImage>
+      </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <configuration>
+              <systemPropertyVariables>
+                <ociImage.enabled>true</ociImage.enabled>
+                <ociImage>${ociImage}</ociImage>
+              </systemPropertyVariables>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+    <profile>
       <!-- ./mvnw verify -Dfast: compiles, runs all unit and integration tests and builds the fat
            JAR, but leaves out what is not needed to see whether the code works: coverage
            (agent, report and floor), the Javadoc build with its delombok, and the format check.

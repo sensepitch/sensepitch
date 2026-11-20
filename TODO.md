@@ -27,7 +27,11 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
 
 - [ ] 2. OCI image: Dockerfile with a Java 25 runtime, non-root, `java` as PID 1 so `SIGTERM`
   arrives (exec form); CI builds and pushes it
-  - P1: decide base image (distroless or Temurin JRE) and registry; keep the shaded jar.
+  - Decided: Temurin JRE (glibc, same vendor as build), registry
+    `ghcr.io/sensepitch/sensepitch-edge`, shaded jar kept; see
+    [doc/design/oci-image.md](doc/design/oci-image.md).
+  - `DockerfileTest` validates the stages, Maven command, shaded JAR copy, non-root user, PID 1
+    entry point, exposed ports, build context and the proposed workflow's location.
 - [ ] 3. manifests or a minimal Helm chart for a standalone edge: Deployment with probes and
   `terminationGracePeriodSeconds` above `shutdownTimeoutMillis`, Service, PodDisruptionBudget,
   config from a ConfigMap, secrets from Secrets, scrape annotations or ServiceMonitor

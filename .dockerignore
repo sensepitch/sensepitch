@@ -1,0 +1,22 @@
+# Build output and IDE files stay out of the image build context.
+target/
+target-ide/
+dependency-reduced-pom.xml
+.idea/
+.vscode/
+*.iml
+DOT-GITHUB-UPDATED/
+
+# Not needed to build the shaded JAR. The image build skips the tests and the
+# full verify gate runs before the image is built in CI, so tests, docs and CI
+# files only make the build context larger.
+.github/
+doc/
+performance-test/
+plans/
+src/test/
+
+# .git is deliberately NOT excluded: the git-commit-id plugin (bound to the
+# initialize phase) reads it to stamp the unique Implementation-Version, exactly
+# like a local ./mvnw package. It never reaches the final image because the
+# build stage is discarded.

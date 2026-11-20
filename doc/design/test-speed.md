@@ -53,6 +53,13 @@ The switches, all in the [`pom.xml`](../../pom.xml):
 
 ## Design decisions
 
+### Run the OCI smoke test only with the image profile
+
+`OciImageIT` uses Docker to run an existing image when Maven runs with `-Poci-image`.
+Building the image is a separate step, so the standard Maven gate needs neither Docker nor
+container image downloads. An explicitly enabled smoke test fails when the local image cannot
+start.
+
 ### Test classes run concurrently in one JVM
 
 Surefire runs the unit tests with JUnit's parallel execution: classes concurrently, the methods

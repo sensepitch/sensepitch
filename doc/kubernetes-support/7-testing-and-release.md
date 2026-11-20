@@ -45,8 +45,10 @@
 
 ## Packaging
 
-- `Dockerfile` for the edge: multi-stage, Maven build, `eclipse-temurin:25-jre` (or a
-  distroless Java 25 image), non-root.
+- `Dockerfile` for the edge: multi-stage Maven build, runs the shaded JAR on
+  `eclipse-temurin:25-jre`, non-root, `java` as PID 1. The base-image and registry choice is
+  recorded in [oci-image.md](../design/oci-image.md); the image is
+  `ghcr.io/sensepitch/sensepitch-edge` (matching the Helm chart).
 - Controller image built from `controller/`.
 - Helm chart:
   - Gateway API CRDs are not bundled; they are a documented prerequisite. The Sensepitch
