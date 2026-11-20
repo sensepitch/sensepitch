@@ -20,6 +20,25 @@
 - Golden-file tests: Gateway API objects in, snapshot JSON out.
 - envtest for reconcilers against a real API server.
 
+## When a cluster is needed
+
+Nothing before the kind environment ("Development order" item 5 in `6-phases.md`) needs a
+cluster. The tools until then, and from when a cluster takes over:
+
+| Stage | Tool | Cluster |
+|---|---|---|
+| Java edge, converter, listeners, PROXY protocol | `EmbeddedChannel`, JSON fixtures | no |
+| OCI image | `OciImageIT` with Docker | no |
+| Manifests and Helm chart | `helm template` and `kubeconform`, offline schema check | no |
+| Controller reconcilers, provisioner golden files | envtest: kube-apiserver and etcd inside `go test`, no nodes | no |
+| Snapshot distribution, optional | envtest, a local edge JVM, hand-written EndpointSlices pointing to a local backend | no |
+| Standalone edge smoke test, end-to-end routing (items 5 and 6) | single-node kind | yes |
+| Dedicated fleets, conformance, parity, recovery, exposure matrix (item 7 on) | kind with cloud-provider-kind | yes |
+
+End-to-end routing is the first Gateway API step that needs a cluster: it needs pods, the
+network between them and EndpointSlices maintained by the endpoint controller, none of which
+envtest has. This split is inferred from the tools' scope, not measured.
+
 ## Integration and conformance
 
 - kind cluster in CI: install Gateway API CRDs (pinned standard channel), the Helm chart,
@@ -33,8 +52,17 @@
     --report-output=conformance-report.yaml
   ```
 
-- Start running it once dedicated fleets work (development order item 6) and track failures,
+- Start running it once dedicated fleets work (development order item 7) and track failures,
   rather than waiting for the release.
+- Why cloud-provider-kind: the suite creates many Gateways, each listening on port 80 and
+  expecting its own address. cloud-provider-kind gives each LoadBalancer Service its own IP,
+  reachable from the CI runner. k3s ServiceLB binds a hostPort on the node IP, so a second
+  Gateway on port 80 cannot be scheduled; HostNetwork and NodePort cannot give one port 80
+  address per Gateway either. MetalLB would work but needs an address pool and more setup.
+  Inferred from the documentation of these tools, not tried.
+- Schedule: the kind smoke test runs on every pull request; conformance and the exposure
+  matrix take minutes and run nightly (`.github/workflows/nightly.yml`) and on pull requests
+  that touch `controller/` or the chart.
 - Recovery tests: controller restart, edge restart while the controller is down, Secret
   rotation, endpoint churn during load.
 - Exposure matrix in kind: LoadBalancer with and without PROXY protocol, HostNetwork

@@ -18,9 +18,9 @@ about eight hours. The ranges add up; parallel work does not reduce total effort
 | 9 | Profile specification | JSON schema, versioning, discovery protocol, extensibility | 2–3 days |
 | 10 | Profile discovery | HTTP discovery, caching, refresh, validation, failure handling, optional profile port, edge-side block of the reserved profile path | 5–8 days |
 | 11 | Security and observability | Trust boundaries, graceful shutdown, status, metrics, logging | 6–10 days |
-| 12 | Integration and conformance testing | Conformance suite in CI, kind-based integration, recovery and regression tests | 8–15 days |
+| 12 | Integration and conformance testing | kind environment (setup script, CI job, see "Development order" item 5), conformance suite in CI, kind-based integration, recovery and regression tests | 9–17 days |
 | 13 | Public distribution | OCI images, Helm chart, CI/CD release, docs, examples | 3–6 days |
-| | **Total** | | **62–107 days** |
+| | **Total** | | **63–109 days** |
 
 ## Milestones
 
@@ -68,7 +68,7 @@ versus Gateway API" in `3-gap-analysis.md`) on Kubernetes with the same behaviou
 **Acceptance:** an application publishes and updates its profile, and the edge receives
 validated updates without restarting.
 
-### M3 — Public release candidate (steps 11–13, cumulative 62–107 days)
+### M3 — Public release candidate (steps 11–13, cumulative 63–109 days)
 
 - Conformance results, status reporting, error handling, security hardening.
 - Metrics and logging, Helm installation, published images, documentation, automated
@@ -88,7 +88,17 @@ The table groups work by area. To reduce rework, build in this order:
 3. **Edge runtime basics.** `EdgeState` behind an `AtomicReference`, metrics moved out of the
    `Proxy` constructor, admin endpoint (`/healthz`, `/readyz`), Dockerfile.
 4. **Minimal controller.** Watch GatewayClass, Gateway and HTTPRoute; serve snapshots.
-5. **End-to-end routing.** The smallest working path, with one HTTP listener and one backend:
+5. **Kind environment.** One setup script for local use and CI: a single-node kind cluster
+   (pinned kind version and node image), the pinned Gateway API standard-channel CRDs, the
+   locally built edge image (later also the controller image) loaded with
+   `kind load docker-image`, so no registry is involved, and an echo backend. A CI job on
+   `ubuntu-latest` (Docker is preinstalled) creates the cluster and runs a smoke test. The
+   first user is the standalone edge with the manifests of TODO item 3: probes, draining
+   within `terminationGracePeriodSeconds`, Secret reload in a pod. Until here no cluster is
+   needed, see "When a cluster is needed" in `7-testing-and-release.md`. cloud-provider-kind,
+   which gives every LoadBalancer Service its own address, joins with the LoadBalancer
+   Service of the next item. Counted in step 12 of the table, but built now.
+6. **End-to-end routing.** The smallest working path, with one HTTP listener and one backend:
 
    ```text
    GatewayClass → Gateway → HTTPRoute → Service/EndpointSlice → Netty edge → backend
@@ -97,20 +107,20 @@ The table groups work by area. To reduce rework, build in this order:
    This validates the controller-to-Java architecture before the complex semantics.
    Use a shared fleet behind a LoadBalancer Service here, since it is the quickest
    working setup.
-6. **Provisioner and exposure.** HostNetwork DaemonSet with node IPs in `status.addresses`
+7. **Provisioner and exposure.** HostNetwork DaemonSet with node IPs in `status.addresses`
    and external-dns (the production target), then dedicated fleets, NodePort and unmanaged
    mode. Dedicated fleets must work before the conformance suite runs, because it creates
    many Gateways and expects each one to get an address. Run the conformance suite in CI
    from here on and track the failing tests.
-7. **Complete HTTPRoute Core.** Matching, precedence, filters, multiple backends, weights,
+8. **Complete HTTPRoute Core.** Matching, precedence, filters, multiple backends, weights,
    ReferenceGrant, invalid backends.
-8. **TLS and lifecycle.** HTTPS listeners from Secrets, certificate updates, status,
+9. **TLS and lifecycle.** HTTPS listeners from Secrets, certificate updates, status,
    graceful shutdown with DNS-aware draining, PROXY protocol and trusted forwarded headers,
    recovery behaviour.
-9. **Sensepitch extensions and parity.** `SensepitchResponse`, `SensepitchPolicy`, edge
-   bootstrap from Kubernetes objects, parity tests. This completes M1.
-10. **Application profiles.** Specification, discovery, integration into snapshots.
-11. **Conformance and release.** Close remaining gaps, harden, publish the first release.
+10. **Sensepitch extensions and parity.** `SensepitchResponse`, `SensepitchPolicy`, edge
+    bootstrap from Kubernetes objects, parity tests. This completes M1.
+11. **Application profiles.** Specification, discovery, integration into snapshots.
+12. **Conformance and release.** Close remaining gaps, harden, publish the first release.
 
 ## Rules for each phase
 

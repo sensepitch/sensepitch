@@ -23,7 +23,8 @@ implementation.
 
 The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
 `3-gap-analysis.md`. Items 1-4 run today's `config.yml` edge on Kubernetes without a controller;
-5-6 are also part of M1.
+5-6 are also part of M1. Item 8 provides the kind cluster for testing; no cluster is needed
+before it, see "When a cluster is needed" in `7-testing-and-release.md`.
 
 - [ ] 2. OCI image: Dockerfile with a Java 25 runtime, non-root, `java` as PID 1 so `SIGTERM`
   arrives (exec form); CI builds and pushes it
@@ -36,6 +37,8 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
   `terminationGracePeriodSeconds` above `shutdownTimeoutMillis`, Service, PodDisruptionBudget,
   config from a ConfigMap, secrets from Secrets, scrape annotations or ServiceMonitor
   - P1: production on Kubernetes before M1; becomes the base of the provisioner (phase 6).
+  - Validate offline with `helm template` and `kubeconform`; the kind smoke test (item 8)
+    checks probes, the drain and Secret reload in a pod.
 - [x] 4. secrets out of the config file: `SecretConfig` (`value` or `file`) for `tokenGenerators`
   and the OTLP `secretHeaders`; the TLS keys and the IP databases are files already. The files a
   configuration read are recorded by `ConfigFiles` and watched by `ConfigFileWatcher`, so a
@@ -55,6 +58,13 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
   Go controller
   - P2: start once 1-4 are done; the converter shows early whether the model covers production.
     Gateway API hostnames use wildcards, see the `SiteSelector` entry under Ingress.
+- [ ] 8. kind environment: one setup script for local use and CI (single-node kind with pinned
+  versions, pinned Gateway API standard-channel CRDs, images loaded with `kind load
+  docker-image`, echo backend) and a CI job with a smoke test; cloud-provider-kind added for
+  LoadBalancer Services. See `6-phases.md` "Development order" item 5 and
+  `7-testing-and-release.md`.
+  - P2: first used by the smoke test of item 3, needed at the latest before the end-to-end
+    routing of item 7.
 - [ ] `/readyz` answers `200` only after the upstreams were probed and at least one configured
   upstream is available
   - P3: today it answers `200` from the start until the shutdown begins. Decide what probes an
