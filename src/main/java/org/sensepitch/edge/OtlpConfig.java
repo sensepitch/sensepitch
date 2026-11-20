@@ -4,6 +4,7 @@ import io.netty.util.NettyRuntime;
 import io.netty.util.internal.SystemPropertyUtil;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.Deflater;
 import lombok.Builder;
 
 /// Settings of an `otlp` request log destination, see [RequestLogDestinationConfig#otlp()] and
@@ -55,6 +56,10 @@ import lombok.Builder;
 ///   records repeat hosts, attribute keys and user agents. The compression runs on a thread of
 ///   its own, never on an event loop. `none` is for a log server that does not accept
 ///   `Content-Encoding: gzip`. The sizes above, e.g. `batchBytes`, are uncompressed.
+/// @param compressionLevel gzip level from {@value #MIN_COMPRESSION_LEVEL} (fastest) to
+///   {@value #MAX_COMPRESSION_LEVEL} (smallest); omitted or zero uses
+///   {@value #DEFAULT_COMPRESSION_LEVEL}, the previous fixed level. Only used with
+///   `compression: gzip`. A higher level trades CPU for fewer bytes on the wire.
 /// @author Jens Wilke
 @Builder(toBuilder = true)
 public record OtlpConfig(
@@ -70,7 +75,8 @@ public record OtlpConfig(
     int maxBufferedBytes,
     int maxConcurrentRequests,
     int maximumUnsentLogAgeMillis,
-    String compression) {
+    String compression,
+    int compressionLevel) {
 
   public static final int DEFAULT_TIMEOUT_MILLIS = 10_000;
   public static final int DEFAULT_INITIAL_RETRY_DELAY_MILLIS = 1_000;
@@ -81,6 +87,15 @@ public record OtlpConfig(
 
   public static final String GZIP = "gzip";
   public static final String NONE = "none";
+
+  /// The level used before compression was configurable, and still the default
+  public static final int DEFAULT_COMPRESSION_LEVEL = Deflater.BEST_SPEED;
+
+  /// Levels accepted by [Deflater], the range exposed to the configuration
+  public static final int MIN_COMPRESSION_LEVEL = Deflater.BEST_SPEED;
+
+  /// The smallest output, at the highest CPU cost
+  public static final int MAX_COMPRESSION_LEVEL = Deflater.BEST_COMPRESSION;
 
   /// A few dozen records at least
   public static final int MIN_BATCH_BYTES = 64 * 1024;
@@ -140,6 +155,11 @@ public record OtlpConfig(
   /// The compression, `gzip` if not configured, see [#compression()]
   public String effectiveCompression() {
     return compression != null ? compression : GZIP;
+  }
+
+  /// The gzip level, the default if omitted or zero
+  public int effectiveCompressionLevel() {
+    return compressionLevel != 0 ? compressionLevel : DEFAULT_COMPRESSION_LEVEL;
   }
 
   /// Threads of an event loop group without explicit size, as computed by Netty's

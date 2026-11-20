@@ -757,6 +757,7 @@ requestLog:
         batchBytes: 1048576       # per event loop buffer and request
         maxBufferedBytes: 67108864  # batches waiting during an outage
         compression: gzip         # or none
+        compressionLevel: 1       # 1 fastest (default) .. 9 smallest
 ````
 
 `type`, `name` and `anonymizeClientIp` apply to every destination, `plainText` to `stdout` only.
@@ -795,9 +796,13 @@ Everything specific to OTLP is in the `otlp` object, which is rejected on a `std
   is dropped and counted in `sensepitch_request_log_export_failed_total`.
 - **Compression:** posts are compressed with gzip and sent with `Content-Encoding: gzip`, which
   VictoriaLogs and the OpenTelemetry collector accept. The records repeat hosts, attribute keys
-  and user agents, so a post shrinks several times. The compression runs on a thread of its own,
-  never on an event loop. Set `otlp.compression: none` for a log server without gzip support;
-  it would reject the posts with a 4xx status, counted in `export_failed_total`.
+  and user agents, so a post shrinks several times. Each destination compresses on one dedicated,
+  bounded thread, never on an event loop; the thread is shut down when the destination stops.
+  `otlp.compressionLevel` ranges from `1` (fastest, the default) to `9` (smallest); a higher level
+  trades CPU for fewer bytes on the wire. The measured trade-off is in
+  [the request log design](doc/design/request-log.md#gzip-on-one-dedicated-compression-thread).
+  Set `otlp.compression: none` for a log server without gzip support; it would reject the posts
+  with a 4xx status, counted in `export_failed_total`.
 - **Memory:** about `otlp.batchBytes` per event loop, plus the waiting batches up to
   `otlp.maxBufferedBytes`. Buffers are kept in memory only: when the proxy itself is restarted
   during an outage of the log server, the waiting records are lost. At shutdown the proxy tries

@@ -16,11 +16,12 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -43,7 +44,7 @@ import java.util.concurrent.atomic.AtomicLong;
 /// arrive out of order, the records within a batch keep theirs. There is no sender thread: the
 /// work runs on the threads of the HTTP client, of the shared timer of [CompletableFuture] and of
 /// the threads that hand off a full batch. With compression, see [GzipCompressor], a post is
-/// compressed and sent on the common pool instead, so an event loop never compresses.
+/// compressed on one thread of its own and then sent, so an event loop never compresses.
 ///
 /// Failures: a failure that the OTLP specification considers retryable, i.e. a connection error,
 /// a timeout or the status codes 429, 502, 503 and 504, opens the [CircuitBreaker] of the
@@ -98,6 +99,7 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
       long maximumUnsentLogAgeMillis,
       long flushIntervalMillis,
       boolean gzip,
+      int compressionLevel,
       Backoff backoff) {}
 
   /// The batches of one request, with their size, records, and the age of the oldest record
@@ -200,6 +202,13 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   /// Compress the bodies, see [GzipCompressor]
   private final boolean gzip;
 
+  /// gzip level of new compressor instances
+  private final int compressionLevel;
+
+  /// One compression thread per destination, bounded by the posts that can be in flight. The
+  /// common pool is shared with the JVM and its parallelism is unrelated to request logging.
+  private final ThreadPoolExecutor compressionExecutor;
+
   /// Compressors for reuse, one per request in flight at most, ended when the sender stops
   private final LinkedBlockingQueue<GzipCompressor> compressors = new LinkedBlockingQueue<>();
 
@@ -254,6 +263,17 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
     this.maxAgeNanos = TimeUnit.MILLISECONDS.toNanos(settings.maximumUnsentLogAgeMillis());
     this.flushIntervalNanos = TimeUnit.MILLISECONDS.toNanos(settings.flushIntervalMillis());
     this.gzip = settings.gzip();
+    this.compressionLevel = settings.compressionLevel();
+    compressionExecutor =
+        gzip
+            ? new ThreadPoolExecutor(
+                1,
+                1,
+                0,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(maxConcurrentRequests),
+                Thread.ofPlatform().name("request-log-compression-" + name).daemon().factory())
+            : null;
     this.metrics = metrics;
     // cached, so counting does not allocate the label array
     dropped = metrics.dropped.labelValues(name);
@@ -539,6 +559,10 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
       // e.g. removed by a configuration reload, the gauges stop reporting it
       metrics.remove(this);
       metrics.circuitBreakers.remove(endpoint.breaker());
+      if (compressionExecutor != null) {
+        // only reached with nothing in flight, so no compression task is queued or running
+        compressionExecutor.shutdown();
+      }
       // nothing is in flight anymore, so no compressor is in use
       for (GzipCompressor compressor : compressors) {
         compressor.end();
@@ -551,7 +575,7 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   private void send(Post<B> post) {
     if (gzip) {
       // compressing a full batch takes milliseconds, the caller may be an event loop
-      CompletableFuture.runAsync(() -> sendCompressed(post), ForkJoinPool.commonPool());
+      compressionExecutor.execute(() -> sendCompressed(post));
       return;
     }
     List<HttpRequest.BodyPublisher> parts = new ArrayList<>();
@@ -569,7 +593,7 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
     GzipCompressor compressor = compressors.poll();
     if (compressor == null) {
       // the records compress several times, the buffer grows if needed
-      compressor = new GzipCompressor(batchBytes / 4);
+      compressor = new GzipCompressor(batchBytes / 4, compressionLevel);
     }
     compressor.reset();
     payload.writeBody(post.batches(), compressor::write);
@@ -798,6 +822,21 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   /// Empty batches kept for reuse, for tests
   int pooledBatches() {
     return free.size();
+  }
+
+  /// Compression threads, `0` without compression, for tests
+  int compressionThreads() {
+    return compressionExecutor == null ? 0 : compressionExecutor.getMaximumPoolSize();
+  }
+
+  /// Capacity of the compression queue, `0` without compression, for tests
+  int compressionQueueCapacity() {
+    return compressionExecutor == null ? 0 : compressionExecutor.getQueue().remainingCapacity();
+  }
+
+  /// Whether the compression executor has been shut down, for tests
+  boolean compressionExecutorStopped() {
+    return compressionExecutor == null || compressionExecutor.isShutdown();
   }
 
   public RequestLogMetrics metrics() {

@@ -35,7 +35,7 @@ Diagnostic logging (Log4j2 to standard error) is out of scope, see `LogTarget`.
 ## Overview
 
 ```
-event loop                     HttpBatchSender (per OTLP destination, no thread of its own)
+event loop                     HttpBatchSender (per OTLP destination)
 -----------                    ------------------------------------------------------------
 RequestLoggingHandler.log()
  └ ReloadableRequestLogger      reads the destination array once
@@ -44,8 +44,9 @@ RequestLoggingHandler.log()
                └ ThreadBatcher of this thread
                   encode record into own batch (in place, no allocation)
                   batch full ──► handOff ─► reserve bytes ─► submit ─► sendAsync ─► log server
-                                            │                 └ parked queue if no slot / breaker
-               flush timer ───► takePartialAndQueue of all threads, packed into posts ┘
+                                            │                 └ parked queue if no slot or breaker
+                                            └ gzip: compression thread ─► sendAsync
+               flush timer ───► takePartialAndQueue of all threads, packed into posts
                thread ends ───► close: last batch + end marker ─► sender stops when all closed
 ```
 
@@ -76,7 +77,7 @@ request (`OtlpBatchPayload`).
 - the event loop that hands off a full batch submits it, and sends it if a request slot is free;
 - the HTTP client's completion thread accounts for the result and dispatches the next posts;
 - the shared timer of `CompletableFuture` runs the flush and the probe after a backoff;
-- with gzip, the common pool compresses and sends, see below.
+- with gzip, one dedicated compression thread compresses and then sends, see below.
 
 One private lock in the sender guards the queue of waiting posts and the requests in flight. It
 is taken per batch and per completion, never per record. The waiting bytes and records are atomic
@@ -209,20 +210,46 @@ external load balancer as well. Traefik has the same option for its entry points
 name avoids "drain", which here already means the request log (`drainTimeoutMillis`) and the
 closing of connections.
 
-### Gzip, never on an event loop
+### Gzip on one dedicated compression thread
 
 OTLP posts are gzip compressed by default (`otlp.compression: gzip | none`). Records repeat hosts,
 attribute keys and user agents, so a post shrinks several times; that saves egress to a remote log
 server.
 
-- Compressing 1 MiB takes milliseconds, so a post is compressed and sent on the common pool, never
-  on the event loop that handed it off. Without compression the send stays inline.
-- `GzipCompressor` keeps a `Deflater` (`BEST_SPEED`), a CRC and a growable buffer and writes the
-  gzip header and trailer by hand; it is pooled, one per request in flight, so steady state does
-  not allocate. `GZIPOutputStream` allocates its deflater and buffers per instance.
+- Each destination has one daemon compression thread and a queue of `maxConcurrentRequests`
+  entries. Every in-flight post schedules at most one compression task, so the queue cannot
+  overflow and there is no caller-runs fallback: an event loop never compresses. The common pool
+  was rejected because it is shared with the rest of the JVM and its parallelism is unrelated to
+  request logging.
+- The executor is shut down when the sender stops. That happens only after the last request
+  completed, so no compression task is queued or running then. The thread is a daemon, so a sender
+  that is never finished cannot keep the JVM alive.
+- `GzipCompressor` keeps a `Deflater` at `otlp.compressionLevel`, a CRC and a growable buffer and
+  writes the gzip header and trailer by hand; it is pooled, one per request in flight, so steady
+  state does not allocate. `GZIPOutputStream` allocates its deflater and buffers per instance.
+- The level ranges from `1` (fastest, the default and the previous fixed `BEST_SPEED`) to `9`
+  (smallest). A configured level replaces the destination on reload, like any other changed
+  setting.
 - The payload writes its parts to a sink (`BatchPayload.writeBody`), so the same parts are either
   concatenated without copying or streamed through the compressor.
 - All size limits stay uncompressed; only `sent_bytes_total` counts what went over the wire.
+
+Measured on 2026-11-20 on an AMD EPYC-Milan, 2 vCPU, Linux 7.0.0, OpenJDK 25.0.5, with the
+process pinned to one CPU (`taskset -c 0`). The payload was 1,048,765 bytes of synthetic repetitive
+request-log JSON lines, compressed by one reused `GzipCompressor`; after 20 warm-up iterations,
+the best of three 100-iteration runs was taken, using the current thread's CPU time. It is an
+indicative comparison, not a production trace.
+
+| Level | Compressed bytes | Ratio | CPU ms per MiB | CPU MiB/s |
+| --- | --- | --- | --- | --- |
+| 1 | 77,141 | 13.6 | 2.4 | 409 |
+| 3 | 72,304 | 14.5 | 2.5 | 396 |
+| 6 | 61,725 | 17.0 | 6.0 | 167 |
+| 9 | 54,441 | 19.3 | 16.6 | 60 |
+
+Level 3 saved 6% more bytes than level 1 at about the same CPU cost on this payload. Level 9 saved
+29% against level 1 but cost about seven times the CPU. One thread therefore keeps up with roughly
+400 MiB/s at the default level and about 60 MiB/s at level 9, per destination.
 
 ### Standard out: a queue and a writer thread
 
@@ -333,10 +360,13 @@ Not done: a loop that does not end is a bug of ours, and its thread name does no
 handler is stuck; a thread dump taken during the shutdown does. The JVM exits right after the
 report, so the name would not help to find the loop either.
 
-### Compress on the calling thread, or with `GZIPOutputStream`
+### Compress on the calling thread, the common pool, or with `GZIPOutputStream`
 
 Compressing inline would block an event loop for milliseconds per full batch. A
 `GZIPOutputStream` per post allocates a deflater with native memory and two buffers per request.
+The common pool avoids the event loop but shares its parallelism with the rest of the JVM and has
+no queue limit that matches the sender's requests in flight. A dedicated bounded executor gives
+compression a predictable CPU budget and a shutdown point of its own.
 zstd would compress better and faster, but it is not supported by all OTLP receivers and would
 need a native library; gzip is accepted by VictoriaLogs and the OpenTelemetry collector.
 
@@ -362,8 +392,9 @@ Known limits of the current implementation, checked against the code on 2026-11-
 - **The stdout path allocates.** A rendered `String` and its bytes per record, and a bounded queue
   of 8192 records shared by all loops. Its writer thread is started even when stdout is disabled,
   so a reload can enable it again.
-- **Compression has no own budget.** It runs on the common pool, shared with the JVM's other users
-  of it, at a fixed level (`BEST_SPEED`). gzip is the only codec.
+- **Compression is one thread.** A destination compresses one post at a time; a high level or very
+  high log volume can make compression the bottleneck, so posts wait and their thread batches can
+  fill. gzip is the only codec, zstd is not implemented.
 - **One endpoint per destination.** No failover to a second log server; a second destination
   sends a copy, not a fallback.
 - **Reload of a changed destination.** Old and new sender run side by side until the old one has
@@ -382,8 +413,8 @@ section "Request log", item 3 (the backoff part) under "Circuit breaker"; item 6
    post duration per destination, to see a slow log server before it fails.
 3. **Configurable backoff and stdout queue size,** with the current values as defaults. The
    backoff is tracked in TODO.md under "Circuit breaker".
-4. **Compression executor and level.** A small bounded executor instead of the common pool, and
-   `otlp.compressionLevel`; zstd once the target log servers support it.
+4. **Compression executor and level.** Done: one bounded executor per destination and
+   `otlp.compressionLevel`. zstd remains open until the target log servers support it.
 5. **Failover endpoints.** Several endpoints per destination, each with its own breaker, see the
    `Endpoint` record in `HttpBatchSender`.
 6. **Allocation free stdout.** Encode JSON lines into per-thread buffers as the OTLP path does, and

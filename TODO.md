@@ -118,9 +118,11 @@ Decisions, alternatives and limitations are in
 [doc/design/request-log.md](doc/design/request-log.md); retry backoff is described in
 [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md).
 
-- [ ] compression budget: gzip runs on the common pool at a fixed level (`BEST_SPEED`)
-  - P3: a small bounded executor and `otlp.compressionLevel`; zstd once the target log servers
-    accept it. Measure CPU per MiB first.
+- [x] compression budget: gzip runs on the common pool at a fixed level (`BEST_SPEED`)
+  - Done: one bounded compression thread per OTLP destination, `otlp.compressionLevel` from 1 (the
+    former `BEST_SPEED`, default) to 9. CPU and size measurements are in
+    [the request log design](doc/design/request-log.md#gzip-on-one-dedicated-compression-thread).
+    zstd remains contingent on the target log servers accepting it.
 - [ ] failover endpoints: several endpoints per OTLP destination, each with its own breaker, see
   the `Endpoint` record in `HttpBatchSender`
   - P3: decide failover order versus round robin; shares the design with "multiple servers per

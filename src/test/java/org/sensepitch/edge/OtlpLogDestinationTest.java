@@ -30,6 +30,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.util.zip.Deflater;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -297,11 +298,69 @@ class OtlpLogDestinationTest {
   @Test
   void compressionNone() throws Exception {
     destination = fastDestination(config().compression(OtlpConfig.NONE).build());
+    assertThat(destination.compressionThreads()).isZero();
+    assertThat(destination.compressionQueueCapacity()).isZero();
+    assertThat(destination.compressionExecutorStopped()).isTrue();
     new OtlpRequestLogger(destination).logRequest(request("/plain"));
     HttpBatchSenderTest.close(destination);
     Received post = receive();
     assertThat(post.headers()).doesNotContainKey("content-encoding");
     assertThat(post.paths()).containsExactly("/plain");
+  }
+
+  /// The default preserves the former `BEST_SPEED`, the configured level reaches the sender
+  @Test
+  void compressionLevelDefaultsAndValidates() {
+    OtlpConfig defaults = config().build();
+    assertThat(defaults.effectiveCompressionLevel()).isEqualTo(Deflater.BEST_SPEED);
+    assertThat(OtlpLogDestination.settings("otlp", defaults).compressionLevel())
+        .isEqualTo(Deflater.BEST_SPEED);
+    for (int level : List.of(Deflater.BEST_SPEED, Deflater.BEST_COMPRESSION)) {
+      assertThat(
+              OtlpLogDestination.settings("otlp", config().compressionLevel(level).build())
+                  .compressionLevel())
+          .isEqualTo(level);
+    }
+    assertThatThrownBy(() -> new OtlpLogDestination("otlp", config().compressionLevel(-1).build()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage(
+            "Request log destination otlp: compressionLevel must be between "
+                + OtlpConfig.MIN_COMPRESSION_LEVEL
+                + " and "
+                + OtlpConfig.MAX_COMPRESSION_LEVEL
+                + ", not -1");
+    assertThatThrownBy(() -> new OtlpLogDestination("otlp", config().compressionLevel(10).build()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage(
+            "Request log destination otlp: compressionLevel must be between "
+                + OtlpConfig.MIN_COMPRESSION_LEVEL
+                + " and "
+                + OtlpConfig.MAX_COMPRESSION_LEVEL
+                + ", not 10");
+  }
+
+  /// Compression gets one bounded thread per destination and stops with the sender
+  @Test
+  void compressionExecutorIsBoundedAndStops() throws Exception {
+    destination =
+        fastDestination(
+            config()
+                .maxConcurrentRequests(3)
+                .flushIntervalMillis(OUT_OF_REACH_MILLIS)
+                .compressionLevel(Deflater.BEST_COMPRESSION)
+                .build());
+    assertThat(destination.compressionThreads()).isEqualTo(1);
+    assertThat(destination.compressionQueueCapacity()).isEqualTo(3);
+    assertThat(destination.compressionExecutorStopped()).isFalse();
+    OtlpRequestLogger logger = new OtlpRequestLogger(destination);
+    for (int i = 0; i < 100; i++) {
+      logger.logRequest(request("/compressed/" + i));
+    }
+    HttpBatchSenderTest.close(destination);
+    Received post = receive();
+    assertThat(post.headers()).containsEntry("content-encoding", "gzip");
+    assertThat(post.paths()).hasSize(100).startsWith("/compressed/0");
+    assertThat(destination.compressionExecutorStopped()).isTrue();
   }
 
   /// Bytes of the successful request bodies the server received

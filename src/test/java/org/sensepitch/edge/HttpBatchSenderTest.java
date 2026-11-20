@@ -99,6 +99,7 @@ class HttpBatchSenderTest {
             OUT_OF_REACH_MILLIS,
             OUT_OF_REACH_MILLIS,
             false,
+            OtlpConfig.DEFAULT_COMPRESSION_LEVEL,
             new Backoff(10, 50)),
         new TextPayload(),
         new RequestLogMetrics());

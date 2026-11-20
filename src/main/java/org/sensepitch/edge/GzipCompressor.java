@@ -5,7 +5,8 @@ import java.util.zip.Deflater;
 
 /// Compresses the body of one request into gzip format, RFC 1952, reusable without allocating.
 /// [java.util.zip.GZIPOutputStream] would allocate its deflater and buffers per request; this one
-/// keeps them, see [#reset()]. The header and trailer are written by hand.
+/// keeps them, see [#reset()], and creates the deflater once at the configured level. The header
+/// and trailer are written by hand.
 ///
 /// Holds native memory of the [Deflater], so [#end()] it when no longer used. Not thread safe, one
 /// instance per request in flight, see [HttpBatchSender].
@@ -18,15 +19,16 @@ final class GzipCompressor {
 
   private static final int TRAILER_BYTES = 8;
 
-  // the fastest level: the records compress well anyway, and the sending must keep up
-  private final Deflater deflater = new Deflater(Deflater.BEST_SPEED, true);
+  private final Deflater deflater;
   private final CRC32 crc = new CRC32();
   private byte[] out;
   private int length;
 
   /// @param initialCapacity expected compressed size, the buffer grows as needed and keeps its
   ///   size for the next request
-  GzipCompressor(int initialCapacity) {
+  /// @param level gzip level, `BEST_SPEED` through `BEST_COMPRESSION`
+  GzipCompressor(int initialCapacity, int level) {
+    deflater = new Deflater(level, true);
     out = new byte[Math.max(HEADER.length + TRAILER_BYTES, initialCapacity)];
     reset();
   }

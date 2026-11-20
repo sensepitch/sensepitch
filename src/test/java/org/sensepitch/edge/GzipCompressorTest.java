@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Random;
+import java.util.zip.Deflater;
 import java.util.zip.GZIPInputStream;
 import org.junit.jupiter.api.Test;
 
@@ -29,7 +30,7 @@ class GzipCompressorTest {
 
   @Test
   void partsRoundTrip() throws IOException {
-    GzipCompressor compressor = new GzipCompressor(1024);
+    GzipCompressor compressor = new GzipCompressor(1024, Deflater.BEST_SPEED);
     byte[] first = "GET /index.html example.com ".repeat(100).getBytes(StandardCharsets.UTF_8);
     byte[] second = "and more".getBytes(StandardCharsets.UTF_8);
     compressor.write(first, 0, first.length);
@@ -43,7 +44,7 @@ class GzipCompressorTest {
 
   @Test
   void emptyBody() throws IOException {
-    GzipCompressor compressor = new GzipCompressor(0);
+    GzipCompressor compressor = new GzipCompressor(0, Deflater.BEST_SPEED);
     compressor.finish();
     assertThat(gunzip(compressor)).isEmpty();
   }
@@ -52,7 +53,7 @@ class GzipCompressorTest {
   @Test
   void reuseAfterReset() {
     byte[] body = "the same body ".repeat(50).getBytes(StandardCharsets.UTF_8);
-    GzipCompressor compressor = new GzipCompressor(64);
+    GzipCompressor compressor = new GzipCompressor(64, Deflater.BEST_SPEED);
     compressor.write(body, 0, body.length);
     compressor.finish();
     byte[] first = compressed(compressor);
@@ -62,12 +63,34 @@ class GzipCompressorTest {
     assertThat(compressed(compressor)).isEqualTo(first);
   }
 
+  /// The level trades CPU for bytes on the wire, it never changes the body
+  @Test
+  void levelChangesTheSizeNotTheBody() throws IOException {
+    byte[] body =
+        ("{\"http.request.method\":\"GET\",\"server.address\":\"www.example.com\","
+                + "\"url.path\":\"/products/1234\",\"user_agent.original\":\"Mozilla/5.0 "
+                + "(X11; Linux x86_64) AppleWebKit/537.36 Chrome/141.0 Safari/537.36\"}\n")
+            .repeat(4096)
+            .getBytes(StandardCharsets.UTF_8);
+    GzipCompressor fast = new GzipCompressor(1024, Deflater.BEST_SPEED);
+    GzipCompressor best = new GzipCompressor(1024, Deflater.BEST_COMPRESSION);
+    fast.write(body, 0, body.length);
+    fast.finish();
+    best.write(body, 0, body.length);
+    best.finish();
+    assertThat(gunzip(fast)).isEqualTo(body);
+    assertThat(gunzip(best)).isEqualTo(body);
+    assertThat(best.length()).as("best compression").isLessThan(fast.length());
+    fast.end();
+    best.end();
+  }
+
   /// Random bytes do not compress, the buffer grows beyond its initial capacity and keeps it
   @Test
   void bufferGrowsForIncompressibleInput() throws IOException {
     byte[] random = new byte[100_000];
     new Random(42).nextBytes(random);
-    GzipCompressor compressor = new GzipCompressor(1024);
+    GzipCompressor compressor = new GzipCompressor(1024, Deflater.BEST_SPEED);
     compressor.write(random, 0, random.length);
     compressor.finish();
     assertThat(compressor.length()).isGreaterThan(random.length);

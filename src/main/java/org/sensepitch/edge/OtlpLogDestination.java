@@ -116,6 +116,19 @@ public class OtlpLogDestination extends HttpBatchSender<OtlpBatch> {
               + ", not "
               + compression);
     }
+    int compressionLevel = config.effectiveCompressionLevel();
+    if (compressionLevel < OtlpConfig.MIN_COMPRESSION_LEVEL
+        || compressionLevel > OtlpConfig.MAX_COMPRESSION_LEVEL) {
+      throw new IllegalArgumentException(
+          "Request log destination "
+              + name
+              + ": compressionLevel must be between "
+              + OtlpConfig.MIN_COMPRESSION_LEVEL
+              + " and "
+              + OtlpConfig.MAX_COMPRESSION_LEVEL
+              + ", not "
+              + config.compressionLevel());
+    }
     return new Settings(
         name,
         uri,
@@ -127,6 +140,7 @@ public class OtlpLogDestination extends HttpBatchSender<OtlpBatch> {
         config.effectiveMaximumUnsentLogAgeMillis(),
         config.effectiveFlushIntervalMillis(),
         compression.equals(OtlpConfig.GZIP),
+        compressionLevel,
         new Backoff(
             config.effectiveInitialRetryDelayMillis(), config.effectiveMaxRetryDelayMillis()));
   }
