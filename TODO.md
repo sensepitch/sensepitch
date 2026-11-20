@@ -172,11 +172,42 @@ the failure threshold for upstreams is under Upstream.
 - [ ] HTTP/2 support, downstream
   - P3: scope protocol negotiation, stream lifecycle, backpressure and compatibility tests.
 - [ ] quic support
-- [ ] limit body size for incoming requests? There is no limit yet. NGINX has 1M as default,
-  `client_max_body_size`, status 413
-  - P2: research settings of other tools and present options here first. These settings are always
-    caveats. Basic philosophy is to be transparent, define a buffer for performance and then do
-    backpressure. So no hard limit
+  - P3
+- [ ] Request size limits: decide the options below, then implement the chosen ones. Research,
+  measurements and sources in the draft
+  [request-body-limit-draft.md](doc/design/request-body-limit-draft.md)
+  - P2. Today: no body limit; the body streams with backpressure (64 KiB Netty water mark), so
+    memory is bounded. Netty's header (8192 bytes) and request line (4096) limits answer 400,
+    (inferred) as a missing host. Measured on 2026-11-20: NGINX 1.28.3 refuses bodies over 1 MiB
+    with 413 because it buffers them; HAProxy 3.2, Caddy 2.11 and Envoy 1.36 stream and have no
+    default limit, Caddy and Envoy offer an opt-in 413.
+  - Found: a slow upload is not bounded. Every body byte resets the read timeout, so one byte per
+    29 s keeps the client and upstream connections open (inferred from the code and a decoder
+    experiment).
+  - Body limit, tick one:
+    - [ ] no limit, as today; document it in the README
+    - [ ] optional `maxRequestBodyBytes`, off by default
+    - [ ] default limit like NGINX (1 MiB)
+  - With an optional limit, where:
+    - [ ] `listen.connection`
+    - [ ] per site and path route
+    - [ ] both, a global value with overrides
+  - With an optional limit, the refusal: 413 with `Connection: close` before the body when
+    `Content-Length` is too large, mid-stream close of upstream and client for chunked bodies
+    - [ ] as described
+    - [ ] also answer `Expect: 100-continue` with 413 (check today's `Expect` handling first)
+  - Visibility of refusals:
+    - [ ] new `RequestOutcome` `request_too_large` in `sensepitch_ingress_request_outcomes_total`
+    - [ ] status 413 in the request log only
+  - Header and request line:
+    - [ ] answer decoder failures explicitly: 431 too large header, 414 too long request line,
+      400 other, with outcome or counter
+    - [ ] raise the defaults (other proxies refused at 9000 to 70000 bytes)
+    - [ ] configurable in `listen.connection` via `HttpDecoderConfig`
+  - Slow uploads:
+    - [ ] total request receive timeout in `listen.connection`, answered with 408
+    - [ ] minimum upload rate
+    - [ ] only correct the `ConnectionConfig` doc, which says a byte does not reset the timeout
 - [ ] Implement server-timing, https://www.w3.org/TR/server-timing/
   - P3: enable/disable forward of upstream Server-Timing info, log all of it, add own timing info,
     e.g. upstream connect latency
