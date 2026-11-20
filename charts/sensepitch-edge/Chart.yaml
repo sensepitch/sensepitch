@@ -1,0 +1,14 @@
+apiVersion: v2
+name: sensepitch-edge
+description: Standalone Sensepitch Edge reverse proxy
+type: application
+version: 0.1.0
+appVersion: "0.2-SNAPSHOT"
+kubeVersion: ">=1.25.0-0"
+home: https://github.com/sensepitch/sensepitch-edge
+sources:
+  - https://github.com/sensepitch/sensepitch-edge
+keywords:
+  - reverse-proxy
+  - ingress
+  - bot-protection

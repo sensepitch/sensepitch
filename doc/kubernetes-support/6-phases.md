@@ -79,7 +79,11 @@ Gateway API resources, and the Core conformance tests pass.
 
 ## Development order
 
-The table groups work by area. To reduce rework, build in this order:
+First complete TODO item 3. Deploy the standalone chart in a single-node kind cluster on a
+GitHub-hosted Ubuntu runner and pass its probes, HTTPS, Secret rotation and shutdown checks.
+The open Kubernetes items that follow item 3 depend on this gate.
+
+The table groups work by area. After the standalone gate, build in this order:
 
 1. **Configuration model.** Finish the gap analysis, define the Gateway API Java records and
    the snapshot schema. Load them from a standalone YAML file first.
@@ -88,16 +92,10 @@ The table groups work by area. To reduce rework, build in this order:
 3. **Edge runtime basics.** `EdgeState` behind an `AtomicReference`, metrics moved out of the
    `Proxy` constructor, admin endpoint (`/healthz`, `/readyz`), Dockerfile.
 4. **Minimal controller.** Watch GatewayClass, Gateway and HTTPRoute; serve snapshots.
-5. **Kind environment.** One setup script for local use and CI: a single-node kind cluster
-   (pinned kind version and node image), the pinned Gateway API standard-channel CRDs, the
-   locally built edge image (later also the controller image) loaded with
-   `kind load docker-image`, so no registry is involved, and an echo backend. A CI job on
-   `ubuntu-latest` (Docker is preinstalled) creates the cluster and runs a smoke test. The
-   first user is the standalone edge with the manifests of TODO item 3: probes, draining
-   within `terminationGracePeriodSeconds`, Secret reload in a pod. Until here no cluster is
-   needed, see "When a cluster is needed" in `7-testing-and-release.md`. cloud-provider-kind,
-   which gives every LoadBalancer Service its own address, joins with the LoadBalancer
-   Service of the next item. Counted in step 12 of the table, but built now.
+5. **Extend kind for Gateway API.** Reuse the standalone setup script in local runs and CI.
+   Install pinned Gateway API standard-channel CRDs, load the controller image with
+   `kind load docker-image`, and deploy an echo backend. Add cloud-provider-kind for the
+   LoadBalancer Service in the next item.
 6. **End-to-end routing.** The smallest working path, with one HTTP listener and one backend:
 
    ```text

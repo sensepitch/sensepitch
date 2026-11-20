@@ -22,8 +22,9 @@
 
 ## When a cluster is needed
 
-Nothing before the kind environment ("Development order" item 5 in `6-phases.md`) needs a
-cluster. The tools until then, and from when a cluster takes over:
+TODO item 3 is the first cluster gate. Its CI job deploys the standalone chart to a disposable
+single-node kind cluster on a GitHub-hosted Ubuntu runner using the locally built image.
+The open Kubernetes items that follow item 3 start after that deployment check passes.
 
 | Stage | Tool | Cluster |
 |---|---|---|
@@ -32,7 +33,8 @@ cluster. The tools until then, and from when a cluster takes over:
 | Manifests and Helm chart | `helm template` and `kubeconform`, offline schema check | no |
 | Controller reconcilers, provisioner golden files | envtest: kube-apiserver and etcd inside `go test`, no nodes | no |
 | Snapshot distribution, optional | envtest, a local edge JVM, hand-written EndpointSlices pointing to a local backend | no |
-| Standalone edge smoke test, end-to-end routing (items 5 and 6) | single-node kind | yes |
+| Standalone edge deployment (TODO item 3) | single-node kind, Helm, locally loaded image | yes |
+| Gateway API routing (development order items 5 and 6) | same kind setup with Gateway API CRDs and controller | yes |
 | Dedicated fleets, conformance, parity, recovery, exposure matrix (item 7 on) | kind with cloud-provider-kind | yes |
 
 End-to-end routing is the first Gateway API step that needs a cluster: it needs pods, the
@@ -78,6 +80,8 @@ envtest has. This split is inferred from the tools' scope, not measured.
   recorded in [oci-image.md](../design/oci-image.md); the image is
   `ghcr.io/sensepitch/sensepitch-edge` (matching the Helm chart).
 - Controller image built from `controller/`.
+- The [standalone Helm chart](../../charts/sensepitch-edge/README.md) deploys the edge directly
+  with a ConfigMap, mounted Secrets, and admin probes.
 - Helm chart:
   - Gateway API CRDs are not bundled; they are a documented prerequisite. The Sensepitch
     CRDs (`SensepitchEdgeParameters`, `SensepitchPolicy`, `SensepitchResponse`) are bundled.

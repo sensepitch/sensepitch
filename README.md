@@ -987,6 +987,11 @@ The profile uses the existing image and requires Docker access, Bash, and curl. 
 `-DociImage=<local-image-tag>` to test a different image. The standard Maven gate skips this
 test. With the profile enabled, failure to start the container fails the build.
 
+## Kubernetes
+
+The standalone Helm chart deploys the edge with health probes, a ConfigMap, mounted Secrets,
+and optional Prometheus scraping. See the [chart operator guide](charts/sensepitch-edge/README.md).
+
 ## Local testing
 
 ````

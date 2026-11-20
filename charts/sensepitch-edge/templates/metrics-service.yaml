@@ -1,0 +1,19 @@
+{{- if dig "metrics" "enable" true .Values.config }}
+{{- $metricsPort := int (dig "metrics" "prometheus" "port" 9400 .Values.config) -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sensepitch-edge.fullname" . }}-metrics
+  labels:
+    {{- include "sensepitch-edge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "sensepitch-edge.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ $metricsPort }}
+      targetPort: metrics
+      protocol: TCP
+{{- end }}

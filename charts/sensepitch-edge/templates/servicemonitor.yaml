@@ -1,0 +1,28 @@
+{{- if .Values.serviceMonitor.enabled }}
+{{- if not (dig "metrics" "enable" true .Values.config) }}
+{{- fail "serviceMonitor.enabled requires config.metrics.enable=true" }}
+{{- end }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "sensepitch-edge.fullname" . }}
+  labels:
+    {{- include "sensepitch-edge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace | quote }}
+  selector:
+    matchLabels:
+      {{- include "sensepitch-edge.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: metrics
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout }}
+{{- end }}

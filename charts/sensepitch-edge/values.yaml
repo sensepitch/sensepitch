@@ -1,0 +1,131 @@
+# Default values for the standalone Sensepitch Edge chart.
+#
+# The chart runs one edge fleet from a single config.yml. It does not install
+# the Gateway API controller or any Gateway API resources.
+
+replicaCount: 2
+
+image:
+  # No image is published yet, see TODO.md item 2. Point these values at the
+  # image built from the shaded JAR before installing the chart.
+  repository: ghcr.io/sensepitch/sensepitch-edge
+  pullPolicy: IfNotPresent
+  # Defaults to .Chart.AppVersion when empty.
+  tag: ""
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+
+service:
+  # The HTTPS listener is the only port in this Service. Use LoadBalancer or
+  # NodePort when the edge is the public entry point; keep ClusterIP when a
+  # separate load balancer forwards to it.
+  type: ClusterIP
+  port: 443
+  annotations: {}
+  # loadBalancerIP: ""
+  # loadBalancerSourceRanges: []
+
+# The edge always terminates TLS, so a certificate Secret is required. The
+# files are mounted read-only at /etc/sensepitch/tls/. The default config below
+# points listen.ssl at these keys. Create the Secret with:
+#   kubectl create secret tls sensepitch-edge-tls --cert=tls.crt --key=tls.key
+tls:
+  existingSecret: sensepitch-edge-tls
+  certKey: tls.crt
+  keyKey: tls.key
+
+# Additional Secrets mounted as read-only files, for example the IPinfo
+# database. They complement, but do not replace, the TLS Secret above.
+# extraSecretMounts:
+#   - name: ipinfo
+#     secretName: sensepitch-edge-ipinfo
+#     mountPath: /etc/sensepitch/ipinfo
+extraSecretMounts: []
+
+# Prometheus Operator support. The chart always creates a separate ClusterIP
+# Service for the metrics port when metrics are enabled. ServiceMonitor is off
+# by default because the monitoring.coreos.com CRDs are not part of Kubernetes.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}
+
+# Scrape annotations on the pod, for Prometheus installations that discover
+# pods instead of ServiceMonitors. They are skipped when metrics are disabled.
+metrics:
+  prometheusAnnotations:
+    enabled: true
+
+# A PDB with maxUnavailable 1 keeps one pod serving during a voluntary
+# disruption. With a single replica this permits the drain, but a rolling
+# restart temporarily has no ready pod.
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+  # Set this instead of maxUnavailable when you need an absolute guarantee.
+  minAvailable: ""
+
+# Must exceed config.shutdownTimeoutMillis by at least 5 seconds. The chart
+# fails to render when the margin is smaller. The default shutdown takes at
+# most 10 seconds, leaving 20 seconds for scheduling and kubelet bookkeeping.
+terminationGracePeriodSeconds: 30
+
+resources: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+priorityClassName: ""
+
+env: []
+
+# This map is rendered into the config.yml ConfigMap. If protection or sites are
+# absent, the chart adds protection.disable=true and a static localhost site,
+# because the edge rejects an empty sites map and needs a protection scheme.
+# Keep listen.address at 0.0.0.0 so the Service can reach the listener, and keep
+# admin.address at 0.0.0.0 so kubelet probes can reach /healthz and /readyz.
+# The admin and metrics ports below drive the container ports, probes, and
+# Prometheus scraping, so keep the nested ports in sync when changing them.
+#
+# This map is visible in the ConfigMap. Use extraSecretMounts and secret.file
+# for admission token secrets. See the chart README for an example.
+config:
+  listen:
+    address: 0.0.0.0
+    httpsPort: 17443
+    ssl:
+      certPath: /etc/sensepitch/tls/tls.crt
+      keyPath: /etc/sensepitch/tls/tls.key
+  admin:
+    address: 0.0.0.0
+    port: 9401
+  metrics:
+    enable: true
+    prometheus:
+      port: 9400
+  shutdownTimeoutMillis: 10000
+  shutdownAcceptGraceMillis: 5000
+  requestLog:
+    drainTimeoutMillis: 3000

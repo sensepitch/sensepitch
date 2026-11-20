@@ -1,0 +1,145 @@
+{{- $config := .Values.config -}}
+{{- if not (hasKey $config "admin") -}}
+{{- fail "config.admin is required: the Deployment probes /healthz and /readyz on the admin port" -}}
+{{- end -}}
+{{- $shutdownTimeout := int (default 5000 (get $config "shutdownTimeoutMillis")) -}}
+{{- $shutdownSeconds := int (ceil (divf (float64 $shutdownTimeout) 1000.0)) -}}
+{{- $grace := int .Values.terminationGracePeriodSeconds -}}
+{{- if lt $grace (add $shutdownSeconds 5) -}}
+{{- fail (printf "terminationGracePeriodSeconds (%d) must exceed config.shutdownTimeoutMillis (%d, rounded up to %d seconds) by at least 5 seconds" $grace $shutdownTimeout $shutdownSeconds) -}}
+{{- end -}}
+{{- $httpsPort := int (dig "listen" "httpsPort" 17443 $config) -}}
+{{- $adminPort := int (dig "admin" "port" 9401 $config) -}}
+{{- $metricsPort := int (dig "metrics" "prometheus" "port" 9400 $config) -}}
+{{- $metricsEnabled := dig "metrics" "enable" true $config -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sensepitch-edge.fullname" . }}
+  labels:
+    {{- include "sensepitch-edge.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "sensepitch-edge.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if and .Values.metrics.prometheusAnnotations.enabled $metricsEnabled }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ $metricsPort | quote }}
+        prometheus.io/path: /metrics
+        {{- end }}
+      labels:
+        {{- include "sensepitch-edge.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      terminationGracePeriodSeconds: {{ $grace }}
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: edge
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - /etc/sensepitch/config/config.yml
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: https
+              containerPort: {{ $httpsPort }}
+              protocol: TCP
+            - name: admin
+              containerPort: {{ $adminPort }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ $metricsPort }}
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: admin
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+          {{- with .Values.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/sensepitch/config
+            - name: tls
+              mountPath: /etc/sensepitch/tls
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            {{- range .Values.extraSecretMounts }}
+            - name: extra-{{ required "extraSecretMounts[].name is required" .name }}
+              mountPath: {{ required "extraSecretMounts[].mountPath is required" .mountPath }}
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "sensepitch-edge.fullname" . }}
+        - name: tls
+          secret:
+            secretName: {{ required "tls.existingSecret is required" .Values.tls.existingSecret }}
+            items:
+              - key: {{ .Values.tls.certKey }}
+                path: tls.crt
+              - key: {{ .Values.tls.keyKey }}
+                path: tls.key
+        - name: tmp
+          emptyDir: {}
+        {{- range .Values.extraSecretMounts }}
+        - name: extra-{{ required "extraSecretMounts[].name is required" .name }}
+          secret:
+            secretName: {{ required "extraSecretMounts[].secretName is required" .secretName }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}

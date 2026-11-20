@@ -50,8 +50,10 @@ same loader can read JSON snapshots.
 
 ## Packaging
 
-No Dockerfile, Helm chart or Kubernetes manifests exist. CI (`.github/workflows/ci.yml`)
-runs `./mvnw clean verify` and uploads the shaded jar.
+The Dockerfile builds the standalone edge image. The
+[standalone Helm chart](../../charts/sensepitch-edge/README.md) renders the Deployment,
+Services, PodDisruptionBudget, ConfigMap, Secret mounts, probes and optional Prometheus
+scraping. CI (`.github/workflows/ci.yml`) runs `./mvnw clean verify` and uploads the shaded jar.
 
 ## Production configurations versus Gateway API
 

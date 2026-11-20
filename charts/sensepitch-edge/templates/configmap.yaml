@@ -1,0 +1,19 @@
+{{- $config := deepCopy .Values.config -}}
+{{- if not (get $config "protection") -}}
+{{- $_ := set $config "protection" (dict "disable" true) -}}
+{{- end -}}
+{{- if not (get $config "sites") -}}
+{{- $_ := set $config "sites" (dict "localhost" (dict "response" (dict "text" "Sensepitch Edge is running. Configure sites in values.config."))) -}}
+{{- end -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sensepitch-edge.fullname" . }}
+  labels:
+    {{- include "sensepitch-edge.labels" . | nindent 4 }}
+data:
+  # The end marker lets ConfigFileWatcher reload a complete update. The file is
+  # mounted as a directory, not with subPath, so kubelet's symlink swap is seen.
+  config.yml: |
+    {{- toYaml $config | nindent 4 }}
+    #END

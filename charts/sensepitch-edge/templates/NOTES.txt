@@ -1,0 +1,18 @@
+Sensepitch Edge {{ .Chart.AppVersion }} is installed as release {{ .Release.Name }}.
+
+The HTTPS listener is exposed by Service {{ include "sensepitch-edge.fullname" . }}
+on port {{ .Values.service.port }} ({{ .Values.service.type }}). The admin endpoint on
+port {{ dig "admin" "port" 9401 .Values.config }} is intentionally not part of that Service;
+kubelet reaches it through the pod IP for the /healthz and /readyz probes.
+
+Before the first pod can serve traffic:
+
+  1. Ensure image {{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}
+     exists (see TODO.md item 2).
+  2. Create or provide TLS Secret "{{ .Values.tls.existingSecret }}" with keys
+     "{{ .Values.tls.certKey }}" and "{{ .Values.tls.keyKey }}".
+  3. Replace the localhost smoke-test site in values.config with your hosts and upstreams.
+
+The configuration is mounted read-only at /etc/sensepitch/config/config.yml and ends
+with #END, so a complete ConfigMap update is reloaded by the edge. Helm also changes
+the pod template checksum, which rolls the Deployment for restart-only settings.
