@@ -24,6 +24,7 @@ sensepitch_circuitbreaker_start_time_seconds{component="requestLog",name="otlp"}
 # HELP sensepitch_circuitbreaker_state The state of the circuit breaker, 1 for the current one
 # TYPE sensepitch_circuitbreaker_state gauge
 sensepitch_circuitbreaker_state{component="requestLog",name="otlp",state="closed"} 1.0
+sensepitch_circuitbreaker_state{component="requestLog",name="otlp",state="forced_open"} 0.0
 sensepitch_circuitbreaker_state{component="requestLog",name="otlp",state="half_open"} 0.0
 sensepitch_circuitbreaker_state{component="requestLog",name="otlp",state="open"} 0.0
 # HELP sensepitch_circuitbreaker_transitions_total State changes of the circuit breaker, the reason of a trip is the error code

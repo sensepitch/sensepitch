@@ -322,9 +322,9 @@ rename.
 
 | Metric | Type | Meaning |
 |---|---|---|
-| `_state{state}` | gauge | 1 for the current state, `closed`, `open` or `half_open`, 0 for the others |
+| `_state{state}` | gauge | 1 for the current state, `closed`, `open`, `half_open` or `forced_open`, 0 for the others |
 | `_calls_total{kind}` | counter | each call once: `successful`, `failed` (counts against the breaker, e.g. 503), `ignored` (a failure retrying cannot fix, e.g. 400), `not_permitted` (refused by the breaker) |
-| `_transitions_total{from,to,reason}` | counter | each state change; the reason of a trip is the error code, otherwise `backoff_over` or `recovered` |
+| `_transitions_total{from,to,reason}` | counter | each state change; the reason of a trip is the error code, otherwise `backoff_over`, `recovered`, `forced_open` or `forced_close` |
 | `_errors_total{error}` | counter | failed and ignored calls by error code: `http_<status>`, `timeout`, `connect`, `io`, `unexpected` |
 | `_consecutive_failures` | gauge | failures in a row, the backoff grows with them |
 | `_start_time_seconds` | gauge | when the breaker was created, e.g. at startup or by a reload |
@@ -664,9 +664,23 @@ ready immediately.
 
 `POST /reload` answers `200` if the configuration was applied, `422` with the reason if it was
 rejected (invalid configuration, missing `#END`), and `409` if the configuration comes from
-environment variables. The endpoint has no authentication, so it binds to the loopback interface
-by default. Binding another address exposes it to that network. A reload only reads the local
-file again, so the worst case is repeated reloads.
+environment variables. The admin server binds to the loopback interface by default. It has no
+authentication. Binding another address exposes its reload and breaker controls to that network.
+
+The circuit breakers of the request log destinations can be controlled manually, to take a log
+server out for maintenance:
+
+````
+curl -X POST http://127.0.0.1:9401/circuit-breakers/requestLog/otlp/open
+curl -X POST http://127.0.0.1:9401/circuit-breakers/requestLog/otlp/close
+````
+
+`open` forces the breaker open: it refuses every request, and no backoff ends that state. `close`
+releases it. A breaker forced open shows as `sensepitch_circuitbreaker_state{state="forced_open"}`.
+`open` and `close` answer `200`, `close` answers `409` if the breaker is not forced open, and an
+unknown breaker, e.g. after a reload renamed the destination, answers `404`. The component and
+name are the `component` and `name` labels of `sensepitch_circuitbreaker_*`. URL-encode each label
+as a path segment. The sender can pick up buffered records at the next flush after `close`.
 
 ## Shutdown
 

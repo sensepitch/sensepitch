@@ -16,6 +16,8 @@ import java.util.concurrent.TimeUnit;
 ///   backoff.
 ///   A probe that reports nothing within the probe timeout lets the next one through, so the
 ///   breaker cannot get stuck.
+/// - `FORCED_OPEN`: refuses every request until [#forceClose()] closes it again, for taking a
+///   remote out for maintenance through the admin endpoint, see [AdminServer].
 ///
 /// The breaker is passive: it has no thread or timer, a caller that wants to retry by itself
 /// schedules after [#retryDelayNanos()]. It is used for posting request logs, see
@@ -41,7 +43,8 @@ public final class CircuitBreaker {
   public enum State {
     CLOSED,
     OPEN,
-    HALF_OPEN
+    HALF_OPEN,
+    FORCED_OPEN
   }
 
   /// What happened to a call, the `kind` of the metrics, named as in resilience4j
@@ -77,6 +80,8 @@ public final class CircuitBreaker {
 
   static final String BACKOFF_OVER = "backoff_over";
   static final String RECOVERED = "recovered";
+  static final String FORCED_OPEN_REASON = "forced_open";
+  static final String FORCED_CLOSE_REASON = "forced_close";
 
   private final Backoff backoff;
   private final long probeTimeoutNanos;
@@ -157,6 +162,10 @@ public final class CircuitBreaker {
           probeSinceNanos = now;
           return true;
         }
+        case FORCED_OPEN -> {
+          events.call(Kind.NOT_PERMITTED);
+          return false;
+        }
         default -> {
           if (now - probeSinceNanos < probeTimeoutNanos) {
             events.call(Kind.NOT_PERMITTED);
@@ -176,7 +185,7 @@ public final class CircuitBreaker {
     synchronized (lock) {
       events.call(Kind.SUCCESSFUL);
       State before = state;
-      if (before != State.CLOSED) {
+      if (before != State.CLOSED && before != State.FORCED_OPEN) {
         close(before);
       }
       return before;
@@ -196,7 +205,7 @@ public final class CircuitBreaker {
       events.call(Kind.IGNORED);
       events.error(error);
       State before = state;
-      if (before != State.CLOSED) {
+      if (before != State.CLOSED && before != State.FORCED_OPEN) {
         close(before);
       }
       return before;
@@ -218,12 +227,17 @@ public final class CircuitBreaker {
   /// @param error short code of the error, see [Events#error(String)], also the reason of the
   ///   transition to `OPEN`
   /// @return the state before: `CLOSED` means an outage starts, `OPEN` means the failure was
-  ///   counted already, the caller does not need to schedule another retry
+  ///   counted already, the caller does not need to schedule another retry, `FORCED_OPEN` means
+  ///   the failure was a request in flight when the breaker was forced open and changed nothing
   public State onFailure(long retryAfterMillis, String error) {
     synchronized (lock) {
       events.call(Kind.FAILED);
       events.error(error);
       State before = state;
+      if (before == State.FORCED_OPEN) {
+        // a request in flight when the breaker was forced open must not close or reopen it
+        return before;
+      }
       long now = ticker.nanoTime();
       if (before == State.OPEN) {
         // a request in flight when the breaker opened, only a longer requested delay matters
@@ -249,6 +263,37 @@ public final class CircuitBreaker {
       if (state == State.OPEN) {
         retryAtNanos = ticker.nanoTime();
       }
+    }
+  }
+
+  /// Forces the breaker open until [#forceClose()], whatever its state, for taking a remote out
+  /// for maintenance through the admin endpoint. Refuses every request, see [#tryAcquire()], and
+  /// does not end by a backoff or a probe. Calling it again is a no-op.
+  public void forceOpen() {
+    synchronized (lock) {
+      if (state == State.FORCED_OPEN) {
+        return;
+      }
+      State before = state;
+      state = State.FORCED_OPEN;
+      events.transition(before, State.FORCED_OPEN, FORCED_OPEN_REASON);
+    }
+  }
+
+  /// Closes a breaker forced open by [#forceOpen()], so requests pass again. The failures are
+  /// reset, the next failure starts a fresh backoff.
+  ///
+  /// @return `true` if the breaker was forced open and is now closed, `false` if it was not
+  ///   forced open, then its state is unchanged
+  public boolean forceClose() {
+    synchronized (lock) {
+      if (state != State.FORCED_OPEN) {
+        return false;
+      }
+      state = State.CLOSED;
+      failures = 0;
+      events.transition(State.FORCED_OPEN, State.CLOSED, FORCED_CLOSE_REASON);
+      return true;
     }
   }
 

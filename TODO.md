@@ -171,8 +171,9 @@ the failure threshold for upstreams is under Upstream.
 
 - [ ] slow calls count as failures, as resilience4j's slow call rate
   - P3: for upstreams, once latency targets are known.
-- [ ] manual control: force a breaker open, e.g. for maintenance of a log server or upstream
-  - P3: through the admin server.
+- [x] manual control: force a breaker open, e.g. for maintenance of a log server or upstream
+  - P3: through the admin server, `POST /circuit-breakers/<component>/<name>/open` and `/close`
+    (2026-11-20), see [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md).
 
 ## Ingress, HTTP
 

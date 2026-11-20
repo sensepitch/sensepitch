@@ -59,7 +59,8 @@ public class Main {
                 config.admin(),
                 reload,
                 proxy::isShuttingDown,
-                new UpstreamReadinessProbe(proxy::upstreamTargets)::isReady)
+                new UpstreamReadinessProbe(proxy::upstreamTargets)::isReady,
+                proxy.circuitBreakers())
             : null;
     Shutdown shutdown =
         new Shutdown(

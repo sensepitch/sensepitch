@@ -705,7 +705,7 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
           parked.addFirst(post);
           window = 1;
           before = breaker.onFailure(result.retryAfterMillis(), result.error());
-          if (before != CircuitBreaker.State.OPEN) {
+          if (before != CircuitBreaker.State.OPEN && before != CircuitBreaker.State.FORCED_OPEN) {
             scheduleProbe(breaker.retryDelayNanos());
           }
         }
@@ -721,7 +721,7 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   /// @param before the state of the breaker before the answer
   /// @param failures failed attempts of the outage
   private void answered(CircuitBreaker.State before, int failures) {
-    if (before != CircuitBreaker.State.CLOSED) {
+    if (before != CircuitBreaker.State.CLOSED && before != CircuitBreaker.State.FORCED_OPEN) {
       ageReported = false;
       log.info(
           "Request log export to "

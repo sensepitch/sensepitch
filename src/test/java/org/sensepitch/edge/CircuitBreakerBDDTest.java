@@ -131,6 +131,67 @@ class CircuitBreakerBDDTest {
         .then_the_state_is(CircuitBreaker.State.HALF_OPEN);
   }
 
+  /// Forced open refuses every request and does not end by a backoff; only a forced close lets
+  /// requests pass again.
+  @Test
+  void forcedOpen_refusesUntilClosed() {
+    steps
+        .given_a_breaker()
+        .when_the_breaker_is_forced_open()
+        .then_the_state_is(CircuitBreaker.State.FORCED_OPEN)
+        .then_the_events_are("closed to forced_open: forced_open")
+        .then_a_request_is_refused()
+        .then_the_events_are("call not_permitted")
+        .when_time_passes_millis(1_000)
+        .then_a_request_is_refused()
+        .then_the_events_are("call not_permitted")
+        .when_the_breaker_is_forced_closed()
+        .then_the_state_is(CircuitBreaker.State.CLOSED)
+        .then_the_events_are("forced_open to closed: forced_close")
+        .then_requests_are_granted(3);
+  }
+
+  /// Forcing an already forced open breaker is a no-op, so the transition is counted once.
+  @Test
+  void forceOpenTwice_isOneTransition() {
+    steps
+        .given_a_breaker()
+        .when_the_breaker_is_forced_open()
+        .when_the_breaker_is_forced_open()
+        .then_the_events_are("closed to forced_open: forced_open")
+        .then_the_state_is(CircuitBreaker.State.FORCED_OPEN);
+  }
+
+  /// A forced close of a breaker that is not forced open changes nothing and reports `false`.
+  @Test
+  void forceClose_whenNotForced_returnsFalse() {
+    steps
+        .given_a_breaker()
+        .then_the_breaker_is_not_forced_open()
+        .then_the_state_is(CircuitBreaker.State.CLOSED)
+        .then_requests_are_granted(1);
+  }
+
+  /// Results of requests that were in flight when the breaker was forced open are counted but do
+  /// not close, reopen or count the breaker.
+  @Test
+  void outcomesWhileForced_doNotChangeTheState() {
+    steps
+        .given_a_breaker()
+        .when_the_breaker_is_forced_open()
+        .then_the_events_are("closed to forced_open: forced_open")
+        .when_a_request_succeeds()
+        .then_the_state_is(CircuitBreaker.State.FORCED_OPEN)
+        .then_the_events_are("call successful")
+        .when_a_request_fails_ignored()
+        .then_the_state_is(CircuitBreaker.State.FORCED_OPEN)
+        .then_the_events_are("call ignored", "error http_400")
+        .when_a_request_fails()
+        .then_the_state_is(CircuitBreaker.State.FORCED_OPEN)
+        .then_the_events_are("call failed", "error http_503")
+        .then_the_failures_are(0);
+  }
+
   /// The events of an outage, as the metrics count them, and the wall clock times of the trip and
   /// the restart. A failed probe opens the breaker again but is no new trip.
   @Test
@@ -264,6 +325,17 @@ class CircuitBreakerBDDTest {
     assertThat(openGauge(registry)).as("old otlp removed already").containsExactly(0.0, 1.0);
     metrics.remove(replacing);
     assertThat(openGauge(registry)).containsExactly(1.0);
+  }
+
+  /// The admin endpoint looks a breaker up by its labels; unknown labels report `null`.
+  @Test
+  void find_returnsTheBreakerForTheLabels() {
+    CircuitBreakerMetrics metrics = new CircuitBreakerMetrics();
+    CircuitBreaker breaker = breaker(metrics, "otlp");
+    metrics.add("requestLog", "otlp", breaker);
+    assertThat(metrics.find("requestLog", "otlp")).isSameAs(breaker);
+    assertThat(metrics.find("requestLog", "other")).isNull();
+    assertThat(metrics.find("upstream", "otlp")).isNull();
   }
 
   private static CircuitBreaker breaker(CircuitBreakerMetrics metrics, String name) {
@@ -403,6 +475,24 @@ class CircuitBreakerBDDTest {
     @Step
     public BreakerSteps when_the_backoff_is_skipped() {
       breaker.skipBackoff();
+      return this;
+    }
+
+    @Step
+    public BreakerSteps when_the_breaker_is_forced_open() {
+      breaker.forceOpen();
+      return this;
+    }
+
+    @Step
+    public BreakerSteps when_the_breaker_is_forced_closed() {
+      assertThat(breaker.forceClose()).as("forced close").isTrue();
+      return this;
+    }
+
+    @Step
+    public BreakerSteps then_the_breaker_is_not_forced_open() {
+      assertThat(breaker.forceClose()).as("forced close").isFalse();
       return this;
     }
 

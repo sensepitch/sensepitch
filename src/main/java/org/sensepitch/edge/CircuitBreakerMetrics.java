@@ -16,7 +16,7 @@ import java.util.function.ToLongFunction;
 /// metrics. The basic names follow the resilience4j Micrometer binding with the prefix
 /// `sensepitch_circuitbreaker_`, so its dashboards carry over:
 ///
-/// - `_state{state}`: 1 for the current state, 0 for the others
+/// - `_state{state}`: 1 for the current state, 0 for the others, including `forced_open`
 /// - `_calls_total{kind}`: each call once, `successful`, `failed`, `ignored` or `not_permitted`
 ///
 /// Added, because the breaker counts consecutive failures and has no sliding window:
@@ -148,6 +148,19 @@ public class CircuitBreakerMetrics implements HasMultipleMetrics {
     synchronized (lock) {
       breakers.removeIf(entry -> entry.breaker() == breaker);
     }
+  }
+
+  /// The breaker currently reported under the labels, or `null` if none. The copy-on-write
+  /// snapshot is read without the lock, so the result may be stale against a concurrent add or
+  /// remove; the admin endpoint that controls a breaker reads once per request.
+  CircuitBreaker find(String component, String name) {
+    List<String> labels = List.of(component, name);
+    for (Entry entry : breakers) {
+      if (entry.labels().equals(labels)) {
+        return entry.breaker();
+      }
+    }
+    return null;
   }
 
   @Override

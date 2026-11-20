@@ -198,10 +198,11 @@ another clock.
 ### Events instead of built-in metrics
 
 The breaker reports to an `Events` interface: each call with its kind, each error code, and each
-transition with its reason (the error code for a trip, `backoff_over`, `recovered`). This mirrors
-Armeria's `CircuitBreakerListener`. The events of a state change are delivered with the lock
-held, so an implementation must not call back into the breaker; all events are, since an ignored
-failure may close the breaker too. The sender logs only the transitions (start of an outage, recovery), everything else is counted.
+transition with its reason (the error code for a trip, `backoff_over`, `recovered`,
+`forced_open`, `forced_close`). This mirrors Armeria's `CircuitBreakerListener`. The events of a
+state change are delivered with the lock held, so an implementation must not call back into the
+breaker; all events are, since an ignored failure may close the breaker too. The sender logs only
+the transitions (start of an outage, recovery), everything else is counted.
 
 ### What is not in the breaker
 
@@ -210,6 +211,27 @@ request is in flight, one more with each success, up to `maxConcurrentRequests`,
 that just came back is not flooded. The age limit of waiting batches (`maximumUnsentLogAge`) and
 the limit of buffered bytes are also the sender's. They end the retries for a remote that is gone
 for good.
+
+### Manual control: a `FORCED_OPEN` state
+
+Armeria has a `FORCED_OPEN` state entered with `enterState`; the breaker adopts it for manual
+maintenance. `forceOpen()` moves the breaker to `FORCED_OPEN` whatever its current state, and
+there it refuses every request without a backoff: no probe, `tryAcquire()` or reported outcome
+leaves it, only `forceClose()` does. A request that was already in flight when the breaker was
+forced open is counted but does not close or reopen it. `forceClose()` closes the breaker and
+resets the consecutive failures, so the next failure starts a fresh backoff.
+
+The transition is counted with the reasons `forced_open` and `forced_close`, so a dashboard can
+distinguish a manual outage from a trip (the error code) and a recovery (`recovered`). The trip
+and restart times are not set by the manual change: they keep meaning "a failure opened it" and
+"it closed after a trip".
+
+The control surface is the admin endpoint, see `AdminServer`:
+`POST /circuit-breakers/<component>/<name>/open` and `/close`. It looks the breaker up by the
+component and name labels via `CircuitBreakerMetrics.find`, so only registered breakers can be
+controlled, and a destination removed by a reload is simply gone (`404`). There is no upstream
+breaker yet, so the endpoint controls the request log destinations today and the upstream
+breakers later, once they exist, without a new protocol.
 
 ## Metrics
 
@@ -254,7 +276,7 @@ batches show in `sensepitch_request_log_buffered_bytes`.
 
 ## Limitations
 
-Known limits of the current implementation, checked against the code on 2026-11-14:
+Known limits of the current implementation, checked against the code on 2026-11-20:
 
 - **Not suited for upstreams yet.** It opens on the first retryable failure. An upstream under
   load fails one connection at a time, e.g. a single reset among hundreds of requests per second;
@@ -271,8 +293,6 @@ Known limits of the current implementation, checked against the code on 2026-11-
 - **The maximum delay can be out of reach.** `Backoff` doubles at most 20 times, so the nominal
   delay stops at `initialRetryDelayMillis × 2^20`; with an initial delay of 1 ms that is about
   17.5 minutes, whatever larger maximum is configured.
-- **No manual control.** There is no forced open or disabled state as Armeria's `FORCED_OPEN`.
-  `skipBackoff()` is only used for the last attempt at shutdown.
 - **One endpoint per sender.** A request log destination has one URI and one breaker; there is no
   failover to a second log server.
 - **Metrics:**
@@ -295,5 +315,3 @@ In order of priority, all tracked in [TODO.md](../../TODO.md), sections "Circuit
    resilience4j's slow call rate, once upstream latency targets are known.
 3. **Several endpoints.** One breaker per endpoint of a destination or upstream, see the
    `Endpoint` record in `HttpBatchSender` and "multiple servers per upstream" in TODO.md.
-4. **Manual control.** Force a breaker open, e.g. to take a log server or upstream out for
-   maintenance, through the admin server.

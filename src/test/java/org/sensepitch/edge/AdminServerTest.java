@@ -37,6 +37,16 @@ class AdminServerTest {
             new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), reload, () -> false);
   }
 
+  void start(Supplier<ReloadResult> reload, CircuitBreakerMetrics breakers) throws IOException {
+    server =
+        AdminServer.start(
+            new InetSocketAddress(InetAddress.getLoopbackAddress(), 0),
+            reload,
+            () -> false,
+            () -> false,
+            breakers);
+  }
+
   HttpResponse<String> send(String method, String path) throws Exception {
     HttpRequest request =
         HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port() + path))
@@ -171,6 +181,75 @@ class AdminServerTest {
     assertThat(get.statusCode()).isEqualTo(405);
     assertThat(get.headers().firstValue("Allow")).hasValue("POST");
     assertThat(send("POST", "/other").statusCode()).isEqualTo(404);
+  }
+
+  CircuitBreakerMetrics withOneBreaker() {
+    return withOneBreaker("otlp");
+  }
+
+  CircuitBreakerMetrics withOneBreaker(String name) {
+    CircuitBreakerMetrics breakers = new CircuitBreakerMetrics();
+    CircuitBreaker breaker =
+        new CircuitBreaker(new Backoff(1_000, 30_000), 1_000, breakers.events("requestLog", name));
+    breakers.add("requestLog", name, breaker);
+    return breakers;
+  }
+
+  @Test
+  void circuitBreakerForcedOpenAndClose() throws Exception {
+    CircuitBreakerMetrics breakers = withOneBreaker();
+    start(() -> ReloadResult.APPLIED, breakers);
+    assertThat(send("GET", "/readyz").statusCode()).isEqualTo(503);
+    CircuitBreaker breaker = breakers.find("requestLog", "otlp");
+    assertThat(send("POST", "/circuit-breakers/requestLog/otlp/open").statusCode()).isEqualTo(200);
+    assertThat(breaker.state()).isEqualTo(CircuitBreaker.State.FORCED_OPEN);
+    assertThat(send("POST", "/circuit-breakers/requestLog/otlp/close").statusCode()).isEqualTo(200);
+    assertThat(breaker.state()).isEqualTo(CircuitBreaker.State.CLOSED);
+  }
+
+  @Test
+  void circuitBreakerCanAddressAnEncodedDestinationName() throws Exception {
+    String name = "team/log+archive";
+    CircuitBreakerMetrics breakers = withOneBreaker(name);
+    start(() -> ReloadResult.APPLIED, breakers);
+    var result = send("POST", "/circuit-breakers/requestLog/team%2Flog+archive/open");
+    assertThat(result.statusCode()).isEqualTo(200);
+    assertThat(breakers.find("requestLog", name).state())
+        .isEqualTo(CircuitBreaker.State.FORCED_OPEN);
+  }
+
+  @Test
+  void circuitBreakerCloseWhenNotForcedIsConflict() throws Exception {
+    start(() -> ReloadResult.APPLIED, withOneBreaker());
+    assertThat(send("POST", "/circuit-breakers/requestLog/otlp/close").statusCode()).isEqualTo(409);
+  }
+
+  @Test
+  void circuitBreakerUnknownIsNotFound() throws Exception {
+    start(() -> ReloadResult.APPLIED, withOneBreaker());
+    assertThat(send("POST", "/circuit-breakers/requestLog/other/open").statusCode()).isEqualTo(404);
+    assertThat(send("POST", "/circuit-breakers/requestLog/otlp/other").statusCode()).isEqualTo(404);
+  }
+
+  @Test
+  void circuitBreakerMalformedPathIsNotFound() throws Exception {
+    start(() -> ReloadResult.APPLIED, withOneBreaker());
+    assertThat(send("POST", "/circuit-breakers/requestLog/otlp").statusCode()).isEqualTo(404);
+    assertThat(send("POST", "/circuit-breakers//otlp/open").statusCode()).isEqualTo(404);
+  }
+
+  @Test
+  void circuitBreakerWrongMethod() throws Exception {
+    start(() -> ReloadResult.APPLIED, withOneBreaker());
+    var get = send("GET", "/circuit-breakers/requestLog/otlp/open");
+    assertThat(get.statusCode()).isEqualTo(405);
+    assertThat(get.headers().firstValue("Allow")).hasValue("POST");
+  }
+
+  @Test
+  void circuitBreakerWithoutBreakersIsNotFound() throws Exception {
+    start(() -> ReloadResult.APPLIED);
+    assertThat(send("POST", "/circuit-breakers/requestLog/otlp/open").statusCode()).isEqualTo(404);
   }
 
   @Test

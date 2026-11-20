@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -37,6 +38,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.parallel.Isolated;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /// OTLP/HTTP export of the request log: buffering, batching and retry. The posted bytes are parsed
 /// with the official OTLP message classes, which proves the hand written encoding conforms to the
@@ -84,6 +87,7 @@ class OtlpLogDestinationTest {
   final BlockingQueue<Answer> answers = new LinkedBlockingQueue<>();
 
   volatile int status = 200;
+  volatile CountDownLatch answerGate;
 
   HttpServer server;
   int port;
@@ -116,6 +120,10 @@ class OtlpLogDestinationTest {
                       "gzip".equals(headers.get("content-encoding")) ? gunzip(body) : body),
                   answer.status(),
                   System.nanoTime()));
+          CountDownLatch gate = answerGate;
+          if (gate != null) {
+            awaitQuietly(gate);
+          }
           if (answer.retryAfter() != null) {
             exchange.getResponseHeaders().set("Retry-After", answer.retryAfter());
           }
@@ -224,6 +232,44 @@ class OtlpLogDestinationTest {
     keyValues[3] = "otlp";
     System.arraycopy(labels, 0, keyValues, 4, labels.length);
     return scrape().gauge(CircuitBreakerMetrics.PREFIX + metric, keyValues).getValue();
+  }
+
+  /// An in-flight reply during maintenance is counted without announcing recovery.
+  @ParameterizedTest
+  @ValueSource(ints = {200, 503})
+  void replyDuringMaintenanceLeavesTheBreakerForcedOpen(int firstStatus) throws Exception {
+    status = firstStatus;
+    CountDownLatch allowAnswer = new CountDownLatch(1);
+    answerGate = allowAnswer;
+    destination =
+        new OtlpLogDestination(
+            "otlp",
+            config()
+                .timeoutMillis(OUT_OF_REACH_MILLIS)
+                .flushIntervalMillis(OUT_OF_REACH_MILLIS)
+                .maximumUnsentLogAgeMillis(OUT_OF_REACH_MILLIS)
+                .build());
+    CircuitBreaker breaker = destination.metrics().circuitBreakers.find("requestLog", "otlp");
+    try {
+      new OtlpRequestLogger(destination).logRequest(request("/in-flight"));
+      destination.endThread();
+      assertThat(receive().status()).isEqualTo(firstStatus);
+      breaker.forceOpen();
+      status = 200;
+      allowAnswer.countDown();
+
+      String kind = firstStatus == 200 ? "successful" : "failed";
+      await("in-flight reply counted", () -> breakerCounter("calls", "kind", kind) >= 1);
+      assertThat(breaker.state()).isEqualTo(CircuitBreaker.State.FORCED_OPEN);
+      assertThat(breaker.forceClose()).isTrue();
+      destination.finish().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      assertThat(counter("sensepitch_request_log_sent_records")).isOne();
+      assertThat(logs.messages(OtlpLogDestination.class))
+          .noneMatch(message -> message.contains("recovered after"));
+    } finally {
+      allowAnswer.countDown();
+      breaker.forceClose();
+    }
   }
 
   /// Sent records and bytes, and the circuit breaker metrics of an outage and its recovery

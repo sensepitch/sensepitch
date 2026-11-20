@@ -99,6 +99,10 @@ public class Proxy implements ProxyContext {
   /// The request log destinations, replaced on a configuration reload
   private final ReloadableRequestLogger requestLogDestinations;
 
+  /// Metrics shared by all request log destinations, including their circuit breakers, see
+  /// [#circuitBreakers()]
+  private final RequestLogMetrics requestLogMetrics;
+
   private final SanitizeHostHandler sanitizeHostHandler =
       new SanitizeHostHandler(() -> state.get().knownHosts());
   private final Ja4Config ja4Config;
@@ -161,7 +165,7 @@ public class Proxy implements ProxyContext {
     LOG.info("Certificates loaded:" + Certificates.list(initial.certificates()));
     // the destinations share the metrics of the standard out writer, a metric name can be
     // registered only once
-    RequestLogMetrics requestLogMetrics =
+    requestLogMetrics =
         requestLogOutput instanceof AsyncRequestLogWriter writer
             ? writer.metrics()
             : new RequestLogMetrics();
@@ -605,6 +609,13 @@ public class Proxy implements ProxyContext {
     pipeline.addLast("protection", dummy404Handler);
     pipeline.addLast("proxy", dummy404Handler);
     pipeline.addLast("exception", new ExceptionHandler(metrics));
+  }
+
+  /// The circuit breakers of the request log destinations, for the admin endpoint that forces
+  /// a breaker open or closed for maintenance. There are no upstream breakers yet, see
+  /// [CircuitBreaker].
+  CircuitBreakerMetrics circuitBreakers() {
+    return requestLogMetrics.circuitBreakers;
   }
 
   @Override
