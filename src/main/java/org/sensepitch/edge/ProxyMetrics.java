@@ -117,11 +117,6 @@ public class ProxyMetrics implements HasMultipleMetrics {
     final String label = name().toLowerCase(Locale.ROOT);
   }
 
-  /// Counts an event on an upstream connection, see [#upstreamErrorCounter]
-  public void countUpstreamError(String upstream, UpstreamErrorType type) {
-    upstreamErrorCounter.labelValues(upstream, type.label).inc();
-  }
-
   /// Request log records that failed to render or write, see [RequestLoggingHandler]. The request
   /// outcome is counted before, in [#requestOutcomeCounter].
   public final Counter requestLogErrorCounter =

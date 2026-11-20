@@ -229,6 +229,86 @@ public class FlowAndExceptionTest {
     ingressChannel.finishAndReleaseAll();
   }
 
+  /// Slow upstream that is still unwritable after a flush, the buffer filled again meanwhile: the
+  /// proxy flushes again until it is writable, then the client reads resume.
+  @Test
+  public void upstreamStillUnwritableAfterFlushIsFlushedAgain() {
+    startUploadToBlockedUpstream();
+    upstreamFlushBlocker.holdUnwritable(upstreamChannel, 2);
+    upstreamFlushBlocker.release(upstreamChannel);
+    rattle();
+    assertThat(upstreamFlushBlocker.flushes).isGreaterThanOrEqualTo(2);
+    assertThat(upstreamChannel.isWritable()).isTrue();
+    assertThat(ingressChannel.config().isAutoRead()).isTrue();
+    upstreamChannel.finishAndReleaseAll();
+    ingressChannel.finishAndReleaseAll();
+  }
+
+  /// A failed flush toward the upstream, here because it closed, is not repeated
+  @Test
+  public void upstreamClosedDuringFlushIsNotFlushedAgain() {
+    startUploadToBlockedUpstream();
+    upstreamChannel.close();
+    rattle();
+    assertThat(upstreamFlushBlocker.flushes).isZero();
+    ingressChannel.finishAndReleaseAll();
+  }
+
+  /// Request headers and a body chunk that does not fit, the upstream is unwritable and its flush
+  /// is held by [#upstreamFlushBlocker]
+  private void startUploadToBlockedUpstream() {
+    HttpRequest post = new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, "/upload");
+    HttpUtil.setTransferEncodingChunked(post, true);
+    ingressChannel.writeInbound(post);
+    rattle();
+    upstreamChannel.config().setWriteBufferWaterMark(new WriteBufferWaterMark(1000, 2000));
+    upstreamFlushBlocker.blocked = true;
+    ingressChannel.writeInbound(new DefaultHttpContent(Unpooled.copiedBuffer(new byte[5000])));
+    rattle();
+    assertThat(upstreamChannel.isWritable()).isFalse();
+    assertThat(ingressChannel.config().isAutoRead()).isFalse();
+  }
+
+  /// Slow client that is still unwritable after a flush: the proxy flushes again until it is
+  /// writable, then the upstream reads resume.
+  @Test
+  public void clientStillUnwritableAfterFlushIsFlushedAgain() {
+    startResponseToBlockedClient();
+    ingressFlushBlocker.holdUnwritable(ingressChannel, 2);
+    ingressFlushBlocker.release(ingressChannel);
+    rattle();
+    assertThat(ingressFlushBlocker.flushes).isGreaterThanOrEqualTo(2);
+    assertThat(ingressChannel.isWritable()).isTrue();
+    assertThat(upstreamChannel.config().isAutoRead()).isTrue();
+    ingressChannel.finishAndReleaseAll();
+  }
+
+  /// A failed flush toward the client, here because it closed, is not repeated
+  @Test
+  public void clientClosedDuringFlushIsNotFlushedAgain() {
+    startResponseToBlockedClient();
+    ingressChannel.close();
+    rattle();
+    assertThat(ingressFlushBlocker.flushes).isZero();
+    ingressChannel.finishAndReleaseAll();
+  }
+
+  /// A response chunk that does not fit, the client is unwritable and its flush is held by
+  /// [#ingressFlushBlocker]
+  private void startResponseToBlockedClient() {
+    sendGetRequest();
+    rattle();
+    ingressChannel.config().setWriteBufferWaterMark(new WriteBufferWaterMark(1000, 2000));
+    ingressFlushBlocker.blocked = true;
+    HttpResponse response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+    HttpUtil.setTransferEncodingChunked(response, true);
+    upstreamChannel.writeInbound(
+        response, new DefaultHttpContent(Unpooled.copiedBuffer(new byte[5000])));
+    rattle();
+    assertThat(ingressChannel.isWritable()).isFalse();
+    assertThat(upstreamChannel.config().isAutoRead()).isFalse();
+  }
+
   /// The response travels from upstream via [ForwardHandler] to the client, hop-by-hop headers are
   /// not forwarded. There is no connection pool, so the upstream connection is closed after the
   /// response, also if the upstream offers keep alive. The client connection stays open.
@@ -870,11 +950,29 @@ public class FlowAndExceptionTest {
 
     boolean blocked;
 
+    /// Flushes passed on, see [#holdUnwritable(Channel, int)]
+    int flushes;
+
+    /// Flushes left until the channel is writable again, see [#holdUnwritable(Channel, int)]
+    private int unwritableFlushes;
+
     @Override
     public void flush(ChannelHandlerContext ctx) throws Exception {
       if (!blocked) {
+        flushes++;
+        // writable before passing the last flush on, its listener sees the writable channel
+        if (unwritableFlushes > 0 && --unwritableFlushes == 0) {
+          ctx.channel().unsafe().outboundBuffer().setUserDefinedWritability(1, true);
+        }
         super.flush(ctx);
       }
+    }
+
+    /// Keeps the channel unwritable for the next `count` flushes passed on, as if the peer was
+    /// slow and the buffer filled again while flushing; then it becomes writable
+    void holdUnwritable(Channel channel, int count) {
+      unwritableFlushes = count;
+      channel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
     }
 
     /// Unblocks and flushes what was held back
