@@ -16,6 +16,7 @@ import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
+import io.netty.handler.codec.http.HttpStatusClass;
 import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
@@ -24,6 +25,10 @@ import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.FutureListener;
 import java.net.InetSocketAddress;
 
+/// Sends a request upstream and forwards the response to the client. Informational responses (1xx)
+/// are forwarded before the final response; only the `LastHttpContent` of that final response ends
+/// the exchange and closes the upstream.
+///
 /// @author Jens Wilke
 public class DownstreamHandler extends ChannelDuplexHandler {
 
@@ -41,6 +46,10 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   /// The response headers of the active exchange were written to the client, so an error can no
   /// longer be answered with an error response, see [#completeWithError]
   private boolean responseStarted;
+
+  /// An informational response was written, its `LastHttpContent` follows, then the final response.
+  /// Its last content ends neither the exchange nor [responseStarted].
+  private boolean informationalResponse;
 
   /// The request of the current exchange was received completely, for the log of an unexpected
   /// close, see [#channelInactive(ChannelHandlerContext)]
@@ -82,6 +91,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       }
       requestComplete = request instanceof LastHttpContent;
       responseStarted = false;
+      informationalResponse = false;
       upstreamChannelFuture = upstream.connect(ctx);
       augmentHeadersAndForwardRequest(ctx, request);
     } else if (msg instanceof LastHttpContent) {
@@ -357,17 +367,24 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       throws Exception {
     if (msg instanceof HttpResponse response) {
       sanitizeResponseHeaders(response.headers());
-      responseStarted = true;
+      informationalResponse = response.status().codeClass() == HttpStatusClass.INFORMATIONAL;
+      if (!informationalResponse) {
+        responseStarted = true;
+      }
     }
     if (msg instanceof LastHttpContent) {
-      // there is no connection pool, so the upstream connection is closed after each response,
-      // also if the upstream would keep it alive. The reference is cleared here to ensure no more
-      // throttling is done.
-      if (upstreamChannelFuture != null) {
-        closeUpstream(upstreamChannelFuture);
-        upstreamChannelFuture = null;
+      boolean informational = informationalResponse;
+      informationalResponse = false;
+      if (!informational) {
+        // there is no connection pool, so the upstream connection is closed after each response,
+        // also if the upstream would keep it alive. The reference is cleared here to ensure no more
+        // throttling is done.
+        if (upstreamChannelFuture != null) {
+          closeUpstream(upstreamChannelFuture);
+          upstreamChannelFuture = null;
+        }
+        responseStarted = false;
       }
-      responseStarted = false;
     }
     super.write(ctx, msg, promise);
   }

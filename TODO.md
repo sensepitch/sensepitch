@@ -169,12 +169,6 @@ the failure threshold for upstreams is under Upstream.
   - P3: scope protocol negotiation, stream lifecycle, backpressure and compatibility tests.
 - [ ] quic support
   - P3
-- [ ] Upstream informational responses (1xx, e.g. `100 Continue`): `DownstreamHandler.write` ends
-  the exchange and closes the upstream at every response `LastHttpContent`, also the one of a 1xx,
-  so the final response would be lost (by reading the code, not tested end to end; Netty's client
-  codec is expected to pass a 1xx on as response and empty last content).
-  `IngressTimeoutHandler` already lets a 1xx pass as not final.
-  - P3, together with the `Expect: 100-continue` choice of the request size limits
 - [ ] Request size limits: decide the options below, then implement the chosen ones. Research,
   measurements and sources in the draft
   [request-body-limit-draft.md](doc/design/request-body-limit-draft.md)
@@ -390,6 +384,13 @@ the failure threshold for upstreams is under Upstream.
 - [ ] add CONTRIBUTING.md
 
 ## Done
+
+- [x] Upstream informational responses (1xx, e.g. `100 Continue`) (2026-11-20). `ForwardHandler`
+  keeps the upstream attached to the downstream and `DownstreamHandler` keeps the exchange active
+  through a 1xx and its `LastHttpContent`; the final response then ends it as before. Both still
+  sanitize hop-by-hop response headers. Covered end to end by `InformationalResponseBDDTest` with
+  a `100 Continue` during an upload, the final response after the body, and a normal single
+  response.
 
 - [x] Unify timeout and keep-alive handling (2026-11-20). `IngressTimeoutHandler` decides
   keep-alive itself, `HttpServerKeepAliveHandler` left the pipeline. A response that starts while

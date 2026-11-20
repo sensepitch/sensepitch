@@ -12,10 +12,14 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.ChannelOption;
 import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpResponse;
+import io.netty.handler.codec.http.HttpStatusClass;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.ReferenceCountUtil;
 
 /// Handler for upstream communication, receives response from upstream and passes it downstream.
+///
+/// An informational response (1xx) is passed on together with its `LastHttpContent`, but does not
+/// end the exchange: the upstream stays attached to the downstream for the final response.
 ///
 /// An exception during an exchange is passed to the downstream pipeline as [UpstreamException],
 /// where [ExceptionHandler] counts it and logs its first occurrence at warning, so here it is
@@ -34,6 +38,10 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
   private final String upstream;
   private Channel downstream;
   private boolean pausedDownstreamReads;
+
+  /// An informational response was forwarded, its `LastHttpContent` follows, then the final
+  /// response. The upstream stays attached to the downstream until that final response ends.
+  private boolean informationalResponse;
 
   /// @param upstream name of the upstream, the label of [ProxyMetrics#upstreamErrorCounter]
   public ForwardHandler(Channel ingress, ProxyMetrics metrics, String upstream) {
@@ -70,6 +78,8 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
       return;
     }
     if (msg instanceof HttpResponse) {
+      informationalResponse =
+          ((HttpResponse) msg).status().codeClass() == HttpStatusClass.INFORMATIONAL;
       // if message contains response and content, write below
       if (!(msg instanceof HttpContent)) {
         downstream.write(msg);
@@ -80,8 +90,12 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
       // the connection already. Maybe introduce error handling for non empty last contents and
       // requests only.
       downstream.writeAndFlush(msg, downstream.voidPromise());
-      resumeDownstreamReads();
-      downstream = null;
+      boolean informational = informationalResponse;
+      informationalResponse = false;
+      if (!informational) {
+        resumeDownstreamReads();
+        downstream = null;
+      }
     } else if (msg instanceof HttpContent) {
       downstream.write(msg, downstream.voidPromise());
     }

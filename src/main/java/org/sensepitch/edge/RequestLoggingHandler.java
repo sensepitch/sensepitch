@@ -12,6 +12,7 @@ import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
+import io.netty.handler.codec.http.HttpStatusClass;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.handler.ssl.SslHandler;
@@ -23,7 +24,8 @@ import java.util.function.Supplier;
 import javax.net.ssl.SSLSession;
 
 /// Listens to incoming and outgoing http messages and collects all relevant information during
-/// request processing and calls the request logger implementation when the last content is written.
+/// request processing and calls the request logger when the final response's last content is
+/// written. Informational responses keep the same request open.
 ///
 /// It also assigns each request its W3C trace context and sets the `traceparent` header that is
 /// sent to upstream, see [TraceContext] and [TraceContextConfig].
@@ -55,6 +57,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   private long contentBytes = 0;
   private HttpRequest request;
   private HttpResponse response;
+  private boolean informationalResponse;
   private long requestStartTime;
   private final RequestLogger logger;
   private Channel channel;
@@ -66,7 +69,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   private long requestStartTimeNanos;
   private long requestCompleteTimeNanos;
 
-  /// When we start sending the first byte
+  /// When we start sending the first byte of the final response
   private long responseStartedTimeNanos;
 
   /// When everything was received
@@ -150,6 +153,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
       requestStartTime = System.currentTimeMillis();
       requestStartTimeNanos = ticker.nanoTime();
       response = null;
+      informationalResponse = false;
       requestBodyBytes = 0;
       configId = configIds != null ? configIds.get() : null;
       assignTraceContext(request);
@@ -181,7 +185,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
 
   @Override
   public void flush(ChannelHandlerContext ctx) throws Exception {
-    if (responseStartedTimeNanos == 0) {
+    if (request != null && response != null && responseStartedTimeNanos == 0) {
       responseStartedTimeNanos = ticker.nanoTime();
     }
     super.flush(ctx);
@@ -190,9 +194,17 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   @Override
   public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
       throws Exception {
-    if (msg instanceof HttpResponse) {
-      response = (HttpResponse) msg;
-      contentBytes = 0;
+    if (msg instanceof HttpResponse httpResponse) {
+      informationalResponse = httpResponse.status().codeClass() == HttpStatusClass.INFORMATIONAL;
+      if (!informationalResponse) {
+        response = httpResponse;
+        contentBytes = 0;
+      }
+    }
+    if (informationalResponse) {
+      informationalResponse = !(msg instanceof LastHttpContent);
+      super.write(ctx, msg, promise);
+      return;
     }
     // Content written before a final failed write reached the client, the final write did not.
     long contentBytesBeforeWrite = contentBytes;
