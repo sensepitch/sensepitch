@@ -120,7 +120,7 @@ class ProxyOptionsTest {
     assertThat(response.get("http.route").asText()).as("site default route").isEqualTo("/*");
     assertThat(response.get("sensepitch.config.id").asText())
         .isEqualTo(steps.proxy.state().configId())
-        .matches("[0-9a-f]{12}");
+        .matches("[0-9a-f]{16}");
     assertThat(response.get("http.response.header.content-type").get(0).asText())
         .isEqualTo(FallbackConfig.DEFAULT_CONTENT_TYPE);
     var challenge = json.readTree(steps.requestLog.lines().get(1));

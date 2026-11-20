@@ -41,7 +41,8 @@ public class ProtectionBypassTest {
             .cookieGates(
                 List.of(CookieGateConfig.builder().name(COOKIE_NAME).accessUri(ACCESS_URI).build()))
             .build();
-    Supplier<ChannelHandler> supplier = Protection.handlerSupplier(protection, new ProxyMetrics());
+    Supplier<ChannelHandler> supplier =
+        Protection.handlerSupplier(protection, new ProxyMetrics(), new ConfigFiles());
     assertThat(supplier).isNotNull();
     init(supplier.get());
     DefaultHttpRequest req =
@@ -61,7 +62,8 @@ public class ProtectionBypassTest {
             .bypass(new ProtectionBypassConfig(null, List.of("127.0.0.1")))
             .cookieGates(List.of(CookieGateConfig.builder().name(COOKIE_NAME).build()))
             .build();
-    Supplier<ChannelHandler> supplier = Protection.handlerSupplier(protection, new ProxyMetrics());
+    Supplier<ChannelHandler> supplier =
+        Protection.handlerSupplier(protection, new ProxyMetrics(), new ConfigFiles());
     assertThat(supplier).isNotNull();
     initWithRemote(supplier.get(), "127.0.0.1", 1234);
     DefaultHttpRequest req =

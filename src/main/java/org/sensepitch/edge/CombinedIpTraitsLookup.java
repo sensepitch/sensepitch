@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.net.InetAddress;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -29,9 +30,10 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
   private final IpLabelLookup ipLabelLookup;
   private final ProxyMetrics metrics;
 
-  public CombinedIpTraitsLookup(IpLookupConfig ipLookupConfig, ProxyMetrics metrics)
-      throws IOException {
-    this(databaseLookups(ipLookupConfig), metrics);
+  /// @param files records the database files, which the database readers open themselves
+  public CombinedIpTraitsLookup(
+      IpLookupConfig ipLookupConfig, ProxyMetrics metrics, ConfigFiles files) throws IOException {
+    this(databaseLookups(ipLookupConfig, files), metrics);
   }
 
   /// @param ipAttributesLookups queried in order for each address, a later one overwrites what an
@@ -45,17 +47,21 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
   }
 
   /// Opens the databases configured
-  private static List<IpTraitsCollector> databaseLookups(IpLookupConfig cfg) throws IOException {
+  private static List<IpTraitsCollector> databaseLookups(IpLookupConfig cfg, ConfigFiles files)
+      throws IOException {
     List<IpTraitsCollector> lookups = new ArrayList<>();
     if (cfg.geoIp2() != null) {
       if (cfg.geoIp2().asnDbPath() != null) {
+        files.record(Path.of(cfg.geoIp2().asnDbPath()));
         lookups.add(asnTraits(new GeoIp2AsnLookup(cfg.geoIp2().asnDbPath())));
       }
       if (cfg.geoIp2().countryDbPath() != null) {
+        files.record(Path.of(cfg.geoIp2().countryDbPath()));
         lookups.add(countryTraits(new GeoIp2CountryLookup(cfg.geoIp2().countryDbPath())));
       }
     }
     if (cfg.ipInfoPath() != null) {
+      files.record(Path.of(cfg.ipInfoPath()));
       lookups.add(new IpInfoCountryAndAsnLookup(cfg.ipInfoPath()));
     }
     return lookups;

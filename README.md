@@ -568,24 +568,58 @@ often still valid YAML, but lacks sites or routes at the end. Without the marker
 reloaded, so adding the marker enables live reload. Starting the proxy does not need it.
 
 - **Triggers:** a change of the file content, detected right away by watching the file's
-  directory, and `POST /reload` on the admin endpoint (see below). The admin endpoint also
-  reloads an unchanged file, which picks up renewed certificate files, e.g. after a Let's
-  Encrypt renewal.
+  directory, a change of a file the configuration read, and `POST /reload` on the admin endpoint
+  (see below). The files the configuration read are the TLS keys and certificates, secret files
+  (see Secrets), response and fallback pages and the IP databases; their directories are watched
+  as well, so a certificate renewed by cert-manager or Let's Encrypt, or a rotated Kubernetes
+  Secret, is picked up without touching the configuration file. A missing file does not trigger
+  a reload, it may be in the middle of a replacement. The admin endpoint also reloads when
+  nothing changed.
 - **What is reloaded:** sites, upstreams, protection, fallback, `unservicedHost`, `listen.hosts`,
   certificates (`listen.ssl`, `snis`, Let's Encrypt), `ipLookup` and `requestLog`. The IP lookup
-  databases are only read again if `ipLookup` changed. Upstreams with unchanged configuration are
-  kept. Request log destinations with unchanged name and settings are kept, with their buffered
-  records. A changed or removed OTLP destination keeps sending what it buffered to its own
-  endpoint in the background, without delaying the reload. Each event loop writes an end marker
+  databases are only read again if `ipLookup` or a database file changed. Upstreams with
+  unchanged configuration are kept. Request log destinations with unchanged name, settings and
+  secret files are kept, with their buffered records. A changed or removed OTLP destination keeps
+  sending what it buffered to its own endpoint in the background, without delaying the reload. Each event loop writes an end marker
   into it after the switch, so a record logged just before the switch is sent as well. It ends
   when everything is sent, or dropped after `otlp.maximumUnsentLogAgeMillis` during an outage.
 - **Restart needed:** changes of `listen.address`, `listen.httpsPort`, `listen.connection`,
   `metrics`, `ja4` and `traceContext` are logged as a warning and ignored.
-- **Invalid configuration:** the error is logged and the active configuration stays.
+- **Invalid configuration:** the error is logged and the active configuration stays. The files
+  the rejected configuration tried to read are watched as well, a missing one too, so fixing or
+  creating such a file, e.g. a certificate written in two steps, retries the reload without
+  touching the configuration file.
 - **Log:** a reload logs the configuration changes as a diff, and added, changed or removed
   certificates with subject, serial and expiry.
 
 Keep-alive connections use the new configuration from their next request on.
+
+### Secrets
+
+A secret is configured as an object, either inline with `value` or with `file`, e.g. a mounted
+Kubernetes Secret. Exactly one of the two is set. A file is read when the configuration is
+applied and watched like the configuration file. One final line break (`\n` or `\r\n`), as
+`echo` or an editor adds it, is removed; all other characters are kept, so moving an inline
+secret to a file keeps its value. An empty secret, or one of whitespace only, is rejected: a
+broken rotation keeps the last working secret active.
+
+````yaml
+protection:
+  deflector:
+    tokenGenerators:
+      - prefix: X
+        secret:
+          file: /etc/sensepitch-edge/secrets/admission
+````
+
+As environment variables: `SENSEPITCH_EDGE_PROTECTION_DEFLECTOR_TOKEN_GENERATORS_0_SECRET_FILE`
+or `..._SECRET_VALUE`. Secrets are `tokenGenerators[].secret` and
+`requestLog.destinations[].otlp.secretHeaders[].secret`, see Destinations. The configuration dump
+in the diagnostic log masks an inline `value`. The request log field `sensepitch.config.id` covers
+the secrets as well, so a rotated secret gives a new id, see Fields.
+
+Earlier versions took the admission secret as a plain string, `secret: munich`. This form is
+rejected now, write `secret: {value: munich}` or move it into a file.
 
 ### Admin endpoint
 
@@ -696,6 +730,10 @@ requestLog:
         endpoint: http://victorialogs:9428/insert/opentelemetry/v1/logs
         headers:
           VL-Stream-Fields: service.name,server.address
+        secretHeaders:            # headers with secret values, see Secrets
+          - name: Authorization
+            secret:
+              file: /etc/sensepitch-edge/secrets/victorialogs-auth
         resourceAttributes:       # defaults: service.name sensepitch-edge,
                                   # service.instance.id host name, service.version
           deployment.environment: prod
@@ -760,13 +798,17 @@ Everything specific to OTLP is in the `otlp` object, which is rejected on a `std
   ````
   SENSEPITCH_EDGE_REQUEST_LOG_DESTINATIONS_0_TYPE=otlp
   SENSEPITCH_EDGE_REQUEST_LOG_DESTINATIONS_0_OTLP_ENDPOINT=http://victorialogs:9428/insert/opentelemetry/v1/logs
-  SENSEPITCH_EDGE_REQUEST_LOG_DESTINATIONS_0_OTLP_HEADERS_0_KEY=Authorization
-  SENSEPITCH_EDGE_REQUEST_LOG_DESTINATIONS_0_OTLP_HEADERS_0_VALUE=Bearer ...
+  SENSEPITCH_EDGE_REQUEST_LOG_DESTINATIONS_0_OTLP_HEADERS_0_KEY=VL-Stream-Fields
+  SENSEPITCH_EDGE_REQUEST_LOG_DESTINATIONS_0_OTLP_HEADERS_0_VALUE=service.name
+  SENSEPITCH_EDGE_REQUEST_LOG_DESTINATIONS_0_OTLP_SECRET_HEADERS_0_NAME=Authorization
+  SENSEPITCH_EDGE_REQUEST_LOG_DESTINATIONS_0_OTLP_SECRET_HEADERS_0_SECRET_FILE=/etc/...
   ````
 
-- **Configuration dump:** the configuration, including `otlp.headers`, is logged at startup and
-  in the diff of a reload. Do not put credentials into `otlp.headers` if the diagnostic log is not
-  protected.
+- **Credentials:** put them into `otlp.secretHeaders`, not `otlp.headers`. The configuration,
+  including `otlp.headers`, is logged at startup and in the diff of a reload; a secret header
+  shows only its file, or a masked inline value. A header must not be in both. A changed secret
+  file replaces the destination on the next reload, the old one drains its buffered records with
+  the old header.
 
 ### Trace context
 
@@ -833,7 +875,7 @@ Attributes without a semantic convention:
 | `sensepitch.connection.id`, `sensepitch.connection.request_count` | groups the requests of a keep-alive connection |
 | `sensepitch.request.outcome` | why the request ended, always present, see below |
 | `sensepitch.upstream.status` | status of the upstream response when the edge replaced it with a fallback page |
-| `sensepitch.config.id` | short hash of the configuration active when the request started. The same configuration has the same id on every node with the same edge version, a reload with changes gives a new id |
+| `sensepitch.config.id` | short hash (64 bit, 16 hex characters) of the configuration and its secrets (see Secrets) active when the request started. The same configuration and secrets give the same id on every node with the same edge version, a reload with changes or a rotated secret gives a new id. Whoever knows the configuration can try candidate secrets against the id, so secrets should be random |
 | `sensepitch.protection.outcome` | deflector outcome: `passed`, `bypassed`, `method_rejected`, `challenge_sent`, `answer_accepted`, `answer_rejected`, the label values of `sensepitch_deflector_requests_total` |
 | `sensepitch.upstream.name`, `sensepitch.upstream.target` | the upstream that served the request: its name in the configuration, e.g. `upstreams.backend` or `sites.example.com.paths./api/*.upstream`, and its configured `host:port`. A static response has its path as name, e.g. `sites.example.com.response`, and no target. Absent when the edge answered itself, e.g. with a challenge |
 | `sensepitch.client.asn` | autonomous system number of the client address |

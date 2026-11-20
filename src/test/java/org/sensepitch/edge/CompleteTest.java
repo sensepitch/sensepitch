@@ -59,7 +59,7 @@ class CompleteTest {
                               List.of(
                                   AdmissionTokenGeneratorConfig.builder()
                                       .prefix("X")
-                                      .secret("munich")
+                                      .secret(SecretConfig.builder().value("munich").build())
                                       .build()))
                           .build())
                   .build())

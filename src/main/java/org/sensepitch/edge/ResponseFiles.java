@@ -1,6 +1,5 @@
 package org.sensepitch.edge;
 
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -17,52 +16,50 @@ import java.nio.file.Path;
 /// @author Jens Wilke
 public final class ResponseFiles {
 
-  private static final String CLASSPATH_PREFIX = "classpath:";
-
   private static final String FILE_PREFIX = "file:";
 
   private ResponseFiles() {}
 
   /// Read the resource fully; an unresolvable location is a configuration error.
   ///
+  /// @param files reads and records a file on the filesystem, see [ConfigFiles]
   /// @throws UncheckedIOException if the resource cannot be read
-  public static byte[] read(String location) {
-    try (InputStream in = open(location)) {
-      return in.readAllBytes();
+  public static byte[] read(String location, ConfigFiles files) {
+    try {
+      return readBytes(location, files);
     } catch (IOException e) {
       throw new UncheckedIOException("Failed to read response file: " + location, e);
     }
   }
 
-  private static InputStream open(String location) throws IOException {
-    if (location.startsWith(CLASSPATH_PREFIX)) {
-      return openClasspath(location.substring(CLASSPATH_PREFIX.length()));
+  /// Resolves the location by its scheme, for [#read(String, ConfigFiles)]
+  private static byte[] readBytes(String location, ConfigFiles files) throws IOException {
+    if (location.startsWith(ConfigFiles.CLASSPATH_PREFIX)) {
+      try (InputStream in = files.open(location)) {
+        return in.readAllBytes();
+      }
     }
     if (location.startsWith(FILE_PREFIX + "//")) {
-      return Files.newInputStream(Path.of(URI.create(location)));
+      return files.read(Path.of(URI.create(location)));
     }
     if (location.startsWith(FILE_PREFIX)) {
-      return new FileInputStream(location.substring(FILE_PREFIX.length()));
+      return files.read(Path.of(location.substring(FILE_PREFIX.length())));
     }
     // No scheme: try the filesystem first, then the classpath.
     Path filePath = Path.of(location);
     if (Files.isReadable(filePath)) {
-      return Files.newInputStream(filePath);
+      return files.read(filePath);
     }
-    InputStream in = findClasspath(location);
-    if (in == null) {
-      throw new FileNotFoundException(
-          "Not found on filesystem (" + filePath.toAbsolutePath() + ") or classpath: " + location);
+    try (InputStream in = findClasspath(location)) {
+      if (in == null) {
+        throw new FileNotFoundException(
+            "Not found on filesystem ("
+                + filePath.toAbsolutePath()
+                + ") or classpath: "
+                + location);
+      }
+      return in.readAllBytes();
     }
-    return in;
-  }
-
-  private static InputStream openClasspath(String path) throws IOException {
-    InputStream in = findClasspath(path);
-    if (in == null) {
-      throw new FileNotFoundException("Classpath resource not found: " + path);
-    }
-    return in;
   }
 
   /// @return the resource stream, or `null` if not found

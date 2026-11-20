@@ -108,14 +108,18 @@ class DeflectorMethodsBDDTest {
               .serverIpv4Address("127.0.0.1")
               .tokenGenerators(
                   List.of(
-                      AdmissionTokenGeneratorConfig.builder().prefix("X").secret(secret).build()))
+                      AdmissionTokenGeneratorConfig.builder()
+                          .prefix("X")
+                          .secret(SecretConfig.builder().value(secret).build())
+                          .build()))
               .bypass(BypassConfig.builder().uris(List.of("/bypass")).build())
               .detectCrawler(DetectCrawlerConfig.builder().build())
               .build();
       channel =
           new EmbeddedChannel(
               new RequestLoggingHandler(metrics, info -> outcomes.add(info.protectionOutcome())),
-              new ProtectionHandler(new DeflectorHandler(new Deflector(config), metrics)));
+              new ProtectionHandler(
+                  new DeflectorHandler(new Deflector(config, new ConfigFiles()), metrics)));
       return this;
     }
 

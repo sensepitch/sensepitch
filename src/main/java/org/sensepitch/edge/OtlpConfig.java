@@ -2,6 +2,7 @@ package org.sensepitch.edge;
 
 import io.netty.util.NettyRuntime;
 import io.netty.util.internal.SystemPropertyUtil;
+import java.util.List;
 import java.util.Map;
 import lombok.Builder;
 
@@ -10,8 +11,12 @@ import lombok.Builder;
 ///
 /// @param endpoint mandatory: URL the records are posted to, e.g.
 ///   `http://victorialogs:9428/insert/opentelemetry/v1/logs` or `http://collector:4318/v1/logs`
-/// @param headers additional HTTP request headers, e.g. `Authorization` or the `VL-Stream-Fields`
-///   header of VictoriaLogs
+/// @param headers additional HTTP request headers, e.g. the `VL-Stream-Fields` header of
+///   VictoriaLogs
+/// @param secretHeaders additional HTTP request headers whose values are secrets, e.g.
+///   `Authorization`, read from a file or given inline, see [SecretHeaderConfig]. A header must
+///   not be in both `headers` and `secretHeaders`. A changed secret file replaces the destination
+///   on the next reload, like a changed configuration.
 /// @param resourceAttributes attributes of the resource, the producer of the records.
 ///   `service.name` defaults to {@value OtlpLogDestination#DEFAULT_SERVICE_NAME}
 /// @param timeoutMillis connect and request timeout, defaults to {@value #DEFAULT_TIMEOUT_MILLIS}
@@ -54,6 +59,7 @@ import lombok.Builder;
 public record OtlpConfig(
     String endpoint,
     Map<String, String> headers,
+    List<SecretHeaderConfig> secretHeaders,
     Map<String, String> resourceAttributes,
     int timeoutMillis,
     int initialRetryDelayMillis,

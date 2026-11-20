@@ -48,4 +48,11 @@ public record ListenConfig(
           .letsEncryptPrefix(DEFAULT_LETS_ENCRYPT_PREFIX)
           .httpsPort(DEFAULT_HTTPS_PORT)
           .build();
+
+  /// The key and certificate files of a host in the Let's Encrypt directory layout, see
+  /// [#letsEncrypt()]
+  public SslConfig letsEncryptSsl(String host) {
+    return new SslConfig(
+        letsEncryptPrefix + host + "/privkey.pem", letsEncryptPrefix + host + "/fullchain.pem");
+  }
 }

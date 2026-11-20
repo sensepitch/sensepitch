@@ -21,12 +21,13 @@ public class Fallback {
 
   private final byte[] errorContent;
 
+  /// @param files reads the page files
   /// @throws IllegalArgumentException if a page response has neither `file` nor `text`
   /// @throws UncheckedIOException if a configured page resource cannot be read
-  public Fallback(FallbackConfig config) {
+  public Fallback(FallbackConfig config, ConfigFiles files) {
     this.config = config;
-    this.unavailableContent = pageBody(config.unavailableResponse());
-    this.errorContent = pageBody(config.errorResponse());
+    this.unavailableContent = pageBody(config.unavailableResponse(), files);
+    this.errorContent = pageBody(config.errorResponse(), files);
   }
 
   public FallbackHandler newHandler() {
@@ -40,12 +41,12 @@ public class Fallback {
   ///
   /// @throws IllegalArgumentException if a page `cfg` has neither `file` nor `text` (an empty page
   ///   config)
-  private static byte[] pageBody(ResponseConfig cfg) {
+  private static byte[] pageBody(ResponseConfig cfg, ConfigFiles files) {
     if (resolvedRedirect(cfg.location(), cfg.status()) != null) {
       return null;
     }
     if (cfg.file() != null) {
-      return ResponseFiles.read(cfg.file());
+      return ResponseFiles.read(cfg.file(), files);
     }
     if (cfg.text() != null) {
       return cfg.text().getBytes(StandardCharsets.UTF_8);

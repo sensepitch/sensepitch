@@ -15,8 +15,9 @@ public class Protection {
   private Protection() {}
 
   /// @param metrics receives the counts of the [Deflector]
+  /// @param files reads the referenced files, e.g. the secrets of the [Deflector]
   static Supplier<ChannelHandler> handlerSupplier(
-      ProtectionConfig protection, ProxyMetrics metrics) {
+      ProtectionConfig protection, ProxyMetrics metrics, ConfigFiles files) {
     if (protection == null) {
       return null;
     }
@@ -32,7 +33,7 @@ public class Protection {
       plugins.add(gate.newPlugin());
     }
     if (protection.deflector() != null) {
-      Deflector deflector = new Deflector(protection.deflector());
+      Deflector deflector = new Deflector(protection.deflector(), files);
       plugins.add(new DeflectorHandler(deflector, metrics));
     }
     if (!plugins.isEmpty()) {

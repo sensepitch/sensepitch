@@ -82,7 +82,7 @@ public class FallbackTest {
             ctx.write(msg, promise);
           }
         };
-    channel = new EmbeddedChannel(capture, new Fallback(cfg).newHandler());
+    channel = new EmbeddedChannel(capture, new Fallback(cfg, new ConfigFiles()).newHandler());
   }
 
   private void upstreamResponds(HttpResponseStatus status, String body) {
@@ -360,7 +360,7 @@ public class FallbackTest {
                 ResponseConfig.builder()
                     .file("classpath:fallback/non_existent_page.html")
                     .build()));
-    assertThatThrownBy(() -> new Fallback(cfg))
+    assertThatThrownBy(() -> new Fallback(cfg, new ConfigFiles()))
         .isInstanceOf(UncheckedIOException.class)
         .hasMessageContaining("non_existent_page.html");
   }

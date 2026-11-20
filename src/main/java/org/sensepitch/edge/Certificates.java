@@ -20,8 +20,8 @@ public class Certificates {
 
   /// @return subject, serial number and expiry of the first certificate in the file, which is the
   ///   server certificate in a chain like Let's Encrypt `fullchain.pem`, plus the file location
-  static String describe(SslConfig cfg) {
-    try (InputStream in = Proxy.open(cfg.certPath())) {
+  static String describe(SslConfig cfg, ConfigFiles files) {
+    try (InputStream in = files.open(cfg.certPath())) {
       X509Certificate cert =
           (X509Certificate) CertificateFactory.getInstance("X.509").generateCertificate(in);
       return "subject="

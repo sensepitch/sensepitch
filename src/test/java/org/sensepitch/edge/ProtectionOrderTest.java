@@ -42,7 +42,8 @@ public class ProtectionOrderTest {
             .cookieGates(
                 List.of(CookieGateConfig.builder().name(COOKIE_NAME).accessUri(ACCESS_URI).build()))
             .build();
-    Supplier<ChannelHandler> supplier = Protection.handlerSupplier(protection, new ProxyMetrics());
+    Supplier<ChannelHandler> supplier =
+        Protection.handlerSupplier(protection, new ProxyMetrics(), new ConfigFiles());
     assertThat(supplier).isNotNull();
     init(supplier.get());
     DefaultHttpRequest req =
@@ -68,7 +69,11 @@ public class ProtectionOrderTest {
         .bypass(BypassConfig.builder().uris(List.of("/bypass")).build())
         .noBypass(NoBypassConfig.builder().uris(List.of("/neverbypass")).build())
         .tokenGenerators(
-            List.of(AdmissionTokenGeneratorConfig.builder().secret("asdf").prefix("X").build()))
+            List.of(
+                AdmissionTokenGeneratorConfig.builder()
+                    .secret(SecretConfig.builder().value("asdf").build())
+                    .prefix("X")
+                    .build()))
         .build();
   }
 

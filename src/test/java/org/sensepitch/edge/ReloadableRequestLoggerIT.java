@@ -58,7 +58,8 @@ class ReloadableRequestLoggerIT {
               ReloadableRequestLoggerTest.config(fixture.otlp("vl", 1)),
               fixture.stdout,
               fixture.metrics,
-              workers);
+              workers,
+              new ConfigFiles());
       fixture.logger = logger;
       List<Future<?>> lastRecords = new ArrayList<>();
       for (ExecutorService worker : workers) {

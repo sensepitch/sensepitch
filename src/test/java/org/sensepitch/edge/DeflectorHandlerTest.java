@@ -262,14 +262,18 @@ public class DeflectorHandlerTest {
   @Test
   public void serverIpv4AddressMustBeIpv4() {
     assertThatThrownBy(
-            () -> new Deflector(getDeflectorConfig().toBuilder().serverIpv4Address("::1").build()))
+            () ->
+                new Deflector(
+                    getDeflectorConfig().toBuilder().serverIpv4Address("::1").build(),
+                    new ConfigFiles()))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(
             () ->
                 new Deflector(
                     getDeflectorConfig().toBuilder()
                         .serverIpv4Address("does-not-exist.invalid")
-                        .build()))
+                        .build(),
+                    new ConfigFiles()))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -288,7 +292,11 @@ public class DeflectorHandlerTest {
             .noBypass(
                 NoBypassConfig.builder().uris(List.of("/neverbypass", "/bypass/excluded")).build())
             .tokenGenerators(
-                List.of(AdmissionTokenGeneratorConfig.builder().secret("asdf").prefix("X").build()))
+                List.of(
+                    AdmissionTokenGeneratorConfig.builder()
+                        .secret(SecretConfig.builder().value("asdf").build())
+                        .prefix("X")
+                        .build()))
             .build();
     return cfg;
   }
@@ -367,7 +375,8 @@ public class DeflectorHandlerTest {
             super.channelRead(ctx, msg);
           }
         };
-    handler = new ProtectionHandler(new DeflectorHandler(new Deflector(cfg), metrics));
+    handler =
+        new ProtectionHandler(new DeflectorHandler(new Deflector(cfg, new ConfigFiles()), metrics));
     channel = new EmbeddedChannel(out, handler, in);
   }
 

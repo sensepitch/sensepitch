@@ -9,11 +9,14 @@ import io.netty.handler.codec.http.HttpMethod;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /// Configuration of the request log destinations
 ///
@@ -311,6 +314,38 @@ class RequestLoggerFactoryTest {
             Map.entry("Authorization", "Bearer secret"),
             Map.entry("VL-Stream-Fields", "service.name,server.address"));
     assertThat(config.traceContext().trustTraceparent()).isTrue();
+  }
+
+  /// Secret headers are read and sent like the plain headers, the name of a header counts
+  /// regardless of case
+  @Test
+  void secretHeadersAreResolved(@TempDir Path dir) throws IOException {
+    Path token = Files.writeString(dir.resolve("token"), "Bearer secret\n");
+    OtlpConfig otlp =
+        OtlpConfig.builder()
+            .endpoint("http://victorialogs:9428/insert/opentelemetry/v1/logs")
+            .headers(Map.of("VL-Stream-Fields", "service.name"))
+            .secretHeaders(
+                List.of(
+                    SecretHeaderConfig.builder()
+                        .name("Authorization")
+                        .secret(SecretConfig.builder().file(token.toString()).build())
+                        .build()))
+            .build();
+    ConfigFiles files = new ConfigFiles();
+    OtlpConfig resolved = RequestLoggerFactory.resolveSecretHeaders("vl", otlp, files);
+    assertThat(resolved.secretHeaders()).isNull();
+    assertThat(resolved.headers())
+        .containsOnly(
+            Map.entry("VL-Stream-Fields", "service.name"),
+            Map.entry("Authorization", "Bearer secret"));
+    assertThat(files.snapshot().files()).containsOnlyKeys(token.toAbsolutePath());
+    OtlpConfig plain = otlp.toBuilder().secretHeaders(null).build();
+    assertThat(RequestLoggerFactory.resolveSecretHeaders("vl", plain, files)).isSameAs(plain);
+    OtlpConfig twice = otlp.toBuilder().headers(Map.of("authorization", "Bearer plain")).build();
+    assertThatThrownBy(() -> RequestLoggerFactory.resolveSecretHeaders("vl", twice, files))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Request log destination vl: header Authorization configured twice");
   }
 
   @Test

@@ -120,7 +120,8 @@ class RequestOutcomeTest {
                     FallbackConfig.builder()
                         .unavailableResponse(ResponseConfig.builder().text("unavailable").build())
                         .errorResponse(ResponseConfig.builder().text("error").build())
-                        .build())
+                        .build(),
+                    new ConfigFiles())
                 .newHandler(),
             respond(HttpResponseStatus.SERVICE_UNAVAILABLE, true));
     request();

@@ -13,6 +13,9 @@ import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.net.InetSocketAddress;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
@@ -23,6 +26,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.TempDir;
 
 /// Replacing the request log destinations on a configuration reload. Reloads under concurrent
 /// logging and redundant server checks are in [ReloadableRequestLoggerIT], which uses this class
@@ -98,7 +102,7 @@ class ReloadableRequestLoggerTest {
   }
 
   void reload(RequestLogConfig config) {
-    logger.prepare(config).apply();
+    logger.prepare(config, new ConfigFiles()).apply();
   }
 
   void logOneRequest() {
@@ -126,6 +130,42 @@ class ReloadableRequestLoggerTest {
     reload(config(stdout(false), otlp("vl", OUT_OF_REACH_MILLIS)));
     assertThat(logger.destinations()).containsExactlyElementsOf(before);
     assertThat(received).as("nothing sent, the buffer is kept").isEmpty();
+  }
+
+  /// A destination is kept while its secret file is unchanged, and replaced when the secret
+  /// changed, e.g. a rotated token. The files of a kept destination are recorded as well, so the
+  /// watcher keeps watching them.
+  @Test
+  void changedSecretFileReplacesTheDestination(@TempDir Path dir) throws IOException {
+    Path token = Files.writeString(dir.resolve("token"), "Bearer one");
+    RequestLogDestinationConfig plain = otlp("vl", OUT_OF_REACH_MILLIS);
+    RequestLogConfig config =
+        config(
+            plain.toBuilder()
+                .otlp(
+                    plain.otlp().toBuilder()
+                        .secretHeaders(
+                            List.of(
+                                SecretHeaderConfig.builder()
+                                    .name("Authorization")
+                                    .secret(SecretConfig.builder().file(token.toString()).build())
+                                    .build()))
+                        .build())
+                .build());
+    ConfigFiles files = new ConfigFiles();
+    logger = RequestLoggerFactory.create(config, stdout, metrics, List.of(Runnable::run), files);
+    assertThat(files.snapshot().files()).containsOnlyKeys(token.toAbsolutePath());
+    var before = logger.destinations().getFirst();
+    ConfigFiles unchanged = new ConfigFiles();
+    logger.prepare(config, unchanged).apply();
+    assertThat(logger.destinations().getFirst()).isSameAs(before);
+    assertThat(unchanged.snapshot()).isEqualTo(files.snapshot());
+    Path tmp = Files.writeString(dir.resolve("tmp"), "Bearer two");
+    Files.move(tmp, token, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+    ConfigFiles rotated = new ConfigFiles();
+    logger.prepare(config, rotated).apply();
+    assertThat(logger.destinations().getFirst()).isNotSameAs(before);
+    assertThat(rotated.snapshot()).isNotEqualTo(files.snapshot());
   }
 
   /// A changed destination is replaced, the old one sends what it buffered when closed
@@ -198,7 +238,9 @@ class ReloadableRequestLoggerTest {
             .build();
     assertThatThrownBy(
             () ->
-                logger.prepare(config(otlp("vl", OUT_OF_REACH_MILLIS), otlp("new", 1), noEndpoint)))
+                logger.prepare(
+                    config(otlp("vl", OUT_OF_REACH_MILLIS), otlp("new", 1), noEndpoint),
+                    new ConfigFiles()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("endpoint missing");
     assertThat(queuedDestinations())

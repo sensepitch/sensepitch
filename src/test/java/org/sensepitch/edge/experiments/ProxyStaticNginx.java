@@ -12,6 +12,7 @@ import org.sensepitch.edge.PrometheusConfig;
 import org.sensepitch.edge.ProtectionConfig;
 import org.sensepitch.edge.Proxy;
 import org.sensepitch.edge.ProxyConfig;
+import org.sensepitch.edge.SecretConfig;
 import org.sensepitch.edge.SiteConfig;
 import org.sensepitch.edge.SslConfig;
 import org.sensepitch.edge.UpstreamConfig;
@@ -52,7 +53,7 @@ public class ProxyStaticNginx {
                             .tokenGenerators(
                                 List.of(
                                     AdmissionTokenGeneratorConfig.builder()
-                                        .secret("secret")
+                                        .secret(SecretConfig.builder().value("secret").build())
                                         .prefix("x")
                                         .build()))
                             .bypass(BypassConfig.builder().uris(List.of("/10kb.img")).build())

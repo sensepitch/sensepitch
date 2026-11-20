@@ -3,6 +3,12 @@ package org.sensepitch.edge;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.netty.handler.codec.http.HttpResponseStatus;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.InetAddress;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -11,6 +17,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.api.io.TempDir;
 
 /// Reload of the configuration at runtime, see [Proxy#reload(ProxyConfig)]
 ///
@@ -238,15 +245,26 @@ class ConfigReloadTest {
   @Test
   void configIdChangesWithTheConfiguration() {
     String first = steps.proxy.state().configId();
-    assertThat(first).matches("[0-9a-f]{12}");
+    assertThat(first).matches("[0-9a-f]{16}");
     reload(CONFIG);
     assertThat(steps.proxy.state().configId()).as("unchanged").isEqualTo(first);
     reload(CONFIG.toBuilder().sites(sites("a.com", response("changed"))).build());
     assertThat(steps.proxy.state().configId()).isNotEqualTo(first);
     // computed from the configuration with the map keys injected, as on every node
-    assertThat(EdgeState.configId(steps.proxy.state().config()))
+    assertThat(EdgeState.configId(steps.proxy.state().config(), List.of()))
         .as("same id on another node")
         .isEqualTo(steps.proxy.state().configId());
+  }
+
+  /// The secrets count in the config id, in their order, the masked YAML dump does not show them
+  @Test
+  void configIdCoversTheSecretDigests() {
+    String plain = EdgeState.configId(CONFIG, List.of());
+    String ab = EdgeState.configId(CONFIG, List.of("a", "b"));
+    assertThat(ab).matches("[0-9a-f]{16}").isNotEqualTo(plain);
+    assertThat(EdgeState.configId(CONFIG, List.of("a", "b"))).isEqualTo(ab);
+    assertThat(EdgeState.configId(CONFIG, List.of("b", "a"))).isNotEqualTo(ab);
+    assertThat(EdgeState.configId(CONFIG, List.of("a", "c"))).isNotEqualTo(ab);
   }
 
   @Test
@@ -258,6 +276,31 @@ class ConfigReloadTest {
     assertThat(lookup).isNotSameAs(none);
     reload(withLookup.toBuilder().sites(sites("a.com", response("B"))).build());
     assertThat(steps.proxy.state().ipTraitsLookup()).isSameAs(lookup);
+  }
+
+  /// A database rotated at the same path is opened again, although `ipLookup` is unchanged; an
+  /// unchanged database is kept
+  @Test
+  void rotatedIpDatabaseIsOpenedAgain(@TempDir Path dir) throws Exception {
+    Path database = dir.resolve("ipinfo.mmdb");
+    TinyMmdb.writeCountry(database, "DE");
+    ProxyConfig withDatabase =
+        CONFIG.toBuilder()
+            .ipLookup(IpLookupConfig.builder().ipInfoPath(database.toString()).build())
+            .build();
+    InetAddress address = InetAddress.getByName("192.0.2.1");
+    assertThat(reload(withDatabase)).isTrue();
+    IpTraitsLookup first = steps.proxy.state().ipTraitsLookup();
+    assertThat(first.lookup(address).isoCountry()).isEqualTo("DE");
+    assertThat(steps.proxy.referencedFiles()).containsKey(database.toAbsolutePath());
+    assertThat(reload(withDatabase)).isTrue();
+    assertThat(steps.proxy.state().ipTraitsLookup()).isSameAs(first);
+    Path tmp = dir.resolve("tmp.mmdb");
+    TinyMmdb.writeCountry(tmp, "FR");
+    Files.move(tmp, database, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+    assertThat(reload(withDatabase)).isTrue();
+    assertThat(steps.proxy.state().ipTraitsLookup()).isNotSameAs(first);
+    assertThat(steps.proxy.state().ipTraitsLookup().lookup(address).isoCountry()).isEqualTo("FR");
   }
 
   @Test
@@ -309,6 +352,128 @@ class ConfigReloadTest {
     assertThat(logs.messages(Proxy.class))
         .contains("Configuration reloaded, no changes")
         .noneMatch(m -> m.startsWith("Certificates reloaded"));
+  }
+
+  /// The files the active configuration read are reported for the [ConfigFileWatcher]
+  @Test
+  void referencedFilesAreTheFilesTheConfigurationRead(@TempDir Path dir) throws IOException {
+    assertThat(steps.proxy.referencedFiles()).as("only class path resources").isEmpty();
+    Path key = copyResource("ssl/test.key", dir);
+    Path cert = copyResource("ssl/test.crt", dir);
+    Path page = Files.writeString(dir.resolve("page.html"), "page");
+    Path token = Files.writeString(dir.resolve("token"), "secret\n");
+    ProxyConfig withFiles =
+        CONFIG.toBuilder()
+            .listen(
+                CONFIG.listen().toBuilder()
+                    .ssl(
+                        SslConfig.builder()
+                            .keyPath(key.toString())
+                            .certPath(cert.toString())
+                            .build())
+                    .build())
+            .protection(deflectorWithSecret(token))
+            .sites(
+                sites(
+                    "a.com",
+                    SiteConfig.builder()
+                        .response(ResponseConfig.builder().file(page.toString()).build())
+                        .build()))
+            .build();
+    assertThat(reload(withFiles)).isTrue();
+    assertThat(steps.proxy.referencedFiles())
+        .containsOnlyKeys(
+            key.toAbsolutePath(),
+            cert.toAbsolutePath(),
+            page.toAbsolutePath(),
+            token.toAbsolutePath());
+    assertThat(steps.proxy.reload(withFiles.toBuilder().listen(null).build()).applied()).isFalse();
+    assertThat(steps.proxy.referencedFiles()).as("a rejected reload keeps them").hasSize(4);
+  }
+
+  /// The files a rejected configuration tried to read, a missing one too, are reported as well,
+  /// so the watcher retries when the file is fixed; an applied reload drops them
+  @Test
+  void filesOfARejectedConfigurationAreReported(@TempDir Path dir) throws IOException {
+    Path token = dir.resolve("token");
+    ProxyConfig withSecret = CONFIG.toBuilder().protection(deflectorWithSecret(token)).build();
+    assertThat(reload(withSecret)).isFalse();
+    assertThat(steps.proxy.referencedFiles())
+        .containsOnly(Map.entry(token.toAbsolutePath(), ConfigFiles.Fingerprint.ABSENT));
+    Files.writeString(token, "secret");
+    assertThat(reload(withSecret)).isTrue();
+    assertThat(steps.proxy.referencedFiles().get(token.toAbsolutePath()))
+        .isEqualTo(ConfigFiles.Fingerprint.of(token));
+    assertThat(reload(CONFIG)).isTrue();
+    assertThat(steps.proxy.referencedFiles()).isEmpty();
+  }
+
+  /// Deflector protection whose admission secret is read from the file
+  static ProtectionConfig deflectorWithSecret(Path token) {
+    return ProtectionConfig.builder()
+        .deflector(
+            DeflectorConfig.builder()
+                .serverIpv4Address("127.0.0.1")
+                .tokenGenerators(
+                    List.of(
+                        AdmissionTokenGeneratorConfig.builder()
+                            .prefix("X")
+                            .secret(SecretConfig.builder().file(token.toString()).build())
+                            .build()))
+                .build())
+        .build();
+  }
+
+  /// A rotated secret gives a new config id, although the configuration is unchanged. A request
+  /// log destination kept over a reload, with its secret header, keeps its share of the id.
+  @Test
+  void configIdFollowsTheSecrets(@TempDir Path dir) throws IOException {
+    Path token = Files.writeString(dir.resolve("token"), "one");
+    Path auth = Files.writeString(dir.resolve("auth"), "Bearer one");
+    ProxyConfig withSecrets =
+        CONFIG.toBuilder()
+            .protection(deflectorWithSecret(token))
+            .requestLog(
+                RequestLogConfig.builder()
+                    .destinations(
+                        List.of(
+                            RequestLogDestinationConfig.builder()
+                                .type("otlp")
+                                .otlp(
+                                    OtlpConfig.builder()
+                                        .endpoint("http://127.0.0.1:9/v1/logs")
+                                        .secretHeaders(
+                                            List.of(
+                                                SecretHeaderConfig.builder()
+                                                    .name("Authorization")
+                                                    .secret(
+                                                        SecretConfig.builder()
+                                                            .file(auth.toString())
+                                                            .build())
+                                                    .build()))
+                                        .build())
+                                .build()))
+                    .build())
+            .build();
+    assertThat(reload(withSecrets)).isTrue();
+    String first = steps.proxy.state().configId();
+    assertThat(first)
+        .as("covers the secrets")
+        .isNotEqualTo(EdgeState.configId(steps.proxy.state().config(), List.of()));
+    assertThat(reload(withSecrets)).isTrue();
+    assertThat(steps.proxy.state().configId()).as("unchanged").isEqualTo(first);
+    Path tmp = Files.writeString(dir.resolve("tmp"), "two");
+    Files.move(tmp, token, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+    assertThat(reload(withSecrets)).isTrue();
+    assertThat(steps.proxy.state().configId()).isNotEqualTo(first);
+  }
+
+  static Path copyResource(String resource, Path dir) throws IOException {
+    Path target = dir.resolve(Path.of(resource).getFileName());
+    try (InputStream in = ConfigReloadTest.class.getResourceAsStream("/" + resource)) {
+      Files.copy(in, target);
+    }
+    return target;
   }
 
   @Test

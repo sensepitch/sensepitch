@@ -16,7 +16,7 @@ with what `2-gateway-api-scope.md` needs. The next steps are tracked in `TODO.md
 | Header match | Only cookie-name overrides (`RoutingOverrideConfig.whenCookie`) | Exact header matching |
 | Filters | `ResponseConfig` can redirect (`location`, `status`) and set cookies | `RequestHeaderModifier`; full `RequestRedirect` (scheme, host, port, path, status) |
 | Backends | `UpstreamConfig`: one `target` `host[:port]` | Multiple endpoints, weights, invalid-backend marker |
-| TLS | `SslConfig(keyPath, certPath)`, `snis`, Let's Encrypt directory; a reload replaces the certificates | Inline PEM from the snapshot; a changed certificate file alone triggers no reload (cert-manager renewal) |
+| TLS | `SslConfig(keyPath, certPath)`, `snis`, Let's Encrypt directory; a reload replaces the certificates, and `ConfigFileWatcher` watches the files the configuration read, so a renewed key or certificate reloads them | Inline PEM from the snapshot |
 | Unknown host | `UnservicedHost`: 400 or redirect | 404 for no matching route in Gateway API mode |
 
 The config loader (`Main`, `config/RecordConstructor`, `EnvInjector`) builds immutable
@@ -90,7 +90,7 @@ out on purpose.
 | Deflector `bypass.uris`: payment webhooks, partner exports, data feeds, monitoring, Apple Pay domain verification. These are host-independent prefix patterns | Not part of Gateway API | Application-owned: a good fit for the application profile, because the application knows its webhooks and feeds |
 | Deflector `bypass.remotes` (monitoring and partner IP addresses) | Not part of Gateway API | Owned by the administrator; does not belong in an application profile |
 | Deflector `noBypass.uris`, including a pattern with a query string (`/index.php?controller=registration`) | Not part of Gateway API. Matching on the query is only Extended (`queryParams`) for routing | Application-owned (profile). The edge keeps its own raw-URI matching for protection |
-| `tokenGenerators` (admission token secrets) | Not part of Gateway API | Edge bootstrap configuration from a Kubernetes Secret. Today it is in clear text in the configuration file |
+| `tokenGenerators` (admission token secrets) | Not part of Gateway API | Edge bootstrap configuration from a Kubernetes Secret: each entry reads its secret from a mounted file, `secret: {file: ...}`, see `SecretConfig`; inline `secret: {value: ...}` stays possible |
 | Cookie gates, global or per host (staging access, emergency "zero-day" lockdown with access URI and redirect) | Not part of Gateway API | Owned by the administrator. Must take effect within seconds in an emergency, so it should not depend on profile refresh intervals |
 | `ipLookup.ipInfoPath` (IPinfo database) | Infrastructure, not routing | Edge bootstrap configuration. The `.mmdb` file has to reach the pod (volume, init container, or a periodic update) |
 | `metrics.prometheus` | Infrastructure | Edge bootstrap configuration, plus a ServiceMonitor or scrape annotations in the Helm chart |

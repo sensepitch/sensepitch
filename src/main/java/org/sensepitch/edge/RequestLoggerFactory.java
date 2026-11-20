@@ -6,6 +6,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.Executor;
 
 /// Builds the request logger of the configured destinations, see [RequestLogConfig].
@@ -29,20 +30,22 @@ public final class RequestLoggerFactory {
   /// @param metrics metrics shared by all destinations, those of the standard out writer if it has
   ///   them, so all destinations register under the same metric names
   /// @param loggingThreads the threads that log, the event loops, see [ReloadableRequestLogger]
+  /// @param files reads and records the files of the destinations, e.g. secret headers
   /// @throws IllegalArgumentException if the configuration is invalid
   public static ReloadableRequestLogger create(
       RequestLogConfig config,
       RequestLogOutput stdout,
       RequestLogMetrics metrics,
-      Iterable<? extends Executor> loggingThreads) {
-    return new ReloadableRequestLogger(config, stdout, metrics, loggingThreads);
+      Iterable<? extends Executor> loggingThreads,
+      ConfigFiles files) {
+    return new ReloadableRequestLogger(config, stdout, metrics, loggingThreads, files);
   }
 
   /// For a single thread that logs and reloads, e.g. a test: the end marker of a replaced
-  /// destination runs right away on the reloading thread
+  /// destination runs right away on the reloading thread. The referenced files are not collected.
   public static ReloadableRequestLogger create(
       RequestLogConfig config, RequestLogOutput stdout, RequestLogMetrics metrics) {
-    return create(config, stdout, metrics, List.<Executor>of(Runnable::run));
+    return create(config, stdout, metrics, List.<Executor>of(Runnable::run), new ConfigFiles());
   }
 
   /// The configured destinations, or one standard out destination in the format selected by
@@ -77,12 +80,15 @@ public final class RequestLoggerFactory {
 
   /// Creates the logger of one destination, the configuration is validated by [#names(List)]
   ///
+  /// @param files reads the secret headers, see [#resolveSecretHeaders(String, OtlpConfig,
+  ///   ConfigFiles)]
   /// @throws IllegalArgumentException if the `otlp` settings are invalid
   static RequestLogger createDestination(
       String name,
       RequestLogDestinationConfig destination,
       RequestLogOutput stdout,
-      RequestLogMetrics metrics) {
+      RequestLogMetrics metrics,
+      ConfigFiles files) {
     RequestLogger logger =
         switch (destination.type()) {
           case RequestLogDestinationConfig.TYPE_STDOUT ->
@@ -92,10 +98,35 @@ public final class RequestLoggerFactory {
           case RequestLogDestinationConfig.TYPE_OTLP ->
               new OtlpRequestLogger(
                   new OtlpLogDestination(
-                      name, destination.otlp(), metrics, destination.sampleHeadersInterval()));
+                      name,
+                      resolveSecretHeaders(name, destination.otlp(), files),
+                      metrics,
+                      destination.sampleHeadersInterval()));
           default -> throw new IllegalStateException("type validated before");
         };
     return destination.anonymizeClientIp() ? new AnonymizingRequestLogger(logger) : logger;
+  }
+
+  /// The `otlp` settings with the [OtlpConfig#secretHeaders()] read and added to the headers, so
+  /// the [OtlpLogDestination] sends them like the plain headers
+  ///
+  /// @throws IllegalArgumentException if a header is configured twice, the case of the names
+  ///   does not matter
+  static OtlpConfig resolveSecretHeaders(String name, OtlpConfig otlp, ConfigFiles files) {
+    if (otlp.secretHeaders() == null) {
+      return otlp;
+    }
+    Map<String, String> headers = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+    if (otlp.headers() != null) {
+      headers.putAll(otlp.headers());
+    }
+    for (SecretHeaderConfig header : otlp.secretHeaders()) {
+      if (headers.putIfAbsent(header.name(), files.secret(header.secret())) != null) {
+        throw new IllegalArgumentException(
+            "Request log destination " + name + ": header " + header.name() + " configured twice");
+      }
+    }
+    return otlp.toBuilder().headers(headers).secretHeaders(null).build();
   }
 
   /// Names of the destinations, defaulting to the type, with the index appended for the second

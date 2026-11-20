@@ -44,9 +44,15 @@ public class SiteSelector {
   /// Sites by host and uri prefix, a site serving the whole host has the empty prefix
   private final Map<String, PrefixTree<Routing<Suppliers>>> sitesByHost = new HashMap<>();
 
+  /// Reads the response pages and secrets of this build
+  private final ConfigFiles files;
+
   /// @param upstreams creates or takes over the upstreams, see [UpstreamRegistry] for the naming
-  public SiteSelector(ProxyContext ctx, ProxyConfig config, UpstreamRegistry upstreams) {
+  /// @param files reads the referenced files: response pages and secrets
+  public SiteSelector(
+      ProxyContext ctx, ProxyConfig config, UpstreamRegistry upstreams, ConfigFiles files) {
     this.upstreams = upstreams;
+    this.files = files;
     if (config.sites() == null || config.sites().isEmpty()) {
       throw new IllegalArgumentException("sites missing");
     }
@@ -79,7 +85,7 @@ public class SiteSelector {
                 protection = config.protection();
               }
               Supplier<ChannelHandler> protectionSupplier =
-                  Protection.handlerSupplier(protection, ctx.metrics());
+                  Protection.handlerSupplier(protection, ctx.metrics(), files);
               Routing<Suppliers> routing =
                   constructRouting(ctx, site, fallbackSupplier, protectionSupplier);
               if (protectionSupplier == null) {
@@ -112,7 +118,7 @@ public class SiteSelector {
 
   private Supplier<ChannelHandler> constructFallbackSupplier(
       FallbackConfig global, FallbackConfig site) {
-    Fallback fallback = new Fallback(FallbackConfig.DEFAULTS.merge(global).merge(site));
+    Fallback fallback = new Fallback(FallbackConfig.DEFAULTS.merge(global).merge(site), files);
 
     return () -> fallback.newHandler();
   }
@@ -217,7 +223,7 @@ public class SiteSelector {
   }
 
   /// @param name name of the response in the configuration, logged as upstream name
-  private static Upstream constructResponseUpstream(String name, ResponseConfig cfg) {
+  private Upstream constructResponseUpstream(String name, ResponseConfig cfg) {
     String location = cfg.location();
     // ResponseConfig already defaults the status of a redirect
     HttpResponseStatus status =
@@ -227,7 +233,7 @@ public class SiteSelector {
     if (location != null) {
       body = null;
     } else if (cfg.file() != null) {
-      body = ResponseFiles.read(cfg.file());
+      body = ResponseFiles.read(cfg.file(), files);
     } else {
       body = cfg.text().getBytes(StandardCharsets.UTF_8);
     }

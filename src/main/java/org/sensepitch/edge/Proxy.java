@@ -15,11 +15,10 @@ import io.netty.handler.ssl.SslProvider;
 import io.netty.util.DomainWildcardMappingBuilder;
 import io.netty.util.Mapping;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.InetSocketAddress;
+import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -37,6 +36,7 @@ import org.sensepitch.edge.config.KeyInjector;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.introspector.BeanAccess;
+import org.yaml.snakeyaml.nodes.Tag;
 import org.yaml.snakeyaml.representer.Representer;
 
 /// Minimal HTTP/1.1 proxy without aggregation, with keep-alive and basic logging.
@@ -109,6 +109,13 @@ public class Proxy implements ProxyContext {
   /// Id of the active configuration, read by the request logging handler per request
   private final Supplier<String> configIds = () -> state.get().configId();
 
+  // guarded by lock
+  /// The files the active configuration read, see [#referencedFiles()]
+  private Map<Path, ConfigFiles.Fingerprint> referencedFiles;
+
+  /// The files the last rejected configuration tried to read, until a reload is applied
+  private Map<Path, ConfigFiles.Fingerprint> candidateFiles = Map.of();
+
   /// Proxy writing the request log to standard out, see [AsyncRequestLogWriter]
   public Proxy(ProxyConfig config) {
     this(config, AsyncRequestLogWriter.standardOut());
@@ -149,8 +156,9 @@ public class Proxy implements ProxyContext {
     trackIngressConnectionsHandler = expose(new TrackIngressConnectionsHandler());
     expose(new NettyAllocatorMetrics());
     trustTraceparent = config.traceContext() != null && config.traceContext().trustTraceparent();
-    state.set(EdgeState.build(this, config, null));
-    LOG.info("Certificates loaded:" + Certificates.list(state.get().certificates()));
+    ConfigFiles files = new ConfigFiles();
+    EdgeState initial = EdgeState.build(this, config, null, files);
+    LOG.info("Certificates loaded:" + Certificates.list(initial.certificates()));
     // the destinations share the metrics of the standard out writer, a metric name can be
     // registered only once
     RequestLogMetrics requestLogMetrics =
@@ -159,7 +167,11 @@ public class Proxy implements ProxyContext {
             : new RequestLogMetrics();
     requestLogDestinations =
         RequestLoggerFactory.create(
-            config.requestLog(), requestLogOutput, requestLogMetrics, eventLoopGroup);
+            config.requestLog(), requestLogOutput, requestLogMetrics, eventLoopGroup, files);
+    // after the request log, its secret headers count for the config id
+    ConfigFiles.Snapshot snapshot = files.snapshot();
+    state.set(initial.withSecrets(snapshot.secretDigests()));
+    referencedFiles = snapshot.files();
     expose(requestLogMetrics);
     requestLogger =
         new DistributingRequestLogger(
@@ -188,20 +200,27 @@ public class Proxy implements ProxyContext {
       EdgeState current = state.get();
       EdgeState next;
       ReloadableRequestLogger.Prepared requestLog;
+      ConfigFiles files = new ConfigFiles();
       try {
         newConfig = KeyInjector.injectAllMapKeys(newConfig);
         warnAboutRestartOnlyChanges(newConfig);
         newConfig.effectiveDrainTimeoutMillis();
-        next = EdgeState.build(this, newConfig, current);
+        next = EdgeState.build(this, newConfig, current, files);
         // last, nothing can fail after it, so the destinations it created are always applied
-        requestLog = requestLogDestinations.prepare(newConfig.requestLog());
+        requestLog = requestLogDestinations.prepare(newConfig.requestLog(), files);
       } catch (RuntimeException e) {
         LOG.error("Configuration rejected, keeping the active configuration: " + e, e);
+        // watched as well, so a fixed file is tried again without touching the configuration
+        candidateFiles = files.snapshot().files();
         return ReloadResult.rejected("Configuration rejected: " + e.getMessage());
       }
+      ConfigFiles.Snapshot snapshot = files.snapshot();
+      next = next.withSecrets(snapshot.secretDigests());
       state.set(next);
       current.closeReplacedBy(next);
       requestLog.apply();
+      referencedFiles = snapshot.files();
+      candidateFiles = Map.of();
       String diff = ConfigDiff.diff(toYaml(current.config()), toYaml(next.config()));
       if (diff.isEmpty()) {
         LOG.info("Configuration reloaded, no changes");
@@ -243,19 +262,57 @@ public class Proxy implements ProxyContext {
     return state.get();
   }
 
+  /// The files the active configuration read: TLS keys and certificates, secrets, response pages
+  /// and IP databases, with their fingerprints when they were read. [ConfigFileWatcher] reloads
+  /// when one of them changes. After a rejected reload also the files the rejected configuration
+  /// tried to read, missing ones included, with the fingerprints it saw, so fixing such a file
+  /// retries the reload.
+  public Map<Path, ConfigFiles.Fingerprint> referencedFiles() {
+    synchronized (lock) {
+      if (candidateFiles.isEmpty()) {
+        return referencedFiles;
+      }
+      Map<Path, ConfigFiles.Fingerprint> files = new HashMap<>(referencedFiles);
+      files.putAll(candidateFiles);
+      return Map.copyOf(files);
+    }
+  }
+
   public static void dumpConfig(ProxyConfig proxyConfig) {
     LOG.info("Configuration:\n" + toYaml(proxyConfig));
   }
 
+  /// The configuration as YAML, for the log and the [EdgeState#configId(ProxyConfig, java.util.List)]. The
+  /// value of a [SecretConfig] is masked, the config id adds the secrets separately.
   static String toYaml(ProxyConfig proxyConfig) {
     DumperOptions options = new DumperOptions();
     options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
     options.setIndent(2);
     options.setPrettyFlow(true);
-    Representer repr = new Representer(options);
+    Representer repr = new MaskingRepresenter(options);
     repr.getPropertyUtils().setBeanAccess(BeanAccess.FIELD);
     Yaml yaml = new Yaml(repr, options);
     return yaml.dump(proxyConfig);
+  }
+
+  /// Dumps a [SecretConfig] with its value masked, for [#toYaml(ProxyConfig)]
+  private static final class MaskingRepresenter extends Representer {
+
+    MaskingRepresenter(DumperOptions options) {
+      super(options);
+      representers.put(
+          SecretConfig.class,
+          data -> {
+            SecretConfig secret = (SecretConfig) data;
+            Map<String, String> fields = new LinkedHashMap<>();
+            if (secret.value() != null) {
+              fields.put("value", SecretConfig.MASK);
+            } else {
+              fields.put("file", secret.file());
+            }
+            return representMapping(Tag.MAP, fields, DumperOptions.FlowStyle.AUTO);
+          });
+    }
   }
 
   /// Registers the collectors in the [#metricsRegistry()]
@@ -287,13 +344,17 @@ public class Proxy implements ProxyContext {
 
   static Mapping<String, SslContext> initializeSniMapping(
       ListenConfig cfg, Set<String> servicedHosts) {
-    return initializeSniMapping(cfg, servicedHosts, new LinkedHashMap<>());
+    return initializeSniMapping(cfg, servicedHosts, new LinkedHashMap<>(), new ConfigFiles());
   }
 
   /// @param certificates receives a description of each loaded certificate by host, see
-  ///   [Certificates#describe(SslConfig)]
+  ///   [Certificates#describe(SslConfig, ConfigFiles)]
+  /// @param files reads the key and certificate files
   static Mapping<String, SslContext> initializeSniMapping(
-      ListenConfig cfg, Set<String> servicedHosts, Map<String, String> certificates) {
+      ListenConfig cfg,
+      Set<String> servicedHosts,
+      Map<String, String> certificates,
+      ConfigFiles files) {
     var knownHosts = new HashSet<>(servicedHosts);
     if (cfg.hosts() != null) {
       knownHosts.addAll(cfg.hosts());
@@ -301,24 +362,21 @@ public class Proxy implements ProxyContext {
     var contexts = new LinkedHashMap<String, SslContext>();
     if (cfg.letsEncrypt()) {
       for (String host : knownHosts) {
-        final SslConfig sslCfg =
-            new SslConfig(
-                cfg.letsEncryptPrefix() + host + "/privkey.pem",
-                cfg.letsEncryptPrefix() + host + "/fullchain.pem");
-        contexts.put(host, createSslContext(sslCfg));
-        certificates.put(host, Certificates.describe(sslCfg));
+        final SslConfig sslCfg = cfg.letsEncryptSsl(host);
+        contexts.put(host, createSslContext(sslCfg, files));
+        certificates.put(host, Certificates.describe(sslCfg, files));
       }
     }
     if (cfg.snis() != null) {
       for (SniConfig sni : cfg.snis()) {
-        contexts.put(sni.host(), createSslContext(sni.ssl()));
-        certificates.put(sni.host(), Certificates.describe(sni.ssl()));
+        contexts.put(sni.host(), createSslContext(sni.ssl(), files));
+        certificates.put(sni.host(), Certificates.describe(sni.ssl(), files));
       }
     }
     SslContext defaultContext = null;
     if (cfg.ssl() != null) {
-      defaultContext = createSslContext(cfg.ssl());
-      certificates.put(Certificates.DEFAULT, Certificates.describe(cfg.ssl()));
+      defaultContext = createSslContext(cfg.ssl(), files);
+      certificates.put(Certificates.DEFAULT, Certificates.describe(cfg.ssl(), files));
     }
     if (defaultContext == null && !contexts.isEmpty()) {
       defaultContext = contexts.sequencedValues().getFirst();
@@ -336,9 +394,10 @@ public class Proxy implements ProxyContext {
     return builder.build();
   }
 
-  static SslContext createSslContext(SslConfig cfg) {
+  /// @param files reads the key and certificate, see [ConfigFiles#open(String)]
+  static SslContext createSslContext(SslConfig cfg, ConfigFiles files) {
     try {
-      return SslContextBuilder.forServer(open(cfg.certPath()), open(cfg.keyPath()))
+      return SslContextBuilder.forServer(files.open(cfg.certPath()), files.open(cfg.keyPath()))
           .clientAuth(ClientAuth.NONE)
           .sslProvider(SslProvider.OPENSSL)
           .build();
@@ -346,23 +405,6 @@ public class Proxy implements ProxyContext {
       throw new RuntimeException(e);
     } catch (IOException e) {
       throw new IllegalArgumentException("IO error", e);
-    }
-  }
-
-  static InputStream open(String location) throws IOException {
-    final String prefix = "classpath:";
-    if (location.startsWith(prefix)) {
-      String path = location.substring(prefix.length());
-      if (path.startsWith("/")) {
-        path = path.substring(1);
-      }
-      InputStream in = Proxy.class.getClassLoader().getResourceAsStream(path);
-      if (in == null) {
-        throw new FileNotFoundException("Class path resource not found: " + path);
-      }
-      return in;
-    } else {
-      return new FileInputStream(location);
     }
   }
 

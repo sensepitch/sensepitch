@@ -23,7 +23,9 @@ class CertificatesTest {
 
   @Test
   void describeUnreadable() {
-    assertThat(Certificates.describe(SslConfig.builder().certPath("/missing.crt").build()))
+    assertThat(
+            Certificates.describe(
+                SslConfig.builder().certPath("/missing.crt").build(), new ConfigFiles()))
         .startsWith("unreadable: ")
         .endsWith("file=/missing.crt");
   }

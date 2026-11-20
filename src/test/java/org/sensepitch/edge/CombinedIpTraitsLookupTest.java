@@ -17,12 +17,14 @@ public class CombinedIpTraitsLookupTest {
 
   @Test
   public void test() throws IOException {
-    var x = new CombinedIpTraitsLookup(IpLookupConfig.builder().build(), metrics);
+    var x =
+        new CombinedIpTraitsLookup(IpLookupConfig.builder().build(), metrics, new ConfigFiles());
   }
 
   @Test
   public void crawlerName() throws IOException {
-    var lookup = new CombinedIpTraitsLookup(IpLookupConfig.builder().build(), metrics);
+    var lookup =
+        new CombinedIpTraitsLookup(IpLookupConfig.builder().build(), metrics, new ConfigFiles());
     IpTraits amazonbot = lookup(lookup, "3.210.223.61");
     assertThat(amazonbot.crawlerName()).isEqualTo("amazon:amazonbot");
     IpTraits googlebot = lookup(lookup, "192.178.4.1");
@@ -34,7 +36,8 @@ public class CombinedIpTraitsLookupTest {
 
   @Test
   public void crawlerNameIpv6() throws IOException {
-    var lookup = new CombinedIpTraitsLookup(IpLookupConfig.builder().build(), metrics);
+    var lookup =
+        new CombinedIpTraitsLookup(IpLookupConfig.builder().build(), metrics, new ConfigFiles());
     assertThat(lookup(lookup, "2001:4860:4801:10::1").crawlerName()).isEqualTo("google:googlebot");
     assertThat(lookup(lookup, "2001:db8::1").isCrawler()).isFalse();
   }

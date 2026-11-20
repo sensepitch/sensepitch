@@ -68,7 +68,9 @@ public class ConfigTest {
   @Test
   public void configDeflector() throws Exception {
     Map<String, String> env =
-        Map.of("SENSEPITCH_EDGE_PROTECTION_DEFLECTOR_TOKEN_GENERATORS_0_PREFIX", "z");
+        Map.of(
+            "SENSEPITCH_EDGE_PROTECTION_DEFLECTOR_TOKEN_GENERATORS_0_PREFIX", "z",
+            "SENSEPITCH_EDGE_PROTECTION_DEFLECTOR_TOKEN_GENERATORS_0_SECRET_VALUE", "munich");
     ProxyConfig cfg =
         (ProxyConfig) EnvInjector.injectFromEnv("SENSEPITCH_EDGE_", env, ProxyConfig.builder());
     assertNotNull(cfg.protection());
@@ -299,6 +301,19 @@ public class ConfigTest {
     IllegalArgumentException ex =
         assertThrows(IllegalArgumentException.class, () -> Main.parseConfig("just text"));
     assertThat(ex).hasMessageContaining("Cannot construct record of type");
+  }
+
+  /// The message names the line, not the value, which may be a secret
+  @Test
+  public void scalarForRecordNamesTheLineNotTheValue() {
+    IllegalArgumentException ex =
+        assertThrows(
+            IllegalArgumentException.class, () -> Main.parseConfig("listen:\n  ssl: top-secret\n"));
+    assertThat(assertThrows(IllegalArgumentException.class, () -> Main.parseConfig("")))
+        .hasMessageEndingWith("a mapping is expected, found nothing");
+    assertThat(ex)
+        .hasMessageContaining("SslConfig: a mapping is expected, found a scalar in line 2")
+        .hasMessageNotContaining("top-secret");
   }
 
   @Test

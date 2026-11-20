@@ -19,8 +19,8 @@ public final class SensepitchLogFields {
   /// replaced by a fallback page, or the upstream status of an aborted delivery
   public static final String UPSTREAM_STATUS = "sensepitch.upstream.status";
 
-  /// Short hash of the configuration active when the request started, the same on every node
-  /// with the same configuration and edge version
+  /// Short hash of the configuration and its secrets active when the request started, the same on
+  /// every node with the same configuration, secrets and edge version
   public static final String CONFIG_ID = "sensepitch.config.id";
 
   /// Outcome of the deflector protection, the same values as the label of

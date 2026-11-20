@@ -36,7 +36,16 @@ public class RecordConstructor {
     if (targetType != null && targetType.isRecord() && node instanceof MappingNode mappingNode) {
       return (T) constructRecord((Class<? extends Record>) targetType, mappingNode);
     }
-    throw new IllegalArgumentException("Cannot construct record of type " + targetType.getName());
+    // the value is not part of the message, it may be a secret in the old scalar form
+    String found =
+        node == null
+            ? "nothing"
+            : "a " + node.getNodeId() + " in line " + (node.getStartMark().getLine() + 1);
+    throw new IllegalArgumentException(
+        "Cannot construct record of type "
+            + targetType.getName()
+            + ": a mapping is expected, found "
+            + found);
   }
 
   static Object constructEmptyRecord(Class<? extends Record> recordClass) {

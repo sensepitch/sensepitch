@@ -61,7 +61,8 @@ public class Deflector {
   private final Map<Character, AdmissionTokenGenerator> tokenGenerators = new HashMap<>();
   private final int powMaxIterations;
 
-  Deflector(DeflectorConfig cfg) {
+  /// @param files reads the secrets of the token generators, see [SecretConfig]
+  Deflector(DeflectorConfig cfg, ConfigFiles files) {
     challengeVerification =
         new ChallengeGenerationAndVerification(new TimeBasedChallenge(), cfg.hashTargetPrefix());
     powMaxIterations = cfg.powMaxIterations();
@@ -95,7 +96,7 @@ public class Deflector {
     for (AdmissionTokenGeneratorConfig tc : cfg.tokenGenerators()) {
       char prefix = tc.prefix().charAt(0);
       DefaultAdmissionTokenGenerator generator =
-          new DefaultAdmissionTokenGenerator(serverIpv4Address, prefix, tc.secret());
+          new DefaultAdmissionTokenGenerator(serverIpv4Address, prefix, files.secret(tc.secret()));
       if (firstGenerator == null) {
         firstGenerator = generator;
       }

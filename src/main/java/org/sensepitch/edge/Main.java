@@ -18,7 +18,8 @@ import org.yaml.snakeyaml.nodes.Node;
 /// A configuration file is reloaded when its content changes, and via `POST /reload` on the
 /// [AdminServer] if `admin` is configured, if it ends with the line `#END`, see
 /// [ConfigFileWatcher]. The admin endpoint also reloads an unchanged configuration, which picks up
-/// renewed certificate files.
+/// renewed certificate files. The watcher also reloads when a file the configuration read changes,
+/// e.g. a TLS certificate or a secret, see [Proxy#referencedFiles()].
 ///
 /// The command-line application owns process-wide logging. Its shutdown hook waits for its proxy
 /// and admin server before stopping Log4j2; the bundled logging configurations disable Log4j2's
@@ -44,7 +45,7 @@ public class Main {
       ConfigFileWatcher watcher = new ConfigFileWatcher(file);
       config = loadConfig(file);
       proxy = new Proxy(config);
-      watcher.start(content -> proxy.reload(parseConfig(content)));
+      watcher.start(content -> proxy.reload(parseConfig(content)), proxy::referencedFiles);
       reload = watcher::forceReload;
     } else {
       ProxyConfig.Builder builder = ProxyConfig.builder();

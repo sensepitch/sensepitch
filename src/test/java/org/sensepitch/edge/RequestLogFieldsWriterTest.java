@@ -224,7 +224,7 @@ class RequestLogFieldsWriterTest {
         TestRequestLogInfo.of(HttpMethod.GET, 503)
             .withOutcome(RequestOutcome.FALLBACK, 503)
             .withRoute("/api/*")
-            .withConfigId("0123456789ab")
+            .withConfigId("0123456789abcdef")
             .withProtectionOutcome("passed");
     info.response()
         .headers()
@@ -233,7 +233,7 @@ class RequestLogFieldsWriterTest {
         .containsEntry("sensepitch.request.outcome", "fallback")
         .containsEntry("sensepitch.upstream.status", 503L)
         .containsEntry("http.route", "/api/*")
-        .containsEntry("sensepitch.config.id", "0123456789ab")
+        .containsEntry("sensepitch.config.id", "0123456789abcdef")
         .containsEntry("sensepitch.protection.outcome", "passed")
         .containsEntry("http.response.header.content-type", List.of("text/html"));
   }

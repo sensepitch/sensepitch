@@ -32,11 +32,11 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
   `terminationGracePeriodSeconds` above `shutdownTimeoutMillis`, Service, PodDisruptionBudget,
   config from a ConfigMap, secrets from Secrets, scrape annotations or ServiceMonitor
   - P1: production on Kubernetes before M1; becomes the base of the provisioner (phase 6).
-- [ ] 4. secrets out of the config file: `tokenGenerators` are in clear text today; read them,
-  the TLS keys and the IPinfo database from mounted files
-  - P1: a reload watches only `config.yml`, so a renewed certificate Secret (cert-manager)
-    triggers no reload; watch the referenced files too. Add a test for the ConfigMap symlink
-    swap, which `ConfigFileWatcher` is designed for but no test covers.
+- [x] 4. secrets out of the config file: `SecretConfig` (`value` or `file`) for `tokenGenerators`
+  and the OTLP `secretHeaders`; the TLS keys and the IP databases are files already. The files a
+  configuration read are recorded by `ConfigFiles` and watched by `ConfigFileWatcher`, so a
+  renewed certificate Secret (cert-manager) reloads; the ConfigMap symlink swap is tested.
+  See [doc/design/config-files.md](doc/design/config-files.md).
 - [ ] 5. plain HTTP listener and several listeners (`ListenConfig` has one HTTPS port), with the
   HTTP to HTTPS forward (there is no plain HTTP listener yet)
   - P2: confirm the redirect status and host/port behavior. Needed for HTTP to HTTPS redirects,

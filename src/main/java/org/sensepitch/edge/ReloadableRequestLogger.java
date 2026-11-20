@@ -11,10 +11,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 
 /// Passes each request to all request log destinations, and replaces the destinations when the
-/// configuration is reloaded, see [#prepare(RequestLogConfig)].
+/// configuration is reloaded, see [#prepare(RequestLogConfig, ConfigFiles)].
 ///
-/// A destination whose name and configuration are unchanged is kept, so an OTLP destination keeps
-/// its buffered records. A changed or removed OTLP destination is finished without waiting: each
+/// A destination whose name, configuration and referenced files (the secret headers) are unchanged
+/// is kept, so an OTLP destination keeps its buffered records. A changed or removed OTLP destination is finished without waiting: each
 /// event loop writes its end marker into it after the switch, so the records a loop logged just
 /// before arrive as well. It keeps sending its buffered records to its own endpoint and ends when
 /// they are sent or have aged out, see [BatchingRequestLogger#finish()]. Other removed
@@ -29,17 +29,24 @@ import java.util.concurrent.Executor;
 /// @author Jens Wilke
 public final class ReloadableRequestLogger implements RequestLogger {
 
-  /// A destination with the configuration it was built from
+  /// A destination with the configuration and the files it was built from
   ///
+  /// @param files the files and secrets the destination read, e.g. secret headers, see
+  ///   [ConfigFiles]
   /// @param batching the batching logger inside `logger`, e.g. OTLP, `null` for other types
   record Destination(
       String name,
       RequestLogDestinationConfig config,
+      ConfigFiles.Snapshot files,
       RequestLogger logger,
       BatchingRequestLogger<?> batching) {
 
-    Destination(String name, RequestLogDestinationConfig config, RequestLogger logger) {
-      this(name, config, logger, batchingOf(logger));
+    Destination(
+        String name,
+        RequestLogDestinationConfig config,
+        ConfigFiles.Snapshot files,
+        RequestLogger logger) {
+      this(name, config, files, logger, batchingOf(logger));
     }
 
     private static BatchingRequestLogger<?> batchingOf(RequestLogger logger) {
@@ -62,16 +69,18 @@ public final class ReloadableRequestLogger implements RequestLogger {
   ///
   /// @param loggingThreads the threads that log requests, the event loops, as executors. A
   ///   reload runs the end marker of a replaced destination on each of them.
+  /// @param files reads and records the files of the destinations, e.g. secret headers
   /// @throws IllegalArgumentException if the configuration is invalid
   ReloadableRequestLogger(
       RequestLogConfig config,
       RequestLogOutput stdout,
       RequestLogMetrics metrics,
-      Iterable<? extends Executor> loggingThreads) {
+      Iterable<? extends Executor> loggingThreads,
+      ConfigFiles files) {
     this.stdout = stdout;
     this.metrics = metrics;
     this.loggingThreads = loggingThreads;
-    prepare(config).apply();
+    prepare(config, files).apply();
   }
 
   @Override
@@ -91,9 +100,11 @@ public final class ReloadableRequestLogger implements RequestLogger {
   ///
   /// @param config request log configuration, `null` for the defaults, see
   ///   [RequestLogConfig#disabled()] and [RequestLogDestinationConfig#disabled()]
+  /// @param files reads and records the files of new destinations, and records those of the kept
+  ///   ones, so they are watched as well
   /// @throws IllegalArgumentException if the configuration is invalid; the destinations created
   ///   until then are closed, the active ones stay untouched
-  public Prepared prepare(RequestLogConfig config) {
+  public Prepared prepare(RequestLogConfig config, ConfigFiles files) {
     List<RequestLogDestinationConfig> configs = RequestLoggerFactory.destinations(config);
     List<String> names = RequestLoggerFactory.names(configs);
     Destination[] current = destinations;
@@ -107,14 +118,16 @@ public final class ReloadableRequestLogger implements RequestLogger {
         }
         Destination destination = find(current, names.get(i), destinationConfig);
         if (destination == null) {
+          // separately, so a later reload can tell whether the files of this destination changed
+          ConfigFiles destinationFiles = new ConfigFiles();
+          RequestLogger logger =
+              RequestLoggerFactory.createDestination(
+                  names.get(i), destinationConfig, stdout, metrics, destinationFiles);
           destination =
-              new Destination(
-                  names.get(i),
-                  destinationConfig,
-                  RequestLoggerFactory.createDestination(
-                      names.get(i), destinationConfig, stdout, metrics));
+              new Destination(names.get(i), destinationConfig, destinationFiles.snapshot(), logger);
           created.add(destination);
         }
+        files.recordAll(destination.files());
         next.add(destination);
       }
     } catch (RuntimeException e) {
@@ -125,12 +138,14 @@ public final class ReloadableRequestLogger implements RequestLogger {
     return new Prepared(next.toArray(Destination[]::new));
   }
 
-  /// The active destination with this name and an equal configuration, which a reload keeps,
-  /// or `null`
+  /// The active destination with this name, an equal configuration and unchanged files, which a
+  /// reload keeps, or `null`
   private static Destination find(
       Destination[] destinations, String name, RequestLogDestinationConfig config) {
     for (Destination destination : destinations) {
-      if (destination.name().equals(name) && Objects.equals(destination.config(), config)) {
+      if (destination.name().equals(name)
+          && Objects.equals(destination.config(), config)
+          && destination.files().unchanged()) {
         return destination;
       }
     }
@@ -197,7 +212,7 @@ public final class ReloadableRequestLogger implements RequestLogger {
     finish();
   }
 
-  /// Destinations built by [#prepare(RequestLogConfig)], not yet active
+  /// Destinations built by [#prepare(RequestLogConfig, ConfigFiles)], not yet active
   public final class Prepared {
 
     private final Destination[] next;

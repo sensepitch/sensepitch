@@ -4,13 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.FileNotFoundException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 /// @author Jens Wilke
 @SuppressWarnings("unchecked")
@@ -69,38 +65,10 @@ class SslSetupTest {
   }
 
   @Test
-  void openClasspathResource() throws Exception {
-    try (InputStream in = Proxy.open("classpath:ssl/test.crt")) {
-      assertThat(in.read()).isNotNegative();
-    }
-    try (InputStream in = Proxy.open("classpath:/ssl/test.crt")) {
-      assertThat(in.read()).isNotNegative();
-    }
-  }
-
-  @Test
-  void openMissingResource() {
-    assertThatThrownBy(() -> Proxy.open("classpath:ssl/missing.crt"))
-        .isInstanceOf(FileNotFoundException.class)
-        .hasMessageContaining("ssl/missing.crt");
-    assertThatThrownBy(() -> Proxy.open("/does/not/exist.crt"))
-        .isInstanceOf(FileNotFoundException.class);
-  }
-
-  @Test
-  void openFile(@TempDir Path dir) throws Exception {
-    Path file = dir.resolve("x.pem");
-    Files.writeString(file, "x");
-    try (InputStream in = Proxy.open(file.toString())) {
-      assertThat(in.read()).isEqualTo('x');
-    }
-  }
-
-  @Test
   void sslContextWithMissingKey() {
     SslConfig cfg =
         SslConfig.builder().certPath("classpath:ssl/test.crt").keyPath("classpath:nope").build();
-    assertThatThrownBy(() -> Proxy.createSslContext(cfg))
+    assertThatThrownBy(() -> Proxy.createSslContext(cfg, new ConfigFiles()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasCauseInstanceOf(FileNotFoundException.class);
   }

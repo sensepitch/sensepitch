@@ -56,7 +56,8 @@ public interface RequestLogInfo {
   /// @return the route, or `null` if no site matched
   String route();
 
-  /// Short hash of the configuration active when the request started, see [EdgeState#configId()]
+  /// Short hash of the configuration and its secrets active when the request started, see
+  /// [EdgeState#configId(ProxyConfig, java.util.List)]
   ///
   /// @return the id, or `null` if not known, e.g. in tests
   String configId();

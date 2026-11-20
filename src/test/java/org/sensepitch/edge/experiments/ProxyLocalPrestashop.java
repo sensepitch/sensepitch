@@ -11,6 +11,7 @@ import org.sensepitch.edge.PrometheusConfig;
 import org.sensepitch.edge.ProtectionConfig;
 import org.sensepitch.edge.Proxy;
 import org.sensepitch.edge.ProxyConfig;
+import org.sensepitch.edge.SecretConfig;
 import org.sensepitch.edge.SniConfig;
 import org.sensepitch.edge.SslConfig;
 import org.sensepitch.edge.UpstreamConfig;
@@ -67,7 +68,7 @@ public class ProxyLocalPrestashop {
                                 List.of(
                                     AdmissionTokenGeneratorConfig.builder()
                                         .prefix("X")
-                                        .secret("secret")
+                                        .secret(SecretConfig.builder().value("secret").build())
                                         .build()))
                             .build())
                     .build())

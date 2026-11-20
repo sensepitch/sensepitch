@@ -23,20 +23,27 @@ class ResponseFilesTest {
   @Test
   void schemelessFallsBackToClasspath() {
     assertThat(read("fallback/unavailable_page.html")).isEqualTo("<html>down</html>");
+    assertThat(read("/fallback/unavailable_page.html")).isEqualTo("<html>down</html>");
   }
 
+  /// A file is recorded for the [ConfigFileWatcher], a class path resource is not
   @Test
   void filesystem(@TempDir Path tempDir) throws IOException {
     Path pageFile = tempDir.resolve("page.html");
     Files.writeString(pageFile, "<html>disk</html>");
     assertThat(read(pageFile.toAbsolutePath().toString())).isEqualTo("<html>disk</html>");
     assertThat(read("file:" + pageFile.toAbsolutePath())).isEqualTo("<html>disk</html>");
-    assertThat(read(pageFile.toUri().toString())).isEqualTo("<html>disk</html>");
+    ConfigFiles files = new ConfigFiles();
+    assertThat(ResponseFiles.read(pageFile.toUri().toString(), files))
+        .asString(StandardCharsets.UTF_8)
+        .isEqualTo("<html>disk</html>");
+    ResponseFiles.read("classpath:fallback/unavailable_page.html", files);
+    assertThat(files.snapshot().files()).containsOnlyKeys(pageFile.toAbsolutePath());
   }
 
   @Test
   void missingRelativeNamesAbsolutePath() {
-    assertThatThrownBy(() -> ResponseFiles.read("does-not-exist.html"))
+    assertThatThrownBy(() -> ResponseFiles.read("does-not-exist.html", new ConfigFiles()))
         .isInstanceOf(UncheckedIOException.class)
         .rootCause()
         .hasMessageContaining(Path.of("does-not-exist.html").toAbsolutePath().toString());
@@ -44,14 +51,14 @@ class ResponseFilesTest {
 
   @Test
   void missing() {
-    assertThatThrownBy(() -> ResponseFiles.read("classpath:does/not/exist.html"))
+    assertThatThrownBy(() -> ResponseFiles.read("classpath:does/not/exist.html", new ConfigFiles()))
         .isInstanceOf(UncheckedIOException.class)
         .hasMessageContaining("does/not/exist.html");
-    assertThatThrownBy(() -> ResponseFiles.read("file:/does/not/exist.html"))
+    assertThatThrownBy(() -> ResponseFiles.read("file:/does/not/exist.html", new ConfigFiles()))
         .isInstanceOf(UncheckedIOException.class);
   }
 
   private static String read(String location) {
-    return new String(ResponseFiles.read(location), StandardCharsets.UTF_8);
+    return new String(ResponseFiles.read(location, new ConfigFiles()), StandardCharsets.UTF_8);
   }
 }
