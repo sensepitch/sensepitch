@@ -128,6 +128,24 @@ class HttpBatchSenderTest {
     assertThat(HttpBatchSender.result(400, 0).error()).isEqualTo("http_400");
   }
 
+  /// The flush packs partly filled batches in the order the threads handed them over, so a post
+  /// may start with a newer batch. [HttpBatchSender.Post#of] then keeps the age of the oldest
+  /// record, the branch that sees a batch older than the first one. Without a deterministic
+  /// caller the branch was only covered by a thread race in `OtlpLogDestinationTest`, which made
+  /// the `HttpBatchSender*` full-coverage rule flake.
+  @Test
+  void postKeepsTheAgeOfTheOldestRecord() {
+    TextBatch newer = new TextBatch();
+    newer.added();
+    newer.firstRecordNanos = 200;
+    TextBatch older = new TextBatch();
+    older.added();
+    older.firstRecordNanos = 100;
+    HttpBatchSender.Post<TextBatch> post = HttpBatchSender.Post.of(List.of(newer, older));
+    assertThat(post.firstRecordNanos()).as("age of the oldest record").isEqualTo(100);
+    assertThat(post.records()).isEqualTo(2);
+  }
+
   /// The short error codes of the metrics, see [CircuitBreakerMetrics]
   @Test
   void errorCodes() {
