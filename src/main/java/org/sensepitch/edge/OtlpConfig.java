@@ -44,7 +44,8 @@ import lombok.Builder;
 ///   have one full batch waiting or in flight and one being filled. A lower value is not
 ///   respected, the minimum is used and a warning is logged, see [#minMaxBufferedBytes()].
 /// @param maxConcurrentRequests requests posted at the same time; more batches wait until a
-///   request completes. Batches may arrive out of order. Defaults to the number of event loops,
+///   request completes. With one request at a time the batches arrive in the order they were
+///   handed over; with more, they may arrive out of order. Defaults to the number of event loops,
 ///   i.e. two per processor, so every event loop can have a full batch in flight.
 /// @param maximumUnsentLogAgeMillis a batch whose first record is older is dropped and counted.
 ///   This ends the retries for a persistent error, e.g. a wrong endpoint or a log server that is

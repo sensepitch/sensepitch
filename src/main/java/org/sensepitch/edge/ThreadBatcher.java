@@ -7,7 +7,7 @@ package org.sensepitch.edge;
 ///   [BatchPayload].
 /// - When the batch reaches the batch size, it is handed to the sender, which posts it and
 ///   returns an empty batch from its pool. The sender also takes partly filled batches when the
-///   flush interval is over, see [#takePartial()].
+///   flush interval is over, see [#takePartialAndQueue()].
 /// - If the sender refuses the handoff, because the batches waiting to be sent reached the
 ///   limit, the thread keeps its full batch and drops new records until the sender has room. So
 ///   the newest records are dropped, the waiting ones are kept.
@@ -85,10 +85,13 @@ final class ThreadBatcher<B extends Batch> {
   }
 
   /// Called by the sender when the flush interval is over: takes a partly filled batch, if the
-  /// waiting batches have room for it. The thread takes a new batch with its next record.
+  /// waiting batches have room for it, and queues it at once. Queuing it in the same critical
+  /// section keeps its place: a full batch that this thread hands over right after it cannot
+  /// overtake it. The thread takes a new batch with its next record.
   ///
-  /// @return the batch, already counted as waiting, or `null`
-  B takePartial() {
+  /// @return the batch, already queued and counted as waiting, or `null`; for tests that check
+  ///   the batch was taken
+  B takePartialAndQueue() {
     synchronized (lock) {
       // a closed batcher has no active batch
       if (active == null || active.records == 0 || !sender.reserve(active)) {
@@ -96,6 +99,7 @@ final class ThreadBatcher<B extends Batch> {
       }
       B partial = active;
       active = null;
+      sender.submitPartial(partial);
       return partial;
     }
   }

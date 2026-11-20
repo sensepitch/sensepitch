@@ -707,6 +707,48 @@ class OtlpLogDestinationTest {
         .hasSize(1);
   }
 
+  /// After the last waiting batch aged out, the queue is empty and the breaker is still open. A
+  /// new full batch then asks the breaker in `HttpBatchSender.submit` and waits, it is not sent.
+  /// This is the branch where an empty queue meets an open breaker, previously reached only by a
+  /// timing dependent test.
+  @Test
+  void batchLoggedAfterAnAgedOneWaitsForTheBreaker() throws Exception {
+    status = 503;
+    int batchBytes = OtlpConfig.MIN_BATCH_BYTES;
+    destination =
+        new OtlpLogDestination(
+            "otlp",
+            config()
+                .batchBytes(batchBytes)
+                .maxBufferedBytes(64 << 20)
+                .maxConcurrentRequests(1)
+                // a full batch is handed over before the first flush, so submit asks the breaker
+                .flushIntervalMillis(500)
+                .maximumUnsentLogAgeMillis(200)
+                // long enough that the breaker cannot let a probe through during the test
+                .initialRetryDelayMillis(60_000)
+                .maxRetryDelayMillis(60_000)
+                .build());
+    OtlpRequestLogger logger = new OtlpRequestLogger(destination);
+    int firstBatch = (batchBytes + framedSize(request("/0000")) - 1) / framedSize(request("/0000"));
+    int firstTotal = firstBatch + 1;
+    for (int i = 0; i < firstTotal; i++) {
+      logger.logRequest(request(String.format("/%04d", i)));
+    }
+    await("first batch rejected", () -> received.size() >= 1);
+    await("waiting batches aged out", () -> destination.droppedCount() == firstTotal);
+    int secondBatch =
+        (batchBytes + framedSize(request("/a0000")) - 1) / framedSize(request("/a0000"));
+    int secondTotal = secondBatch + 1;
+    for (int i = 0; i < secondTotal; i++) {
+      logger.logRequest(request(String.format("/a%04d", i)));
+    }
+    assertThat(destination.queueSize()).isEqualTo(secondTotal);
+    assertThat(bufferedBytesGauge()).isPositive();
+    status = 200;
+    HttpBatchSenderTest.close(destination);
+  }
+
   /// A status that retrying cannot fix does not open the breaker, the next batch goes out at once
   @Test
   void badRequestDoesNotOpenTheBreaker() throws Exception {

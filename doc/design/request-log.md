@@ -45,7 +45,7 @@ RequestLoggingHandler.log()
                   encode record into own batch (in place, no allocation)
                   batch full ──► handOff ─► reserve bytes ─► submit ─► sendAsync ─► log server
                                             │                 └ parked queue if no slot / breaker
-               flush timer ───► takePartial of all threads, packed into posts ┘
+               flush timer ───► takePartialAndQueue of all threads, packed into posts ┘
                thread ends ───► close: last batch + end marker ─► sender stops when all closed
 ```
 
@@ -88,10 +88,10 @@ The sender and each batcher have their own private final lock object, so callers
 instance monitor and stall logging. This costs one object per instance; no performance gain is
 claimed. Critical sections keep the same boundaries as the former instance monitors.
 
-A batcher may enter the sender while holding its lock when handing off a full batch. The sender
-collects partial batches and reads their record counts without holding its own lock, so it does
-not take the locks in reverse order. A closing batcher calls `sender.closed` after releasing its
-lock; HTTP sends and the sender's completion dispatch also stay outside the sender lock.
+A batcher may enter the sender while holding its lock when handing off a full batch or queueing a
+partial one. The sender never takes a batcher lock, so it cannot take the locks in reverse order.
+A closing batcher calls `sender.closed` after releasing its lock; HTTP sends and the sender's
+completion dispatch also stay outside the sender lock.
 `finishing` stays volatile because `stopIfDone` reads it without the lock. The other mutable sender
 state in critical sections and the batcher's `active` and `closed` need no volatile reads.
 
@@ -117,9 +117,16 @@ about than holes spread over the outage.
 ### Flush interval for partly filled batches
 
 A quiet proxy may take minutes to fill a batch. Every `otlp.flushIntervalMillis` (default 1 s)
-the flush timer takes the partly filled batch of each thread (`takePartial`), if there is room to
-reserve it, and packs them into posts of up to `batchBytes`. So a flush sends one request per
-`batchBytes`, not one per event loop. The thread takes a new batch with its next record.
+the flush timer takes the partly filled batch of each thread (`takePartialAndQueue`), if there is
+room to reserve it, and packs them into posts of up to `batchBytes`. So a flush sends one request
+per `batchBytes`, not one per event loop. The thread takes a new batch with its next record.
+
+The batch enters the sender queue in the same critical section that takes it from the batcher. If
+it were queued only after all partials were collected, the logging thread could fill and hand over
+the next full batch in between, ahead of the partial. That happened on 2026-11-20 in
+`OtlpLogDestinationIT.outageLosesNothing`: records 898-981 arrived before 850-897 although
+`maxConcurrentRequests` was 1. Queuing under the batcher lock keeps the thread's order; adjacent
+partial posts still pack into one request.
 
 The flush also drops waiting posts whose first record is older than
 `otlp.maximumUnsentLogAgeMillis` (default 5 min) and closes the batchers of threads that died
@@ -128,9 +135,10 @@ without closing them (non-Netty threads, e.g. in tests).
 ### Concurrent requests, slow start, circuit breaker
 
 Posts are sent with `HttpClient.sendAsync`, at most `otlp.maxConcurrentRequests` at a time
-(default: the number of event loops). More wait in a queue, oldest first. Batches may therefore
-arrive out of order; the records within a batch keep theirs. A log server orders by timestamp, so
-this was accepted for throughput.
+(default: the number of event loops). More wait in a queue, oldest first. With one request at a
+time the batches arrive in that queue order; with more, they may arrive out of order, while the
+records within a batch keep theirs. A log server orders by timestamp, so this was accepted for
+throughput.
 
 A failure the OTLP specification considers retryable (connection error, timeout, 429, 502, 503,
 504) puts the post back at the head of the queue and opens the circuit breaker; one probe per
@@ -344,7 +352,8 @@ Known limits of the current implementation, checked against the code on 2026-11-
 - **Memory only.** Waiting batches are lost when the proxy itself restarts during an outage of the
   log server, or when the shutdown deadline is hit; the latter is only logged, not counted.
 - **Order across batches.** With `maxConcurrentRequests > 1`, batches may arrive out of order. A
-  log server that does not order by timestamp shows them interleaved.
+  log server that does not order by timestamp shows them interleaved. With one request at a time,
+  the queue order is the order the threads took and handed over the batches.
 - **Whole batches age out.** The age limit drops a waiting post by its oldest record, so younger
   records in the same post go with it.
 - **Partly filled batches need room.** When the waiting bytes are at the limit, the flush skips

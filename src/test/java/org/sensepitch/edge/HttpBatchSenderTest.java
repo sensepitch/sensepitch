@@ -78,6 +78,15 @@ class HttpBatchSenderTest {
 
   static HttpBatchSender<TextBatch> textSender(
       String endpoint, Map<String, String> headers, int batchBytes, long maxBufferedBytes) {
+    return textSender(endpoint, headers, batchBytes, maxBufferedBytes, 2);
+  }
+
+  static HttpBatchSender<TextBatch> textSender(
+      String endpoint,
+      Map<String, String> headers,
+      int batchBytes,
+      long maxBufferedBytes,
+      int maxConcurrentRequests) {
     return new HttpBatchSender<>(
         new HttpBatchSender.Settings(
             "text",
@@ -86,7 +95,7 @@ class HttpBatchSenderTest {
             Duration.ofSeconds(5),
             batchBytes,
             maxBufferedBytes,
-            2,
+            maxConcurrentRequests,
             OUT_OF_REACH_MILLIS,
             OUT_OF_REACH_MILLIS,
             false,
@@ -200,28 +209,66 @@ class HttpBatchSenderTest {
   /// have room for it. Each line is 3 bytes, a batch of 4 bytes is full with the second.
   @Test
   void partialBatchNeedsRecordsAndRoom() throws Exception {
-    HttpBatchSender<TextBatch> roomy = textSender(UNREACHABLE, Map.of(), 4, 1_000);
-    ThreadBatcher<TextBatch> batcher = roomy.newBatcher();
-    assertThat(batcher.takePartial()).as("no batch yet").isNull();
-    batcher.log(request("/a"));
-    assertThat(batcher.takePartial().records).isOne();
-    assertThat(batcher.takePartial()).as("taken already").isNull();
-    batcher.log(request("/b"));
-    batcher.log(request("/c"));
-    assertThat(batcher.records()).as("full batch handed off").isZero();
-    assertThat(batcher.takePartial()).as("empty batch").isNull();
-    // nothing listens, no waiting for the drain
-    roomy.endThread();
-    roomy.finish();
-    HttpBatchSender<TextBatch> full = textSender(UNREACHABLE, Map.of(), 4, 4);
-    batcher = full.newBatcher();
-    batcher.log(request("/a"));
-    batcher.log(request("/b"));
-    assertThat(batcher.records()).as("hand-off refused, the full batch is kept").isEqualTo(2);
-    assertThat(batcher.takePartial()).as("no room").isNull();
-    // the kept full batch can never be sent, the limit holds it back, so no waiting
-    full.endThread();
-    full.finish();
+    BlockingQueue<String> bodies = new LinkedBlockingQueue<>();
+    HttpServer server = lineServer(bodies);
+    try {
+      HttpBatchSender<TextBatch> roomy = textSender(endpoint(server), Map.of(), 4, 1_000, 1);
+      ThreadBatcher<TextBatch> batcher = roomy.newBatcher();
+      assertThat(batcher.takePartialAndQueue()).as("no batch yet").isNull();
+      batcher.log(request("/a"));
+      assertThat(batcher.takePartialAndQueue().records).isOne();
+      assertThat(batcher.takePartialAndQueue()).as("taken already").isNull();
+      batcher.log(request("/b"));
+      batcher.log(request("/c"));
+      assertThat(batcher.records()).as("full batch handed off").isZero();
+      assertThat(batcher.takePartialAndQueue()).as("empty batch").isNull();
+      roomy.endThread();
+      roomy.finish().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      assertThat(bodies.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/a\n");
+      assertThat(bodies.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/b\n/c\n");
+
+      HttpBatchSender<TextBatch> full = textSender(endpoint(server), Map.of(), 4, 4, 1);
+      batcher = full.newBatcher();
+      batcher.log(request("/a"));
+      batcher.log(request("/b"));
+      assertThat(batcher.records()).as("hand-off refused, the full batch is kept").isEqualTo(2);
+      assertThat(batcher.takePartialAndQueue()).as("no room").isNull();
+      full.endThread();
+      full.finish().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      assertThat(bodies.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/a\n/b\n");
+      assertThat(bodies).isEmpty();
+    } finally {
+      TestingParameters.stop(server);
+    }
+  }
+
+  /// A batch taken by the flush is queued at once. A full batch this thread hands over right after
+  /// it cannot overtake it, so one request at a time delivers the records in order. Collecting the
+  /// partials first and submitting them after let the next full batch go out ahead of them; the
+  /// controller saw records 898-981 arrive before 850-897 in `OtlpLogDestinationIT`.
+  @Test
+  void flushPartialKeepsItsPlaceBeforeLaterFullBatches() throws Exception {
+    BlockingQueue<String> bodies = new LinkedBlockingQueue<>();
+    HttpServer server = lineServer(bodies);
+    try {
+      HttpBatchSender<TextBatch> sender = textSender(endpoint(server), Map.of(), 8, 1_000, 1);
+      ThreadBatcher<TextBatch> batcher = sender.newBatcher();
+      batcher.log(request("/a"));
+      assertThat(batcher.takePartialAndQueue()).as("taken by the flush").isNotNull();
+      batcher.log(request("/b"));
+      batcher.log(request("/c"));
+      batcher.log(request("/d"));
+      batcher.log(request("/e"));
+      assertThat(batcher.takePartialAndQueue()).as("a later partial").isNotNull();
+      batcher.close();
+      sender.finish().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      assertThat(bodies.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/a\n");
+      assertThat(bodies.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/b\n/c\n/d\n");
+      assertThat(bodies.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/e\n");
+      assertThat(bodies).isEmpty();
+    } finally {
+      TestingParameters.stop(server);
+    }
   }
 
   /// The sender stops once it is finishing, all its batchers are closed and all is sent. A

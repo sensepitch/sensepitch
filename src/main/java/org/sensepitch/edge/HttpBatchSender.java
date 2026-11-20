@@ -31,16 +31,19 @@ import java.util.concurrent.atomic.AtomicLong;
 /// Buffering: each thread that logs encodes its records into a batch of its own, see
 /// [ThreadBatcher], so logging a request neither allocates nor contends. A full batch is posted
 /// right away. When the flush interval is over, the partly filled batches of all threads are
-/// collected and posted together, packed into as few requests as possible. The batches waiting to
-/// be sent are limited by `maxBufferedBytes`; beyond that, threads drop new records and count them
-/// in `sensepitch_request_log_dropped_total`.
+/// taken and queued together, packed into as few requests as possible. A partial batch enters the
+/// queue when its thread's batcher takes it, so a full batch the same thread hands over right
+/// after it cannot overtake it. The batches waiting to be sent are limited by `maxBufferedBytes`;
+/// beyond that, threads drop new records and count them in
+/// `sensepitch_request_log_dropped_total`.
 ///
 /// Sending: batches are posted concurrently with [HttpClient#sendAsync], at most
-/// `maxConcurrentRequests` at a time; more wait in a queue until a request completes. So batches
-/// may arrive out of order, the records within a batch keep theirs. There is no sender thread:
-/// the work runs on the threads of the HTTP client, of the shared timer of [CompletableFuture]
-/// and of the threads that hand off a full batch. With compression, see [GzipCompressor], a post
-/// is compressed and sent on the common pool instead, so an event loop never compresses.
+/// `maxConcurrentRequests` at a time; more wait in a queue until a request completes. With one
+/// request at a time they arrive in the order they were handed over; with more, batches may
+/// arrive out of order, the records within a batch keep theirs. There is no sender thread: the
+/// work runs on the threads of the HTTP client, of the shared timer of [CompletableFuture] and of
+/// the threads that hand off a full batch. With compression, see [GzipCompressor], a post is
+/// compressed and sent on the common pool instead, so an event loop never compresses.
 ///
 /// Failures: a failure that the OTLP specification considers retryable, i.e. a connection error,
 /// a timeout or the status codes 429, 502, 503 and 504, opens the [CircuitBreaker] of the
@@ -98,9 +101,23 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
       Backoff backoff) {}
 
   /// The batches of one request, with their size, records, and the age of the oldest record
-  record Post<B extends Batch>(List<B> batches, long size, long records, long firstRecordNanos) {
+  ///
+  /// @param packable a post of one partly filled batch taken by the flush; adjacent ones are
+  ///   packed into one request, so several threads share a request
+  record Post<B extends Batch>(
+      List<B> batches, long size, long records, long firstRecordNanos, boolean packable) {
 
+    /// A post of full batches, or of batches collected for one request
     static <B extends Batch> Post<B> of(List<B> batches) {
+      return of(batches, false);
+    }
+
+    /// The partly filled batch the flush took from a thread
+    static <B extends Batch> Post<B> partialOf(B batch) {
+      return of(List.of(batch), true);
+    }
+
+    private static <B extends Batch> Post<B> of(List<B> batches, boolean packable) {
       long size = 0;
       long records = 0;
       long first = batches.getFirst().firstRecordNanos;
@@ -111,7 +128,19 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
           first = batch.firstRecordNanos;
         }
       }
-      return new Post<>(batches, size, records, first);
+      return new Post<>(batches, size, records, first, packable);
+    }
+
+    /// One request with the batches of this post, then those of `next`
+    Post<B> append(Post<B> next) {
+      List<B> all = new ArrayList<>(batches);
+      all.addAll(next.batches);
+      return new Post<>(
+          all,
+          size + next.size,
+          records + next.records,
+          Math.min(firstRecordNanos, next.firstRecordNanos),
+          true);
     }
   }
 
@@ -297,6 +326,21 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
     return batcher;
   }
 
+  /// Queues the partly filled batch the flush took from a thread, at once, so a batch the same
+  /// thread hands over later cannot overtake it. Adjacent partial batches are packed into one
+  /// request up to `batchBytes`. The caller dispatches, see [#flush()].
+  void submitPartial(B batch) {
+    Post<B> partial = Post.partialOf(batch);
+    synchronized (lock) {
+      Post<B> tail = parked.peekLast();
+      if (tail != null && tail.packable() && tail.size() + partial.size() <= batchBytes) {
+        parked.removeLast();
+        partial = tail.append(partial);
+      }
+      parked.addLast(partial);
+    }
+  }
+
   /// Posts a filled batch and returns an empty one, from the pool or new.
   ///
   /// @return an empty batch, or `null` if the waiting batches would exceed the limit, then the
@@ -389,11 +433,11 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
         .execute(this::flush);
   }
 
-  /// Takes the partly filled batches of all threads and posts them together, drops aged batches.
-  /// Runs every flush interval until the sender stopped.
+  /// Takes the partly filled batches of all threads, queues them for packing, and dispatches,
+  /// which also drops aged batches. Runs every flush interval until the sender stopped.
   private void flush() {
     try {
-      submitPacked(collectPartialBatches());
+      collectPartialBatches();
       dispatch();
     } finally {
       if (!stopped.isDone()) {
@@ -402,40 +446,16 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
     }
   }
 
-  /// The partly filled batches of the threads, already counted as waiting. A thread that has
-  /// terminated without closing its batcher, e.g. not a Netty thread, cannot log anymore, its
-  /// batcher is closed here.
-  private List<B> collectPartialBatches() {
-    List<B> partial = new ArrayList<>();
+  /// The partly filled batches of the threads, queued and already counted as waiting. A thread
+  /// that has terminated without closing its batcher, e.g. not a Netty thread, cannot log anymore,
+  /// its batcher is closed here.
+  private void collectPartialBatches() {
     for (ThreadBatcher<B> batcher : batchers) {
       if (batcher.owner().isAlive()) {
-        B batch = batcher.takePartial();
-        if (batch != null) {
-          partial.add(batch);
-        }
+        batcher.takePartialAndQueue();
       } else {
         batcher.close();
       }
-    }
-    return partial;
-  }
-
-  /// Submits the partly filled batches collected by the flush, packed into posts of up to the
-  /// batch size, so a flush sends one request per batch size, not one per thread
-  private void submitPacked(List<B> batches) {
-    List<B> current = new ArrayList<>();
-    long size = 0;
-    for (B batch : batches) {
-      if (!current.isEmpty() && size + batch.size() > batchBytes) {
-        submit(Post.of(current));
-        current = new ArrayList<>();
-        size = 0;
-      }
-      current.add(batch);
-      size += batch.size();
-    }
-    if (!current.isEmpty()) {
-      submit(Post.of(current));
     }
   }
 
