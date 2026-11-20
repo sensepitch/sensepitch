@@ -320,6 +320,33 @@ public class FlowAndExceptionTest {
     }
   }
 
+  /// An upstream that becomes writable again releases only a read pause imposed by this exchange,
+  /// the other way out of the pause besides [#earlyResponseRestoresClientReadState(boolean)].
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  public void writableAgainRestoresClientReadState(boolean initiallyReading) {
+    EmbeddedChannel downstream = new EmbeddedChannel();
+    EmbeddedChannel upstream = (EmbeddedChannel) upstreamChannel(downstream);
+    try {
+      downstream.config().setAutoRead(initiallyReading);
+      upstream.config().setWriteBufferWaterMark(new WriteBufferWaterMark(1000, 2000));
+      upstreamFlushBlocker.blocked = true;
+      upstream.writeAndFlush(Unpooled.wrappedBuffer(new byte[5000]));
+      upstream.runPendingTasks();
+      assertThat(upstream.isWritable()).isFalse();
+      assertThat(downstream.config().isAutoRead()).isFalse();
+
+      upstreamFlushBlocker.release(upstream);
+      upstream.runPendingTasks();
+
+      assertThat(upstream.isWritable()).isTrue();
+      assertThat(downstream.config().isAutoRead()).isEqualTo(initiallyReading);
+    } finally {
+      upstream.finishAndReleaseAll();
+      downstream.finishAndReleaseAll();
+    }
+  }
+
   @Test
   public void writabilityChangeAfterResponseIsIgnored() {
     EmbeddedChannel downstream = new EmbeddedChannel();

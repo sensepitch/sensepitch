@@ -87,7 +87,12 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
     }
   }
 
-  /// Flush if output buffer is full and apply back pressure to downstream
+  /// Flush if output buffer is full and apply back pressure to downstream: pause the client reads
+  /// if they are on, and resume only a pause imposed here, when the upstream is writable again or
+  /// at the end of the response, see [#resumeDownstreamReads()]. Today nothing else switches the
+  /// client reads off while the upstream is unwritable: the pause of [DownstreamHandler] during the
+  /// upstream connect ends before the request is flushed. The guard keeps a future second reason
+  /// to pause, e.g. rate limiting, intact.
   @Override
   public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
     if (downstream == null) {
