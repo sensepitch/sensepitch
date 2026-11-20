@@ -358,7 +358,9 @@ class OtlpLogDestinationTest {
   @Test
   void compressionLevelDefaultsAndValidates() {
     OtlpConfig defaults = config().build();
-    assertThat(defaults.effectiveCompressionLevel()).isEqualTo(Deflater.BEST_SPEED);
+    assertThat(defaults.compressionLevel()).isEqualTo(Deflater.BEST_SPEED);
+    assertThat(config().compressionLevel(0).build().compressionLevel())
+        .isEqualTo(Deflater.BEST_SPEED);
     assertThat(OtlpLogDestination.settings("otlp", defaults).compressionLevel())
         .isEqualTo(Deflater.BEST_SPEED);
     for (int level : List.of(Deflater.BEST_SPEED, Deflater.BEST_COMPRESSION)) {
@@ -568,7 +570,7 @@ class OtlpLogDestinationTest {
             // one request at a time, so the batches arrive in order
             .maxConcurrentRequests(1)
             .build();
-    long limit = config.effectiveMaxBufferedBytes();
+    long limit = config.maxBufferedBytes();
     destination = fastDestination(config);
     OtlpRequestLogger logger = new OtlpRequestLogger(destination);
     // a few batches more than the limit holds
@@ -926,8 +928,7 @@ class OtlpLogDestinationTest {
     destination = fastDestination(config);
     OtlpRequestLogger logger = new OtlpRequestLogger(destination);
     // two batches more than the limit holds
-    int total =
-        (int) ((config.effectiveMaxBufferedBytes() + 2L * batchBytes) / framedSize(request("/0")));
+    int total = (int) ((config.maxBufferedBytes() + 2L * batchBytes) / framedSize(request("/0")));
     for (int i = 0; i < total; i++) {
       logger.logRequest(request("/" + i));
     }
@@ -999,13 +1000,18 @@ class OtlpLogDestinationTest {
             io.netty.channel.nio.NioIoHandler.newFactory());
     try {
       OtlpConfig defaults = config().build();
-      assertThat(defaults.effectiveMaxBufferedBytes())
+      assertThat(defaults.maxBufferedBytes())
           .isEqualTo(2L * group.executorCount() * OtlpConfig.DEFAULT_BATCH_BYTES);
       new OtlpLogDestination("otlp", defaults).finish();
       assertThat(logs.messages(OtlpLogDestination.class))
           .noneSatisfy(m -> assertThat(m).contains("not respected"));
+      assertThat(defaults.toBuilder().maxBufferedBytes(0).build())
+          .as("derived again after toBuilder(), for this JVM")
+          .isEqualTo(defaults);
       int larger = (int) defaults.minMaxBufferedBytes() + 1;
-      assertThat(config().maxBufferedBytes(larger).build().effectiveMaxBufferedBytes())
+      assertThat(
+              OtlpLogDestination.settings("otlp", config().maxBufferedBytes(larger).build())
+                  .maxBufferedBytes())
           .isEqualTo(larger);
     } finally {
       group.shutdownGracefully();
@@ -1019,7 +1025,7 @@ class OtlpLogDestinationTest {
         new io.netty.channel.MultiThreadIoEventLoopGroup(
             io.netty.channel.nio.NioIoHandler.newFactory());
     try {
-      assertThat(OtlpConfig.builder().build().effectiveMaxConcurrentRequests())
+      assertThat(OtlpConfig.builder().build().maxConcurrentRequests())
           .isEqualTo(group.executorCount());
     } finally {
       group.shutdownGracefully();
@@ -1043,7 +1049,8 @@ class OtlpLogDestinationTest {
             .batchBytes(OtlpConfig.MIN_BATCH_BYTES)
             .maxBufferedBytes(OtlpConfig.MIN_BATCH_BYTES - 1)
             .build();
-    assertThat(tooSmall.effectiveMaxBufferedBytes()).isEqualTo(tooSmall.minMaxBufferedBytes());
+    assertThat(OtlpLogDestination.settings("otlp", tooSmall).maxBufferedBytes())
+        .isEqualTo(tooSmall.minMaxBufferedBytes());
     new OtlpLogDestination("otlp", tooSmall).finish();
     assertThat(logs.messages(OtlpLogDestination.class))
         .anySatisfy(
@@ -1055,7 +1062,7 @@ class OtlpLogDestinationTest {
                             + " not respected, using the minimum "
                             + tooSmall.minMaxBufferedBytes()
                             + " = 2 × "
-                            + OtlpConfig.defaultEventLoopThreads()
+                            + ProxyEnvironment.current().eventLoopThreads()
                             + " event loops × "
                             + OtlpConfig.MIN_BATCH_BYTES
                             + " batchBytes"));
@@ -1079,7 +1086,8 @@ class OtlpLogDestinationTest {
     OtlpLogDestination https =
         new OtlpLogDestination("otlp", config().endpoint("https://127.0.0.1:1/v1/logs").build());
     https.finish();
-    assertThat(config().timeoutMillis(1234).build().effectiveTimeoutMillis()).isEqualTo(1234);
+    assertThat(OtlpLogDestination.settings("otlp", config().timeoutMillis(1234).build()).timeout())
+        .isEqualTo(java.time.Duration.ofMillis(1234));
   }
 
   /// The resource identifies the instance by default, configured attributes override defaults

@@ -25,34 +25,39 @@ class ProxyAcceptGraceTest {
 
   @RegisterExtension LogCapture logs = new LogCapture();
 
+  /// Shutdown and drain timeout, `null` if omitted, accept grace, valid
   static Stream<Arguments> budgets() {
     return Stream.of(
-        Arguments.of(0L, 0L, 0L, true),
-        Arguments.of(0L, 0L, 3334L, true),
-        Arguments.of(0L, 0L, 3335L, false),
-        Arguments.of(6000L, 0L, 4000L, true),
-        Arguments.of(6000L, 0L, 4001L, false),
+        Arguments.of(null, null, 0L, true),
+        Arguments.of(null, null, 3334L, true),
+        Arguments.of(null, null, 3335L, false),
+        Arguments.of(6000L, null, 4000L, true),
+        Arguments.of(6000L, null, 4001L, false),
         Arguments.of(5000L, 1000L, 4000L, true),
         Arguments.of(5000L, 1000L, 4001L, false),
         Arguments.of(5000L, 5000L, 0L, true),
         Arguments.of(5000L, 5000L, 1L, false),
-        Arguments.of(0L, 0L, -1L, false),
-        Arguments.of(0L, 0L, Long.MAX_VALUE, false),
+        Arguments.of(null, null, -1L, false),
+        Arguments.of(null, null, Long.MAX_VALUE, false),
         Arguments.of(Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, false));
   }
 
   @ParameterizedTest
   @MethodSource("budgets")
-  void validatesTheBudget(long total, long drain, long grace, boolean valid) {
-    ProxyConfig cfg =
+  void validatesTheBudget(Long total, Long drain, long grace, boolean valid) {
+    ProxyConfig.Builder builder =
         COMMON_CONFIG.toBuilder()
-            .shutdownTimeoutMillis(total)
             .shutdownAcceptGraceMillis(grace)
-            .requestLog(RequestLogConfig.builder().drainTimeoutMillis(drain).build())
-            .build();
+            .requestLog(RequestLogConfig.builder().drainTimeoutMillis(drain).build());
+    if (total != null) {
+      builder.shutdownTimeoutMillis(total);
+    }
+    ProxyConfig cfg = builder.build();
     if (valid) {
-      assertThat(cfg.effectiveDrainTimeoutMillis())
-          .isEqualTo(drain > 0 ? drain : (total > 0 ? total : 5000) / 3);
+      cfg.checkShutdownBudget();
+      long expectedTotal = total != null ? total : ProxyConfig.DEFAULT_SHUTDOWN_TIMEOUT_MILLIS;
+      assertThat(cfg.requestLog().drainTimeoutMillis())
+          .isEqualTo(drain != null ? drain : expectedTotal / 3);
     } else {
       assertThatThrownBy(() -> new Proxy(cfg, new RequestLogCapture()))
           .isInstanceOf(IllegalArgumentException.class)

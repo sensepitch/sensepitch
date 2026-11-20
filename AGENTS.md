@@ -66,6 +66,10 @@
 - Lombok is enabled; `lombok.config` sets the `Builder` class name. `toBuilder` can't be enabled
   globally, so config records declare `@Builder(toBuilder = true)` explicitly.
 - Keep class and method names descriptive and consistent with existing `*Config`, `*Handler`, and `*Lookup` patterns.
+- Config records are complete: defaults are preset in an overridden `builder()`, derived ones are
+  computed in the builder's `build()` from the other values and a `ProxyEnvironment`. No
+  `effective*` getters and no `0` meaning default; the dumped config, loaded again, gives an
+  equal record.
 - Use named reusable constants for no-op implementations and immutable empty values.
 - Write no code that is not needed: no cache, wrapper or optimization in front of a library that
   already does it (e.g. the Prometheus `Counter` keeps its data points, call `labelValues` per
@@ -102,7 +106,7 @@
 - No component level tests of the YAML or environment configuration: the generic loading
   (`Main.parseConfig`, `EnvInjector`, the config records) is tested once, a new key of a
   component adds no coverage there. A component tests its configuration through the config
-  record and its builder: defaults, effective values, rejected values.
+  record and its builder: defaults, built values, rejected values.
 - When a plain JUnit test duplicates a BDD test, keep the BDD test as the unit test and move the
   JUnit one to `*IT` (runs with `verify` only). Port scenarios the BDD test lacks first, and let both
   class docs reference each other, naming the BDD test as the place for new scenarios.

@@ -76,8 +76,8 @@ The open state lasts a backoff, not a constant window:
 
 - It starts at 1 s and doubles with each failed probe, up to 30 s by default. Per-destination
   `OtlpConfig.initialRetryDelayMillis` and `maxRetryDelayMillis` set these nominal bounds in
-  milliseconds; omitted or zero values retain the defaults. Negative values and an effective
-  maximum below the effective initial delay are rejected during destination validation.
+  milliseconds; omitted values retain the defaults. Zero or negative values and a maximum below
+  the initial delay are rejected during destination validation.
 - Of the nominal delay, a random half is taken: half the delay plus a random part of the other
   half ("equal jitter"). A fleet of proxies that lost the same log server does not retry in
   lockstep, and the delay never drops near zero as with full jitter.
@@ -93,10 +93,11 @@ times per proxy, or wait too long after a short hiccup.
 ### Configure retry bounds per destination
 
 Different collectors can need different retry frequencies. The bounds belong to
-[`OtlpConfig`](../../src/main/java/org/sensepitch/edge/OtlpConfig.java), which passes effective
-values into the existing `Backoff`; jitter and the precedence of a longer `Retry-After` stay
-unchanged. Keeping zero as the default sentinel preserves existing YAML and environment setups
-and allows either bound to be overridden independently, provided the effective pair is valid.
+[`OtlpConfig`](../../src/main/java/org/sensepitch/edge/OtlpConfig.java), whose builder presets
+the defaults, so the built values go into the existing `Backoff`; jitter and the precedence of a
+longer `Retry-After` stay unchanged. Either bound can be overridden independently, provided the
+built pair is valid. Zero was first kept as the default sentinel; it is rejected since the config
+records are complete (2026-11-20), an omitted key keeps the default.
 The nominal maximum is not a cap on `Retry-After`, which retains its separate 300 s cap.
 
 A reload uses the existing destination replacement mechanism: changing either option creates

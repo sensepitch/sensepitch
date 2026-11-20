@@ -614,6 +614,16 @@ reloaded, so adding the marker enables live reload. Starting the proxy does not 
 
 Keep-alive connections use the new configuration from their next request on.
 
+The startup log's `Configuration:` dump includes builder defaults and derived values such as
+`requestLog.drainTimeoutMillis` and `otlp.maxBufferedBytes`. It can be loaded again after any
+masked inline secrets are restored.
+
+If an existing configuration uses explicit zero to select the default for
+`shutdownTimeoutMillis`, `requestLog.drainTimeoutMillis`, or OTLP `timeoutMillis`,
+`flushIntervalMillis`, `batchBytes`, `maxConcurrentRequests`, `maximumUnsentLogAgeMillis`,
+`initialRetryDelayMillis`, or `maxRetryDelayMillis`, omit that key. Those settings now require
+positive values when supplied.
+
 ### Secrets
 
 A secret is configured as an object, either inline with `value` or with `file`, e.g. a mounted
@@ -706,7 +716,8 @@ requestLog:
 
 The example allows 2 seconds for routing updates, 5 seconds for the requests in flight and 3
 seconds for the request log. The accept grace plus the drain timeout must fit into the shutdown
-timeout, negative values are rejected.
+timeout. The shutdown and drain timeouts must be positive, and the accept grace must be zero
+or positive.
 
 A phase that runs out of time is logged at level `INFO` with what was left: the requests in
 flight per upstream, or the request log records not sent per destination. Records not sent by
@@ -779,7 +790,9 @@ requestLog:
         maxRetryDelayMillis: 30000
         flushIntervalMillis: 1000
         batchBytes: 1048576       # per event loop buffer and request
-        maxBufferedBytes: 67108864  # batches waiting during an outage
+        maxBufferedBytes: 67108864  # default and minimum 2 × event loops × batchBytes
+        maxConcurrentRequests: 32 # defaults to the number of event loops
+        maximumUnsentLogAgeMillis: 300000
         compression: gzip         # or none
         compressionLevel: 1       # 1 fastest (default) .. 9 smallest
 ````
@@ -807,9 +820,9 @@ Everything specific to OTLP is in the `otlp` object, which is rejected on a `std
 - **Outages:** connection errors, timeouts and the status codes 429, 502, 503 and 504 are retried
   with exponential backoff, honouring `Retry-After`. The nominal delay starts at
   `otlp.initialRetryDelayMillis` (1000 ms) and doubles up to `otlp.maxRetryDelayMillis`
-  (30000 ms); jitter picks between half and all of that delay. Omitted or zero values use
-  these defaults. Negative values or an effective maximum below the effective initial delay
-  reject the destination. A maximum above `otlp.maximumUnsentLogAgeMillis` lets batches age
+  (30000 ms). Jitter picks between half and all of that delay. Omitted values use these
+  defaults. Zero or negative values or a maximum below the initial delay reject the
+  destination. A maximum above `otlp.maximumUnsentLogAgeMillis` lets batches age
   out between two probes. A longer `Retry-After` can exceed the configured maximum, capped
   at 300 seconds. Changing either option on reload replaces the destination: new records use
   the new delays, buffered records drain with the old settings. The batches wait meanwhile,

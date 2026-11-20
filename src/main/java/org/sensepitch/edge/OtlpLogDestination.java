@@ -59,53 +59,46 @@ public class OtlpLogDestination extends HttpBatchSender<OtlpBatch> {
       throw new IllegalArgumentException(
           "Request log destination " + name + ": endpoint must be an http or https URL");
     }
-    if (config.batchBytes() != 0 && config.batchBytes() < OtlpConfig.MIN_BATCH_BYTES) {
+    requirePositive(name, "timeoutMillis", config.timeoutMillis());
+    requirePositive(name, "flushIntervalMillis", config.flushIntervalMillis());
+    if (config.batchBytes() < OtlpConfig.MIN_BATCH_BYTES) {
       throw new IllegalArgumentException(
           "Request log destination "
               + name
               + ": batchBytes must be at least "
               + OtlpConfig.MIN_BATCH_BYTES);
     }
-    if (config.maxBufferedBytes() > 0 && config.maxBufferedBytes() < config.minMaxBufferedBytes()) {
+    long maxBufferedBytes = config.maxBufferedBytes();
+    long minMaxBufferedBytes = config.minMaxBufferedBytes();
+    if (maxBufferedBytes < minMaxBufferedBytes) {
       // a hint in case the setting was taken as a limit per thread or per batch
       ProxyLogger.get(OtlpLogDestination.class)
           .warn(
               "Request log destination "
                   + name
                   + ": maxBufferedBytes "
-                  + config.maxBufferedBytes()
+                  + maxBufferedBytes
                   + " not respected, using the minimum "
-                  + config.minMaxBufferedBytes()
+                  + minMaxBufferedBytes
                   + " = 2 × "
-                  + OtlpConfig.defaultEventLoopThreads()
+                  + ProxyEnvironment.current().eventLoopThreads()
                   + " event loops × "
-                  + config.effectiveBatchBytes()
+                  + config.batchBytes()
                   + " batchBytes, the limit of all batches waiting to be sent");
+      maxBufferedBytes = minMaxBufferedBytes;
     }
-    if (config.maxConcurrentRequests() < 0) {
-      throw new IllegalArgumentException(
-          "Request log destination " + name + ": maxConcurrentRequests must be positive");
-    }
-    if (config.maximumUnsentLogAgeMillis() < 0) {
-      throw new IllegalArgumentException(
-          "Request log destination " + name + ": maximumUnsentLogAgeMillis must be positive");
-    }
-    if (config.initialRetryDelayMillis() < 0) {
-      throw new IllegalArgumentException(
-          "Request log destination " + name + ": initialRetryDelayMillis must not be negative");
-    }
-    if (config.maxRetryDelayMillis() < 0) {
-      throw new IllegalArgumentException(
-          "Request log destination " + name + ": maxRetryDelayMillis must not be negative");
-    }
-    if (config.effectiveMaxRetryDelayMillis() < config.effectiveInitialRetryDelayMillis()) {
+    requirePositive(name, "maxConcurrentRequests", config.maxConcurrentRequests());
+    requirePositive(name, "maximumUnsentLogAgeMillis", config.maximumUnsentLogAgeMillis());
+    requirePositive(name, "initialRetryDelayMillis", config.initialRetryDelayMillis());
+    requirePositive(name, "maxRetryDelayMillis", config.maxRetryDelayMillis());
+    if (config.maxRetryDelayMillis() < config.initialRetryDelayMillis()) {
       throw new IllegalArgumentException(
           "Request log destination "
               + name
-              + ": effective maxRetryDelayMillis must be at least effective initialRetryDelayMillis");
+              + ": maxRetryDelayMillis must be at least initialRetryDelayMillis");
     }
-    String compression = config.effectiveCompression();
-    if (!compression.equals(OtlpConfig.GZIP) && !compression.equals(OtlpConfig.NONE)) {
+    String compression = config.compression();
+    if (!OtlpConfig.GZIP.equals(compression) && !OtlpConfig.NONE.equals(compression)) {
       throw new IllegalArgumentException(
           "Request log destination "
               + name
@@ -116,7 +109,7 @@ public class OtlpLogDestination extends HttpBatchSender<OtlpBatch> {
               + ", not "
               + compression);
     }
-    int compressionLevel = config.effectiveCompressionLevel();
+    int compressionLevel = config.compressionLevel();
     if (compressionLevel < OtlpConfig.MIN_COMPRESSION_LEVEL
         || compressionLevel > OtlpConfig.MAX_COMPRESSION_LEVEL) {
       throw new IllegalArgumentException(
@@ -127,22 +120,30 @@ public class OtlpLogDestination extends HttpBatchSender<OtlpBatch> {
               + " and "
               + OtlpConfig.MAX_COMPRESSION_LEVEL
               + ", not "
-              + config.compressionLevel());
+              + compressionLevel);
     }
     return new Settings(
         name,
         uri,
         config.headers() != null ? Map.copyOf(config.headers()) : Map.of(),
-        Duration.ofMillis(config.effectiveTimeoutMillis()),
-        config.effectiveBatchBytes(),
-        config.effectiveMaxBufferedBytes(),
-        config.effectiveMaxConcurrentRequests(),
-        config.effectiveMaximumUnsentLogAgeMillis(),
-        config.effectiveFlushIntervalMillis(),
+        Duration.ofMillis(config.timeoutMillis()),
+        config.batchBytes(),
+        maxBufferedBytes,
+        config.maxConcurrentRequests(),
+        config.maximumUnsentLogAgeMillis(),
+        config.flushIntervalMillis(),
         compression.equals(OtlpConfig.GZIP),
         compressionLevel,
-        new Backoff(
-            config.effectiveInitialRetryDelayMillis(), config.effectiveMaxRetryDelayMillis()));
+        new Backoff(config.initialRetryDelayMillis(), config.maxRetryDelayMillis()));
+  }
+
+  /// Rejects a number that has no meaning at zero or below, for [#settings(String, OtlpConfig)].
+  /// The defaults are preset by the builder, so `0` is never a placeholder for a default.
+  private static void requirePositive(String name, String key, long value) {
+    if (value <= 0) {
+      throw new IllegalArgumentException(
+          "Request log destination " + name + ": " + key + " must be positive");
+    }
   }
 
   /// Encoded `Resource` message. By default with `service.name`, `service.instance.id` (the host

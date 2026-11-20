@@ -71,12 +71,13 @@ class ProxyShutdownIT {
   private ProxyConfig config;
   private int port;
 
-  void startProxy(long shutdownTimeoutMillis, long drainTimeoutMillis) throws Exception {
+  /// @param drainTimeoutMillis `null` for the default, a third of the shutdown timeout
+  void startProxy(long shutdownTimeoutMillis, Long drainTimeoutMillis) throws Exception {
     startProxy(shutdownTimeoutMillis, drainTimeoutMillis, System::nanoTime, LockSupport::parkNanos);
   }
 
   void startProxy(
-      long shutdownTimeoutMillis, long drainTimeoutMillis, LongSupplier clock, LongConsumer wait)
+      long shutdownTimeoutMillis, Long drainTimeoutMillis, LongSupplier clock, LongConsumer wait)
       throws Exception {
     upstream = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     upstream.createContext(
@@ -196,7 +197,7 @@ class ProxyShutdownIT {
   /// destinations before the shutdown returns, well before the timeout
   @Test
   void requestInFlightCompletes() throws Exception {
-    startProxy(10_000, 0);
+    startProxy(10_000, null);
     upstreamDelayMillis = 300;
     try (SSLSocket socket = tlsSocket()) {
       send(socket, "upstream.com");
@@ -221,7 +222,7 @@ class ProxyShutdownIT {
   /// An idle keep-alive connection is closed at once
   @Test
   void idleConnectionIsClosed() throws Exception {
-    startProxy(10_000, 0);
+    startProxy(10_000, null);
     try (SSLSocket socket = tlsSocket()) {
       send(socket, "example.com");
       assertThat(readResponse(socket.getInputStream()))
@@ -240,7 +241,7 @@ class ProxyShutdownIT {
   /// flight are reported.
   @Test
   void slowRequestIsAbortedAndStillLogged() throws Exception {
-    startProxy(2_000, 1_000);
+    startProxy(2_000, 1_000L);
     upstreamDelayMillis = 5_000;
     try (SSLSocket socket = tlsSocket()) {
       send(socket, "upstream.com");
@@ -267,7 +268,7 @@ class ProxyShutdownIT {
   /// With the log server down, the shutdown ends at its timeout and reports the records not sent
   @Test
   void unsentRecordsAreReported() throws Exception {
-    startProxy(1_000, 500);
+    startProxy(1_000, 500L);
     try (SSLSocket socket = tlsSocket()) {
       send(socket, "example.com");
       assertThat(readResponse(socket.getInputStream())).startsWith("HTTP/1.1 200");
@@ -288,7 +289,7 @@ class ProxyShutdownIT {
   /// never finished, and end markers for loops that are gone
   @Test
   void reloadAfterShutdownIsRejected() throws Exception {
-    startProxy(1_000, 0);
+    startProxy(1_000, null);
     proxy.shutdown();
     ReloadResult result = proxy.reload(config);
     assertThat(result.applied()).isFalse();
@@ -299,7 +300,7 @@ class ProxyShutdownIT {
   /// shutdown thread is blocked, the listener is still open; releasing the reload lets both end.
   @Test
   void shutdownWaitsForReload() throws Exception {
-    startProxy(10_000, 0);
+    startProxy(10_000, null);
     CountDownLatch readingConfig = new CountDownLatch(1);
     CountDownLatch continueReload = new CountDownLatch(1);
     Map<String, SiteConfig> pausedSites =
@@ -357,7 +358,7 @@ class ProxyShutdownIT {
     CountDownLatch releaseDelay = new CountDownLatch(1);
     startProxy(
         10_000,
-        3000,
+        3000L,
         now::get,
         nanos -> {
           assertThat(nanos).isEqualTo(TimeUnit.MILLISECONDS.toNanos(7000));

@@ -8,13 +8,27 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.sensepitch.edge.config.RecordConstructor;
 
+/// Sets the values of environment variables in a config record builder. The nested records start
+/// with their defaults, see [RecordConstructor#builder(Class, ProxyEnvironment)].
+///
 /// @author Jens Wilke
 public class EnvInjector {
 
   private EnvInjector() {}
 
+  /// Injects with the defaults of the environment of this JVM
   public static Object injectFromEnv(String prefix, Map<String, String> env, Object targetBuilder)
+      throws Exception {
+    return injectFromEnv(prefix, env, ProxyEnvironment.current(), targetBuilder);
+  }
+
+  /// Injects the variables starting with `prefix` and builds the record
+  ///
+  /// @param environment for the defaults of nested records that depend on it
+  public static Object injectFromEnv(
+      String prefix, Map<String, String> env, ProxyEnvironment environment, Object targetBuilder)
       throws Exception {
     Class<?> clazz = targetBuilder.getClass();
     for (Method method : clazz.getMethods()) {
@@ -26,15 +40,14 @@ public class EnvInjector {
       Object value;
       Class<?> paramType = method.getParameterTypes()[0];
       if (paramType.isRecord() && hasSettingsWithPrefix(env, envName)) {
-        Method builderMethod = paramType.getMethod("builder");
-        Object nestedTarget = builderMethod.invoke(null);
-        value = injectFromEnv(envName + "_", env, nestedTarget);
+        Object nestedTarget = RecordConstructor.builder(paramType, environment);
+        value = injectFromEnv(envName + "_", env, environment, nestedTarget);
       } else if (paramType.isAssignableFrom(List.class)) {
-        List<Object> list = handleList(env, method, envName);
+        List<Object> list = handleList(env, environment, method, envName);
         if (list.isEmpty()) continue;
         value = list;
       } else if (paramType.isAssignableFrom(Map.class)) {
-        Map<String, Object> map = handleMap(env, method, envName);
+        Map<String, Object> map = handleMap(env, environment, method, envName);
         if (map.isEmpty()) continue;
         value = map;
       } else {
@@ -54,7 +67,8 @@ public class EnvInjector {
     return clazz.getMethod("build").invoke(targetBuilder);
   }
 
-  private static List<Object> handleList(Map<String, String> env, Method method, String envName)
+  private static List<Object> handleList(
+      Map<String, String> env, ProxyEnvironment environment, Method method, String envName)
       throws Exception {
     ParameterizedType pt = (ParameterizedType) method.getGenericParameterTypes()[0];
     Class targetType = (Class) pt.getActualTypeArguments()[0];
@@ -64,12 +78,11 @@ public class EnvInjector {
       list.addAll(Arrays.asList(sa));
     } else {
       if (targetType.isRecord()) {
-        Method builderMethod = targetType.getMethod("builder");
         for (int i = 0; true; i++) {
           String indexPrefix = envName + "_" + i + "_";
           if (hasSettingsWithPrefix(env, indexPrefix)) {
-            Object nestedTarget = builderMethod.invoke(null);
-            list.add(injectFromEnv(indexPrefix, env, nestedTarget));
+            Object nestedTarget = RecordConstructor.builder(targetType, environment);
+            list.add(injectFromEnv(indexPrefix, env, environment, nestedTarget));
           } else {
             break;
           }
@@ -89,7 +102,8 @@ public class EnvInjector {
   }
 
   private static Map<String, Object> handleMap(
-      Map<String, String> env, Method method, String envName) throws Exception {
+      Map<String, String> env, ProxyEnvironment environment, Method method, String envName)
+      throws Exception {
     ParameterizedType pt = (ParameterizedType) method.getGenericParameterTypes()[0];
     Class targetType = (Class) pt.getActualTypeArguments()[1];
     Map<String, Object> map = new LinkedHashMap<>();
@@ -108,9 +122,8 @@ public class EnvInjector {
         }
         map.put(key, value);
       } else if (hasSettingsWithPrefix(env, indexPrefix)) {
-        Method builderMethod = targetType.getMethod("builder");
-        Object nestedTargetBuilder = builderMethod.invoke(null);
-        Object obj = injectFromEnv(indexPrefix, env, nestedTargetBuilder);
+        Object nestedTargetBuilder = RecordConstructor.builder(targetType, environment);
+        Object obj = injectFromEnv(indexPrefix, env, environment, nestedTargetBuilder);
         if (obj instanceof HasKey objWithKey) {
           map.put(objWithKey.key(), obj);
         } else {

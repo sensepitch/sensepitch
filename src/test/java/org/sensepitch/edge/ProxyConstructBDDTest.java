@@ -2,6 +2,7 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.netty.channel.MultithreadEventLoopGroup;
 import java.util.List;
 import java.util.Map;
 import net.serenitybdd.annotations.Step;
@@ -114,6 +115,16 @@ class ProxyConstructBDDTest {
         .then_expect_construction_failure_containing("/does/not/exist/country.mmdb");
   }
 
+  /// The proxy has as many event loops as its environment says, the one the configuration
+  /// defaults are derived from, e.g. [OtlpConfig#maxConcurrentRequests()]
+  @Test
+  void eventLoopsFollowTheEnvironment() {
+    steps
+        .given_the_configuration(routingConfig(SiteConfig.builder().upstream(LOCAL).build()))
+        .then_expect_initialized_without_exception()
+        .then_expect_the_event_loops_of_the_environment();
+  }
+
   @Test
   void exactPathAccepted() {
     SiteConfig site =
@@ -168,6 +179,18 @@ class ProxyConstructBDDTest {
     @Step
     T then_expect_initialized_without_exception() {
       assertThat(constructionFailure).isNull();
+      return (T) this;
+    }
+
+    @Step("The proxy has the event loops of the current environment")
+    T then_expect_the_event_loops_of_the_environment() {
+      try {
+        assertThat(proxy.environment()).isEqualTo(ProxyEnvironment.current());
+        assertThat(((MultithreadEventLoopGroup) proxy.eventLoopGroup()).executorCount())
+            .isEqualTo(proxy.environment().eventLoopThreads());
+      } finally {
+        proxy.shutdown();
+      }
       return (T) this;
     }
   }

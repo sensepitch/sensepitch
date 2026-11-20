@@ -48,9 +48,13 @@ public class Main {
       watcher.start(content -> proxy.reload(parseConfig(content)), proxy::referencedFiles);
       reload = watcher::forceReload;
     } else {
-      ProxyConfig.Builder builder = ProxyConfig.builder();
-      EnvInjector.injectFromEnv("SENSEPITCH_EDGE_", System.getenv(), builder);
-      config = builder.build();
+      config =
+          (ProxyConfig)
+              EnvInjector.injectFromEnv(
+                  "SENSEPITCH_EDGE_",
+                  System.getenv(),
+                  ProxyEnvironment.current(),
+                  ProxyConfig.builder());
       proxy = new Proxy(config);
     }
     AdminServer admin =
@@ -115,17 +119,23 @@ public class Main {
 
   static ProxyConfig loadConfig(Path file) {
     try (Reader reader = Files.newBufferedReader(file)) {
-      return construct(new Yaml().compose(reader));
+      return construct(new Yaml().compose(reader), ProxyEnvironment.current());
     } catch (IOException e) {
       throw new UncheckedIOException(e);
     }
   }
 
   static ProxyConfig parseConfig(String yaml) {
-    return construct(new Yaml().compose(new StringReader(yaml)));
+    return parseConfig(yaml, ProxyEnvironment.current());
   }
 
-  private static ProxyConfig construct(Node root) {
-    return RecordConstructor.construct(ProxyConfig.class, root);
+  /// Parses the configuration, defaults that depend on the environment are taken from
+  /// `environment`, e.g. a fixed one in tests
+  static ProxyConfig parseConfig(String yaml, ProxyEnvironment environment) {
+    return construct(new Yaml().compose(new StringReader(yaml)), environment);
+  }
+
+  private static ProxyConfig construct(Node root, ProxyEnvironment environment) {
+    return RecordConstructor.construct(ProxyConfig.class, root, environment);
   }
 }

@@ -359,10 +359,11 @@ class RequestLoggerFactoryTest {
   @Test
   void configDefaults() {
     OtlpConfig config = OtlpConfig.builder().build();
-    assertThat(config.effectiveTimeoutMillis()).isEqualTo(10_000);
-    assertThat(config.effectiveFlushIntervalMillis()).isEqualTo(1_000);
-    assertThat(config.effectiveBatchBytes()).isEqualTo(1024 * 1024);
-    assertThat(config.effectiveMaxBufferedBytes())
-        .isEqualTo(2L * OtlpConfig.defaultEventLoopThreads() * 1024 * 1024);
+    assertThat(config.timeoutMillis()).isEqualTo(10_000);
+    assertThat(config.flushIntervalMillis()).isEqualTo(1_000);
+    assertThat(config.batchBytes()).isEqualTo(1024 * 1024);
+    assertThat(config.maxBufferedBytes())
+        .isEqualTo(2L * ProxyEnvironment.current().eventLoopThreads() * 1024 * 1024);
+    assertThat(config.compression()).isEqualTo(OtlpConfig.GZIP);
   }
 }

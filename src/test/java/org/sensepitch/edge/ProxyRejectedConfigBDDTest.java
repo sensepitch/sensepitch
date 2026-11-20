@@ -52,19 +52,29 @@ class ProxyRejectedConfigBDDTest {
             "request log drain longer than the shutdown",
             upstreamSite.toBuilder()
                 .shutdownTimeoutMillis(1_000)
-                .requestLog(RequestLogConfig.builder().drainTimeoutMillis(2_000).build())
+                .requestLog(RequestLogConfig.builder().drainTimeoutMillis(2_000L).build())
                 .build(),
             "requestLog.drainTimeoutMillis 2000 exceeds shutdownTimeoutMillis 1000"),
         rejected(
             "negative request log drain timeout",
             upstreamSite.toBuilder()
-                .requestLog(RequestLogConfig.builder().drainTimeoutMillis(-1).build())
+                .requestLog(RequestLogConfig.builder().drainTimeoutMillis(-1L).build())
                 .build(),
-            "must not be negative"),
+            "requestLog.drainTimeoutMillis must be positive"),
+        rejected(
+            "zero request log drain timeout, no placeholder for the default",
+            upstreamSite.toBuilder()
+                .requestLog(RequestLogConfig.builder().drainTimeoutMillis(0L).build())
+                .build(),
+            "requestLog.drainTimeoutMillis must be positive"),
         rejected(
             "negative shutdown timeout",
             upstreamSite.toBuilder().shutdownTimeoutMillis(-1).build(),
-            "must not be negative"),
+            "shutdownTimeoutMillis must be positive"),
+        rejected(
+            "zero shutdown timeout, no placeholder for the default",
+            upstreamSite.toBuilder().shutdownTimeoutMillis(0).build(),
+            "shutdownTimeoutMillis must be positive"),
         rejected(
             "no sites",
             ProxyConfig.builder().listen(SSL_LISTEN).metrics(NO_METRICS).build(),

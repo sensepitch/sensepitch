@@ -36,6 +36,8 @@ import org.sensepitch.edge.config.KeyInjector;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.introspector.BeanAccess;
+import org.yaml.snakeyaml.introspector.Property;
+import org.yaml.snakeyaml.nodes.MappingNode;
 import org.yaml.snakeyaml.nodes.Tag;
 import org.yaml.snakeyaml.representer.Representer;
 
@@ -79,6 +81,9 @@ public class Proxy implements ProxyContext {
 
   /// Delegates to the current state, so the SNI handler picks up reloaded certificates
   private final Mapping<String, SslContext> sniMapping = host -> state.get().sniMapping().map(host);
+
+  /// Read once, the event loops are sized by it, see [#environment()]
+  private final ProxyEnvironment environment = ProxyEnvironment.current();
 
   private final EventLoopGroup eventLoopGroup;
 
@@ -145,13 +150,14 @@ public class Proxy implements ProxyContext {
       throw new IllegalArgumentException("Missing listen configuration");
     }
     // Validate the entire shutdown budget before allocating runtime resources.
-    config.effectiveDrainTimeoutMillis();
+    config.checkShutdownBudget();
     if (config.listen().connection() == null) {
       connectionConfig = ConnectionConfig.DEFAULT;
     } else {
       connectionConfig = config.listen().connection();
     }
-    eventLoopGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
+    eventLoopGroup =
+        new MultiThreadIoEventLoopGroup(environment.eventLoopThreads(), NioIoHandler.newFactory());
     this.config = config;
     ja4Config = config.ja4() != null ? config.ja4() : Ja4Config.DEFAULT;
     // added unconditionally, so a client can never spoof the fingerprint headers
@@ -208,7 +214,7 @@ public class Proxy implements ProxyContext {
       try {
         newConfig = KeyInjector.injectAllMapKeys(newConfig);
         warnAboutRestartOnlyChanges(newConfig);
-        newConfig.effectiveDrainTimeoutMillis();
+        newConfig.checkShutdownBudget();
         next = EdgeState.build(this, newConfig, current, files);
         // last, nothing can fail after it, so the destinations it created are always applied
         requestLog = requestLogDestinations.prepare(newConfig.requestLog(), files);
@@ -293,7 +299,8 @@ public class Proxy implements ProxyContext {
   }
 
   /// The configuration as YAML, for the log and the [EdgeState#configId(ProxyConfig, java.util.List)]. The
-  /// value of a [SecretConfig] is masked, the config id adds the secrets separately.
+  /// value of a [SecretConfig] is masked, the config id adds the secrets separately. Without class
+  /// tags, so the dump, secrets aside, can be loaded again as configuration.
   static String toYaml(ProxyConfig proxyConfig) {
     DumperOptions options = new DumperOptions();
     options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
@@ -305,7 +312,8 @@ public class Proxy implements ProxyContext {
     return yaml.dump(proxyConfig);
   }
 
-  /// Dumps a [SecretConfig] with its value masked, for [#toYaml(ProxyConfig)]
+  /// Dumps a [SecretConfig] with its value masked and the records as plain mappings, for
+  /// [#toYaml(ProxyConfig)]
   private static final class MaskingRepresenter extends Representer {
 
     MaskingRepresenter(DumperOptions options) {
@@ -322,6 +330,14 @@ public class Proxy implements ProxyContext {
             }
             return representMapping(Tag.MAP, fields, DumperOptions.FlowStyle.AUTO);
           });
+    }
+
+    /// A plain mapping instead of a global class tag, which the configuration loader rejects
+    @Override
+    protected MappingNode representJavaBean(Set<Property> properties, Object javaBean) {
+      MappingNode node = super.representJavaBean(properties, javaBean);
+      node.setTag(Tag.MAP);
+      return node;
     }
   }
 
@@ -475,7 +491,7 @@ public class Proxy implements ProxyContext {
     return shutdown.get() != null;
   }
 
-  /// Shuts down gracefully within [ProxyConfig#effectiveShutdownTimeoutMillis()], and faster
+  /// Shuts down gracefully within [ProxyConfig#shutdownTimeoutMillis()], and faster
   /// when everything is done earlier:
   ///
   /// 1. Marks readiness false, then keeps accepting and serving for
@@ -484,7 +500,7 @@ public class Proxy implements ProxyContext {
   /// 2. Stops accepting connections.
   /// 3. Closes idle connections, the others after their response, see
   ///    [TrackIngressConnectionsHandler#drain()]. Waits for that until only the drain timeout
-  ///    of the request log is left, see [ProxyConfig#effectiveDrainTimeoutMillis()].
+  ///    of the request log is left, see [RequestLogConfig#drainTimeoutMillis()].
   /// 4. Shuts down the event loops, which closes the remaining connections, their requests are
   ///    logged as aborted. Each loop writes its end marker into the request log when it ends.
   /// 5. Waits until the request log destinations sent everything, or the shutdown timeout is
@@ -515,8 +531,8 @@ public class Proxy implements ProxyContext {
 
   private void shutdownOnce() {
     ProxyConfig active = state.get().config();
-    long totalMillis = active.effectiveShutdownTimeoutMillis();
-    long drainMillis = active.effectiveDrainTimeoutMillis();
+    long totalMillis = active.shutdownTimeoutMillis();
+    long drainMillis = active.requestLog().drainTimeoutMillis();
     long start = shutdownNanoTime.getAsLong();
     long connectionsDeadline = start + TimeUnit.MILLISECONDS.toNanos(totalMillis - drainMillis);
     long deadline = start + TimeUnit.MILLISECONDS.toNanos(totalMillis);
@@ -626,5 +642,10 @@ public class Proxy implements ProxyContext {
   @Override
   public ProxyMetrics metrics() {
     return metrics;
+  }
+
+  @Override
+  public ProxyEnvironment environment() {
+    return environment;
   }
 }

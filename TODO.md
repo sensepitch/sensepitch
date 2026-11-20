@@ -321,13 +321,6 @@ the failure threshold for upstreams is under Upstream.
     logging" below; test log servers that signal each post with a `Semaphore` or queue (several
     have a `received` queue already), a latch in the reload callback. `TestingParameters.await`
     stays where no hook exists.
-- [ ] Complete config records, plan in
-  [plans/complete-config-records.md](plans/complete-config-records.md)
-  - P2, the dumped configuration is complete and can be replayed: defaults preset in an
-    overridden `builder()`, derived defaults (`maxBufferedBytes`, `maxConcurrentRequests`,
-    `requestLog.drainTimeoutMillis`) computed in the builder's `build()` from a
-    `ProxyEnvironment`, the `effective*` getters of `OtlpConfig` and `ProxyConfig` removed.
-  - Incompatible: an explicit `0` that meant "default" is rejected, see the plan.
 - [ ] Instance scoped diagnostic logging, plan in
   [plans/instance-scoped-logging.md](plans/instance-scoped-logging.md)
   - P2, test speed and clarity, no operator visible change: non-trace loggers become instance
@@ -396,6 +389,12 @@ the failure threshold for upstreams is under Upstream.
 - [ ] add CONTRIBUTING.md
 
 ## Done
+
+- [x] Complete config records, plan in
+  [plans/complete-config-records.md](plans/complete-config-records.md) (2026-11-20). Builders
+  materialize constant and derived defaults, and the YAML dump loads again as an equal record
+  with secrets restored. `OtlpConfig` and `ProxyConfig` use plain accessors for resolved values.
+  See the plan for settings that now reject an explicit zero.
 
 - [x] Add the historic admission token to the log (2026-11-20). JSON and OTLP logs include the
   original token and revisit count from verified `admission0` history. See

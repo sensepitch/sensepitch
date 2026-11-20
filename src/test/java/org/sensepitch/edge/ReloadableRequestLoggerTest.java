@@ -307,7 +307,7 @@ class ReloadableRequestLoggerTest {
     long before = threads.getCurrentThreadAllocatedBytes();
     old.logRequest(info);
     long allocated = threads.getCurrentThreadAllocatedBytes() - before;
-    assertThat(allocated).as("bytes allocated").isLessThan(otlpConfig.effectiveBatchBytes());
+    assertThat(allocated).as("bytes allocated").isLessThan(otlpConfig.batchBytes());
     assertThat(dropped("old")).isOne();
   }
 

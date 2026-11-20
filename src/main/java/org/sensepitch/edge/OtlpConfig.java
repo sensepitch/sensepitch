@@ -1,14 +1,13 @@
 package org.sensepitch.edge;
 
-import io.netty.util.NettyRuntime;
-import io.netty.util.internal.SystemPropertyUtil;
 import java.util.List;
 import java.util.Map;
 import java.util.zip.Deflater;
 import lombok.Builder;
 
 /// Settings of an `otlp` request log destination, see [RequestLogDestinationConfig#otlp()] and
-/// [OtlpLogDestination].
+/// [OtlpLogDestination]. A built record holds the values used, see [#builder(ProxyEnvironment)].
+/// Timeouts, intervals, batch size, and concurrency must be positive when specified.
 ///
 /// @param endpoint mandatory: URL the records are posted to, e.g.
 ///   `http://victorialogs:9428/insert/opentelemetry/v1/logs` or `http://collector:4318/v1/logs`
@@ -22,14 +21,13 @@ import lombok.Builder;
 ///   `service.name` defaults to {@value OtlpLogDestination#DEFAULT_SERVICE_NAME}
 /// @param timeoutMillis connect and request timeout, defaults to {@value #DEFAULT_TIMEOUT_MILLIS}
 /// @param initialRetryDelayMillis nominal delay after the first retryable failure, in milliseconds;
-///   omitted or zero uses {@value #DEFAULT_INITIAL_RETRY_DELAY_MILLIS}. Must not be negative.
+///   omitted uses {@value #DEFAULT_INITIAL_RETRY_DELAY_MILLIS}.
 /// @param maxRetryDelayMillis maximum nominal exponential retry delay, in milliseconds; omitted
-///   or zero uses {@value #DEFAULT_MAX_RETRY_DELAY_MILLIS}. Must not be negative or effectively
-///   below the initial delay. Jitter takes a random half of the nominal delay; a longer
-///   `Retry-After` can exceed this maximum. Changing either delay on reload replaces the
-///   destination; buffered records drain with the old settings, see [ReloadableRequestLogger].
-///   A maximum above `maximumUnsentLogAgeMillis` lets batches age out between two probes, and
-///   the end of an outage is noticed late.
+///   uses {@value #DEFAULT_MAX_RETRY_DELAY_MILLIS}. Must not be below the initial delay. Jitter
+///   takes a random half of the nominal delay; a longer `Retry-After` can exceed this maximum.
+///   Changing either delay on reload replaces the destination; buffered records drain with the
+///   old settings, see [ReloadableRequestLogger]. A maximum above `maximumUnsentLogAgeMillis`
+///   lets batches age out between two probes, and the end of an outage is noticed late.
 /// @param flushIntervalMillis maximum time a record waits before it is sent, defaults to
 ///   {@value #DEFAULT_FLUSH_INTERVAL_MILLIS}
 /// @param batchBytes size of a batch: each thread that logs, i.e. each event loop, encodes its
@@ -42,10 +40,11 @@ import lombok.Builder;
 ///   server is restarted. Failed requests are retried, so the batches pile up until the server is
 ///   back. When the limit is reached, new records are dropped and counted, the waiting batches are
 ///   kept. The minimum, and the default, is `2 × event loops × batchBytes`: every event loop can
-///   have one full batch waiting or in flight and one being filled. A lower value is not
+///   have one full batch waiting or in flight and one being filled. The default is derived from
+///   the final `batchBytes` when the record is built, see [Builder#build()]. A lower value is not
 ///   respected, the minimum is used and a warning is logged, see [#minMaxBufferedBytes()].
 /// @param maxConcurrentRequests requests posted at the same time; more batches wait until a
-///   request completes. With one request at a time the batches arrive in the order they were
+///   request completes. With one request at a time batches arrive in the order they were
 ///   handed over; with more, they may arrive out of order. Defaults to the number of event loops,
 ///   i.e. two per processor, so every event loop can have a full batch in flight.
 /// @param maximumUnsentLogAgeMillis a batch whose first record is older is dropped and counted.
@@ -58,8 +57,7 @@ import lombok.Builder;
 ///   `Content-Encoding: gzip`. The sizes above, e.g. `batchBytes`, are uncompressed.
 /// @param compressionLevel gzip level from {@value #MIN_COMPRESSION_LEVEL} (fastest) to
 ///   {@value #MAX_COMPRESSION_LEVEL} (smallest); omitted or zero uses
-///   {@value #DEFAULT_COMPRESSION_LEVEL}, the previous fixed level. Only used with
-///   `compression: gzip`. A higher level trades CPU for fewer bytes on the wire.
+///   {@value #DEFAULT_COMPRESSION_LEVEL}. Only used with `compression: gzip`.
 /// @author Jens Wilke
 @Builder(toBuilder = true)
 public record OtlpConfig(
@@ -72,7 +70,7 @@ public record OtlpConfig(
     int maxRetryDelayMillis,
     int flushIntervalMillis,
     int batchBytes,
-    int maxBufferedBytes,
+    long maxBufferedBytes,
     int maxConcurrentRequests,
     int maximumUnsentLogAgeMillis,
     String compression,
@@ -88,10 +86,10 @@ public record OtlpConfig(
   public static final String GZIP = "gzip";
   public static final String NONE = "none";
 
-  /// The level used before compression was configurable, and still the default
+  /// The gzip level used when the configuration does not select another one
   public static final int DEFAULT_COMPRESSION_LEVEL = Deflater.BEST_SPEED;
 
-  /// Levels accepted by [Deflater], the range exposed to the configuration
+  /// The fastest level exposed to the configuration
   public static final int MIN_COMPRESSION_LEVEL = Deflater.BEST_SPEED;
 
   /// The smallest output, at the highest CPU cost
@@ -100,74 +98,74 @@ public record OtlpConfig(
   /// A few dozen records at least
   public static final int MIN_BATCH_BYTES = 64 * 1024;
 
-  /// Timeout, or the default if not configured
-  public int effectiveTimeoutMillis() {
-    return timeoutMillis > 0 ? timeoutMillis : DEFAULT_TIMEOUT_MILLIS;
+  /// Builder with the defaults of the environment of this JVM, see
+  /// [#builder(ProxyEnvironment)]
+  public static Builder builder() {
+    return builder(ProxyEnvironment.current());
   }
 
-  /// Initial nominal retry delay, or the default if omitted or zero
-  public int effectiveInitialRetryDelayMillis() {
-    return initialRetryDelayMillis != 0
-        ? initialRetryDelayMillis
-        : DEFAULT_INITIAL_RETRY_DELAY_MILLIS;
+  /// Builder with the defaults preset. `maxConcurrentRequests` defaults to the event loops of the
+  /// environment, `maxBufferedBytes` is derived from the final `batchBytes` by [Builder#build()].
+  public static Builder builder(ProxyEnvironment environment) {
+    Builder builder =
+        new Builder()
+            .timeoutMillis(DEFAULT_TIMEOUT_MILLIS)
+            .initialRetryDelayMillis(DEFAULT_INITIAL_RETRY_DELAY_MILLIS)
+            .maxRetryDelayMillis(DEFAULT_MAX_RETRY_DELAY_MILLIS)
+            .flushIntervalMillis(DEFAULT_FLUSH_INTERVAL_MILLIS)
+            .batchBytes(DEFAULT_BATCH_BYTES)
+            .maxConcurrentRequests(environment.eventLoopThreads())
+            .maximumUnsentLogAgeMillis(DEFAULT_MAXIMUM_UNSENT_LOG_AGE_MILLIS)
+            .compression(GZIP)
+            .compressionLevel(DEFAULT_COMPRESSION_LEVEL);
+    builder.environment = environment;
+    return builder;
   }
 
-  /// Maximum nominal retry delay, or the default if omitted or zero
-  public int effectiveMaxRetryDelayMillis() {
-    return maxRetryDelayMillis != 0 ? maxRetryDelayMillis : DEFAULT_MAX_RETRY_DELAY_MILLIS;
-  }
-
-  /// Flush interval, or the default if not configured
-  public int effectiveFlushIntervalMillis() {
-    return flushIntervalMillis > 0 ? flushIntervalMillis : DEFAULT_FLUSH_INTERVAL_MILLIS;
-  }
-
-  /// Batch size, or the default if not configured
-  public int effectiveBatchBytes() {
-    return batchBytes > 0 ? batchBytes : DEFAULT_BATCH_BYTES;
-  }
-
-  /// Limit of the waiting batches: the configured value, but never below the minimum, which is
-  /// also the default
-  public long effectiveMaxBufferedBytes() {
-    return Math.max(maxBufferedBytes, minMaxBufferedBytes());
-  }
-
-  /// Lowest limit of the waiting batches: `2 × event loops × batchBytes`, so every event loop can
-  /// have one full batch waiting or in flight and one being filled. A full batch is a bit larger
-  /// than the batch size, so a limit near the batch size would drop every record.
+  /// Lowest limit of the waiting batches in this JVM: `2 × event loops × batchBytes`, so every
+  /// event loop can have one full batch waiting or in flight and one being filled. A full batch
+  /// is a bit larger than the batch size, so a limit near the batch size would drop every record.
+  /// Checked by [OtlpLogDestination], it is a rule and not a default.
   public long minMaxBufferedBytes() {
-    return 2L * defaultEventLoopThreads() * effectiveBatchBytes();
+    return minMaxBufferedBytes(ProxyEnvironment.current(), batchBytes);
   }
 
-  /// Requests at the same time, or the default, the number of event loops Netty starts by default
-  public int effectiveMaxConcurrentRequests() {
-    return maxConcurrentRequests > 0 ? maxConcurrentRequests : defaultEventLoopThreads();
+  /// The minimum and default of `maxBufferedBytes` for the given environment and batch size
+  static long minMaxBufferedBytes(ProxyEnvironment environment, int batchBytes) {
+    return 2L * environment.eventLoopThreads() * batchBytes;
   }
 
-  /// Maximum age of an unsent record, or the default if not configured
-  public int effectiveMaximumUnsentLogAgeMillis() {
-    return maximumUnsentLogAgeMillis > 0
-        ? maximumUnsentLogAgeMillis
-        : DEFAULT_MAXIMUM_UNSENT_LOG_AGE_MILLIS;
-  }
+  /// Completed by Lombok, which generates everything but the environment and [#build()]
+  public static class Builder {
 
-  /// The compression, `gzip` if not configured, see [#compression()]
-  public String effectiveCompression() {
-    return compression != null ? compression : GZIP;
-  }
+    /// Set by [OtlpConfig#builder(ProxyEnvironment)], `null` after `toBuilder()`, whose record
+    /// has all values
+    private ProxyEnvironment environment;
 
-  /// The gzip level, the default if omitted or zero
-  public int effectiveCompressionLevel() {
-    return compressionLevel != 0 ? compressionLevel : DEFAULT_COMPRESSION_LEVEL;
-  }
-
-  /// Threads of an event loop group without explicit size, as computed by Netty's
-  /// `MultithreadEventLoopGroup`
-  static int defaultEventLoopThreads() {
-    return Math.max(
-        1,
-        SystemPropertyUtil.getInt(
-            "io.netty.eventLoopThreads", NettyRuntime.availableProcessors() * 2));
+    /// Builds the record with the derived default: an omitted `maxBufferedBytes`, still `0`
+    /// here, becomes the minimum for the final `batchBytes`
+    public OtlpConfig build() {
+      long buffered = maxBufferedBytes;
+      if (buffered == 0) {
+        buffered =
+            minMaxBufferedBytes(
+                environment != null ? environment : ProxyEnvironment.current(), batchBytes);
+      }
+      return new OtlpConfig(
+          endpoint,
+          headers,
+          secretHeaders,
+          resourceAttributes,
+          timeoutMillis,
+          initialRetryDelayMillis,
+          maxRetryDelayMillis,
+          flushIntervalMillis,
+          batchBytes,
+          buffered,
+          maxConcurrentRequests,
+          maximumUnsentLogAgeMillis,
+          compression,
+          compressionLevel == 0 ? DEFAULT_COMPRESSION_LEVEL : compressionLevel);
+    }
   }
 }

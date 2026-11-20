@@ -18,13 +18,14 @@ import lombok.Builder;
 ///   rather than an empty list, so a later configuration layer can switch off a default.
 /// @param drainTimeoutMillis the part of [ProxyConfig#shutdownTimeoutMillis()] reserved for
 ///   sending the request log at shutdown, after the connections are closed. It covers the records
-///   of the requests aborted at shutdown. `0` means a third of the shutdown timeout.
+///   of the requests aborted at shutdown. Must be positive. If omitted, `null` in this record,
+///   building the [ProxyConfig] sets it to a third of the shutdown timeout.
 @Builder(toBuilder = true)
 public record RequestLogConfig(
     boolean plainText,
     List<RequestLogDestinationConfig> destinations,
     boolean disabled,
-    long drainTimeoutMillis) {
+    Long drainTimeoutMillis) {
 
   public static final RequestLogConfig DEFAULT = RequestLogConfig.builder().build();
 }
