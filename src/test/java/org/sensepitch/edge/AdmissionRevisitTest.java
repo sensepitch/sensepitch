@@ -2,11 +2,17 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.DefaultHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.handler.codec.http.cookie.ClientCookieDecoder;
@@ -21,10 +27,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-/// Drives the challenge and answer endpoints with the cookies retained by a browser.
+/// Drives the challenge and answer endpoints with the cookies retained by a browser. An admitted
+/// request is answered by a stand-in upstream. Every response is logged in the JSON request log,
+/// which shows the admission history.
 class AdmissionRevisitTest {
   private static final String TOKEN = Deflector.TOKEN_COOKIE_NAME;
   private static final String HISTORY = "admission0";
+  private static final String LOGGED_TOKEN = SensepitchLogFields.ADMISSION_TOKEN;
+  private static final String LOGGED_ORIGINAL = SensepitchLogFields.ADMISSION_ORIGINAL_TOKEN;
+  private static final String LOGGED_REVISITS = SensepitchLogFields.ADMISSION_REVISITS;
   private static final String SECRET = "secret";
   private final Map<String, Cookie> cookies = new HashMap<>();
   private final DefaultAdmissionTokenGenerator generator =
@@ -39,11 +50,22 @@ class AdmissionRevisitTest {
                   new AdmissionTokenGeneratorConfig(
                       "A", SecretConfig.builder().value(SECRET).build())))
           .build();
+  private final RequestLogCapture requestLog = new RequestLogCapture();
   private final EmbeddedChannel channel =
       new EmbeddedChannel(
+          new RequestLoggingHandler(new ProxyMetrics(), new JsonRequestLogger(requestLog)),
           new ProtectionHandler(
               new DeflectorHandler(
-                  new Deflector(config, new ConfigFiles(), () -> now), new ProxyMetrics())));
+                  new Deflector(config, new ConfigFiles(), () -> now), new ProxyMetrics())),
+          new ChannelInboundHandlerAdapter() {
+            @Override
+            public void channelRead(ChannelHandlerContext ctx, Object msg) {
+              if (msg instanceof LastHttpContent) {
+                ctx.writeAndFlush(
+                    new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK));
+              }
+            }
+          });
 
   @AfterEach
   void close() {
@@ -109,6 +131,94 @@ class AdmissionRevisitTest {
     cookies.put(TOKEN, new DefaultCookie(TOKEN, "Ainvalid"));
     request("/", 403);
     assertThat(cookies).doesNotContainKey(HISTORY);
+  }
+
+  @Test
+  void requestLogShowsTheHistoryWhereItIsIssuedAndPresented() throws Exception {
+    request("/", 403);
+    assertNoHistoryLogged(lastLog());
+    String first = answer();
+    requestAdmitted();
+    assertThat(lastLog().get(LOGGED_TOKEN).asText()).isEqualTo(first);
+    assertNoHistoryLogged(lastLog());
+    expire(first);
+    assertThat(lastLog().has(LOGGED_TOKEN)).isFalse();
+    assertHistoryLogged(lastLog(), first, 1);
+    String second = answer();
+    assertThat(lastLog().get(LOGGED_TOKEN).asText()).isEqualTo(second);
+    assertHistoryLogged(lastLog(), first, 1);
+    requestAdmitted();
+    assertThat(lastLog().get(LOGGED_TOKEN).asText()).isEqualTo(second);
+    assertHistoryLogged(lastLog(), first, 1);
+    expire(second);
+    assertHistoryLogged(lastLog(), first, 2);
+    request("/", 403);
+    assertHistoryLogged(lastLog(), first, 2);
+  }
+
+  @Test
+  void answerWithExpiredAdmissionLogsTheHistoryItStarts() throws Exception {
+    request("/", 403);
+    String token = generator.newAdmission();
+    cookies.put(TOKEN, new DefaultCookie(TOKEN, token));
+    now = generator.checkAdmission(token) + config.admissionMaxAgeMillis() + 1;
+    answer();
+    assertHistoryLogged(lastLog(), token, 1);
+  }
+
+  /// A history whose signature does not verify is neither logged nor continued, while the
+  /// admission itself still passes.
+  @ParameterizedTest
+  @ValueSource(strings = {"tampered", "wrongSecret", "retiredKey", "malformed"})
+  void unverifiedHistoryIsNotLogged(String kind) throws Exception {
+    request("/", 403);
+    String first = answer();
+    expire(first);
+    String history = value(HISTORY);
+    String second = answer();
+    String unverified =
+        switch (kind) {
+          case "tampered" -> history.replace(".1.", ".27.");
+          case "wrongSecret" ->
+              signedHistory(new DefaultAdmissionTokenGenerator(new byte[4], 'A', "other"));
+          case "retiredKey" ->
+              signedHistory(new DefaultAdmissionTokenGenerator(new byte[4], 'B', SECRET));
+          default -> "malformed";
+        };
+    cookies.put(HISTORY, new DefaultCookie(HISTORY, unverified));
+    requestAdmitted();
+    assertThat(lastLog().get(LOGGED_TOKEN).asText()).isEqualTo(second);
+    assertNoHistoryLogged(lastLog());
+    expire(second);
+    assertHistoryLogged(lastLog(), second, 1);
+  }
+
+  /// A history cookie with a valid signature by the given generator, as another node or an
+  /// earlier configuration would have issued it.
+  private static String signedHistory(DefaultAdmissionTokenGenerator signer) {
+    String payload = signer.newAdmission() + ".5";
+    return payload + "." + signer.signHistory(payload);
+  }
+
+  /// Requests a page with the current admission while it is fresh, the stand-in upstream answers.
+  private void requestAdmitted() {
+    now = generator.checkAdmission(value(TOKEN));
+    request("/", 200);
+  }
+
+  private JsonNode lastLog() throws Exception {
+    return new ObjectMapper().readTree(requestLog.lines().getLast());
+  }
+
+  private static void assertHistoryLogged(JsonNode log, String original, long revisits) {
+    assertThat(log.get(LOGGED_ORIGINAL).asText()).isEqualTo(original);
+    assertThat(log.get(LOGGED_REVISITS).isIntegralNumber()).isTrue();
+    assertThat(log.get(LOGGED_REVISITS).asLong()).isEqualTo(revisits);
+  }
+
+  private static void assertNoHistoryLogged(JsonNode log) {
+    assertThat(log.has(LOGGED_ORIGINAL)).isFalse();
+    assertThat(log.has(LOGGED_REVISITS)).isFalse();
   }
 
   private void expire(String token) {

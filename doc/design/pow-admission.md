@@ -107,6 +107,19 @@ A missing, unverified or retired-key history starts again at one with the curren
 The count describes the signed history the client presented. A client can discard or replay an
 older cookie, and concurrent requests can carry the same history.
 
+### The request log shows only verified history
+
+The deflector verifies an `admission0` cookie on every request that carries one, and only then,
+so requests without history pay no HMAC. A verified history is attached to the request as
+`Sp-Admission-Original-Token` and `Sp-Admission-Revisits`, like `Sp-Admission-Token`, and the
+request log writes it as `sensepitch.protection.admission_original_token` and
+`sensepitch.protection.admission_revisits` (a number). A response that sets the cookie, a
+challenge page for an expired admission or an answer presenting one, logs the values it issues
+instead. Admitted requests after a re-challenge thus link the fresh token to the original one.
+An unverified, forged or retired-key history is not logged: otherwise a client could put any
+token into the log and attribute its requests to another visitor. The legacy plain text format
+keeps its columns, because its readers parse by position.
+
 ### Outcomes identify the protection path
 
 The deflector reports `passed`, `bypassed`, `method_rejected`, `challenge_sent`, `answer_accepted`

@@ -309,6 +309,7 @@ public final class RequestLogFieldsWriter {
         SensepitchLogFields.TLS_CLIENT_JA4, headers.get(Ja4HeaderHandler.JA4_HEADER));
     sink.optionalString(
         SensepitchLogFields.ADMISSION_TOKEN, headers.get(Deflector.ADMISSION_TOKEN_HEADER));
+    writeAdmissionHistory(headers, sink);
     sink.optionalString(SensepitchLogFields.BYPASS, headers.get(BypassCheck.HEADER));
     sink.optionalString(
         SensepitchLogFields.TRAFFIC_TYPE, headers.get(Deflector.TRAFFIC_TYPE_HEADER));
@@ -325,6 +326,18 @@ public final class RequestLogFieldsWriter {
     }
     sink.number(SensepitchLogFields.DURATION_RECEIVE_NS, info.receiveDurationNanos());
     sink.number(SensepitchLogFields.DURATION_RESPONSE_NS, info.responseTimeNanos());
+  }
+
+  /// The verified admission history, if the deflector set it, see
+  /// [Deflector#ADMISSION_ORIGINAL_TOKEN_HEADER]
+  private static void writeAdmissionHistory(HttpHeaders headers, RequestLogSink sink) {
+    String originalToken = headers.get(Deflector.ADMISSION_ORIGINAL_TOKEN_HEADER);
+    if (originalToken != null) {
+      sink.string(SensepitchLogFields.ADMISSION_ORIGINAL_TOKEN, originalToken);
+      sink.number(
+          SensepitchLogFields.ADMISSION_REVISITS,
+          Long.parseLong(headers.get(Deflector.ADMISSION_REVISITS_HEADER)));
+    }
   }
 
   /// All request headers as `Name: value` in the order received, except

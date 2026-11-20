@@ -74,12 +74,12 @@ public class DeflectorHandler implements ProtectionPlugin {
           correct ? DeflectorOutcome.ANSWER_ACCEPTED : DeflectorOutcome.ANSWER_REJECTED;
       metrics.countDeflectorRequest(request, outcome);
       report(ctx, outcome);
-      deflector.respondToChallengeAnswer(ctx, request, correct, admission.expiredToken());
+      deflector.respondToChallengeAnswer(ctx, request, correct, admission);
     } else {
       request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_UNKNOWN);
       metrics.countDeflectorRequest(request, DeflectorOutcome.CHALLENGE_SENT);
       report(ctx, DeflectorOutcome.CHALLENGE_SENT);
-      deflector.outputChallengeHtml(ctx, request, admission.expiredToken());
+      deflector.outputChallengeHtml(ctx, request, admission);
     }
     return true;
   }

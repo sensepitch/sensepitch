@@ -380,6 +380,7 @@ a client cannot pretend to be a crawler or human traffic.
 | `Sp-Traffic-Type` | `human`: valid admission cookie or accepted challenge answer; `bot`: detected crawler; `unknown`: a configured bypass. Absent if no protection handled the request |
 | `Sp-Ingress-Pattern` | the configured wildcard when the host matched one |
 | `Sp-Admission-Token` | the validated admission token |
+| `Sp-Admission-Original-Token`, `Sp-Admission-Revisits` | the original admission token and revisit count from verified admission history |
 | `Sp-Protection-Bypass` | reason the protection was bypassed, see `sensepitch.protection.bypass` |
 | `Sp-Ip-Traits`, `Sp-Country`, `Sp-Asn` | traits of the client address, if the IP lookup knows it |
 | `Sp-Ja4`, `Sp-Ja4-Raw` | JA4 TLS fingerprint, if enabled, the raw one only if configured |
@@ -906,6 +907,7 @@ Attributes without a semantic convention:
 | `sensepitch.ip_traits` | traits of the client address, e.g. `asn=64496, country=DE, crawler=...` |
 | `sensepitch.tls.client.ja4` | JA4 TLS fingerprint, if enabled |
 | `sensepitch.protection.admission_token` | admission token of the protection: of a valid admission cookie, or the token issued for an accepted challenge answer |
+| `sensepitch.protection.admission_original_token`, `sensepitch.protection.admission_revisits` | the original admission token and number of expired admissions from verified `admission0` history, or the values issued with the response. Present in JSON and OTLP logs when history is available |
 | `sensepitch.traffic.type` | `human`, `bot` or `unknown`, see the `Sp-Traffic-Type` header |
 | `sensepitch.protection.bypass` | reason the protection was bypassed: `config-ip-match`, `config-uri-match` (a configured `bypass.remotes` or `bypass.uris`), `crawler-agent-match`, `crawler-fragment-agent-match`, `crawler-ip-match` |
 | `sensepitch.request.cookie_present` | whether a cookie header was sent, not its content |

@@ -16,7 +16,6 @@ import io.netty.handler.codec.http.cookie.DefaultCookie;
 import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
 import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
 import io.netty.util.CharsetUtil;
-import java.math.BigInteger;
 import java.net.Inet4Address;
 import java.net.SocketException;
 import java.net.UnknownHostException;
@@ -24,7 +23,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.function.LongSupplier;
 
 /// @author Jens Wilke
@@ -44,6 +42,16 @@ public class Deflector {
 
   /// Request header containing the validated or newly issued admission token
   public static final String ADMISSION_TOKEN_HEADER = SensepitchHeaders.PREFIX + "Admission-Token";
+
+  /// Request header containing the original admission token of the verified `admission0` history
+  /// cookie, the one presented or the one issued with the response. Absent without history.
+  public static final String ADMISSION_ORIGINAL_TOKEN_HEADER =
+      SensepitchHeaders.PREFIX + "Admission-Original-Token";
+
+  /// Request header containing the revisit count of the history, see
+  /// [#ADMISSION_ORIGINAL_TOKEN_HEADER]: how many expired admissions the history records.
+  public static final String ADMISSION_REVISITS_HEADER =
+      SensepitchHeaders.PREFIX + "Admission-Revisits";
 
   /// Request header telling whether the request is human or bot traffic: [#TRAFFIC_HUMAN],
   /// [#TRAFFIC_BOT] or [#TRAFFIC_UNKNOWN]. Absent if no protection handled the request.
@@ -187,7 +195,8 @@ public class Deflector {
     ctx.writeAndFlush(response);
   }
 
-  void outputChallengeHtml(ChannelHandlerContext ctx, HttpRequest request, String expiredToken) {
+  void outputChallengeHtml(
+      ChannelHandlerContext ctx, HttpRequest request, AdmissionCheck admission) {
     String challenge = challengeVerification.generateChallenge();
     String msg = htmlTemplate;
     msg = msg.replaceAll("files/", CHALLENGE_RESOURCES_URL + "/");
@@ -212,39 +221,34 @@ public class Deflector {
     response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/html; charset=UTF-8");
     response.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, buf.readableBytes());
     addCookie(response, CHALLENGE_COOKIE_NAME, challenge, true, COOKIE_MAX_AGE_SECONDS);
-    if (expiredToken != null) {
-      addHistoryCookie(response, request, expiredToken);
+    if (admission.expiredToken() != null) {
+      addHistoryCookie(response, request, admission);
       // A challenge page reload must not count the same expired admission again.
       addCookie(response, TOKEN_COOKIE_NAME, "", false, 0);
     }
     ctx.writeAndFlush(response);
   }
 
-  /// Advances authenticated history or starts it with the admission that just expired.
+  /// Advances the verified history of the request or starts it with the admission that just
+  /// expired, and sets the history headers of the request to the issued values for the log.
   private void addHistoryCookie(
-      FullHttpResponse response, HttpRequest request, String expiredToken) {
-    String original = expiredToken;
-    BigInteger count = BigInteger.ONE;
-    for (Cookie cookie :
-        ServerCookieDecoder.LAX.decode(request.headers().get(HttpHeaderNames.COOKIE))) {
-      if (!cookie.name().equals(HISTORY_COOKIE_NAME)) {
-        continue;
-      }
-      String value = cookie.value();
-      int tokenEnd = DefaultAdmissionTokenGenerator.TOKEN_CHARS;
-      int signatureStart = value.lastIndexOf('.');
-      if (signatureStart > tokenEnd + 1 && value.charAt(tokenEnd) == '.') {
-        DefaultAdmissionTokenGenerator signer = tokenGenerators.get(value.charAt(0));
-        String payload = value.substring(0, signatureStart);
-        if (signer != null && signer.verifyHistory(payload, value.substring(signatureStart + 1))) {
-          original = value.substring(0, tokenEnd);
-          count = new BigInteger(payload.substring(tokenEnd + 1)).add(BigInteger.ONE);
-        }
-      }
-    }
-    String payload = original + "." + count;
-    String value = payload + "." + tokenGenerators.get(original.charAt(0)).signHistory(payload);
+      FullHttpResponse response, HttpRequest request, AdmissionCheck admission) {
+    History history = admission.history();
+    History next =
+        history == null
+            ? new History(admission.expiredToken(), 1)
+            : new History(history.originalToken(), history.revisits() + 1);
+    setHistoryHeaders(request, next);
+    String payload = next.originalToken() + "." + next.revisits();
+    String value =
+        payload + "." + tokenGenerators.get(next.originalToken().charAt(0)).signHistory(payload);
     addCookie(response, HISTORY_COOKIE_NAME, value, true, COOKIE_MAX_AGE_SECONDS);
+  }
+
+  /// Passes the history to the request log, like [#ADMISSION_TOKEN_HEADER].
+  private static void setHistoryHeaders(HttpRequest request, History history) {
+    request.headers().set(ADMISSION_ORIGINAL_TOKEN_HEADER, history.originalToken());
+    request.headers().set(ADMISSION_REVISITS_HEADER, Long.toString(history.revisits()));
   }
 
   /// Appends a host-only cookie so the challenge and history can travel in the same response.
@@ -279,16 +283,17 @@ public class Deflector {
 
   /// Responds to a challenge answer: issues the admission cookie if it was correct, see
   /// [#verifyChallengeAnswer]. The issued token is also set as [#ADMISSION_TOKEN_HEADER] on the
-  /// request, so the request log has it.
+  /// request, so the request log has it. An answer with an expired admission advances the history,
+  /// see [#checkAdmissionCookie(HttpRequest, long)].
   void respondToChallengeAnswer(
-      ChannelHandlerContext ctx, HttpRequest request, boolean correct, String expiredToken) {
+      ChannelHandlerContext ctx, HttpRequest request, boolean correct, AdmissionCheck admission) {
     FullHttpResponse response;
     if (correct) {
       response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
       String cookieValue = tokenGenerator.newAdmission();
       request.headers().set(ADMISSION_TOKEN_HEADER, cookieValue);
-      if (expiredToken != null) {
-        addHistoryCookie(response, request, expiredToken);
+      if (admission.expiredToken() != null) {
+        addHistoryCookie(response, request, admission);
       }
       addCookie(response, TOKEN_COOKIE_NAME, cookieValue, false, COOKIE_MAX_AGE_SECONDS);
     } else {
@@ -306,46 +311,94 @@ public class Deflector {
     return values.getFirst();
   }
 
-  record AdmissionCheck(boolean accepted, String expiredToken) {
-    static final AdmissionCheck ACCEPTED = new AdmissionCheck(true, null);
-    static final AdmissionCheck REJECTED = new AdmissionCheck(false, null);
+  /// Result of [#checkAdmissionCookie(HttpRequest)]
+  ///
+  /// @param expiredToken the authentic admission token that is too old, or `null`
+  /// @param history the verified `admission0` history the request carries, or `null`
+  record AdmissionCheck(boolean accepted, String expiredToken, History history) {
+    static final AdmissionCheck ACCEPTED = new AdmissionCheck(true, null, null);
+    static final AdmissionCheck REJECTED = new AdmissionCheck(false, null, null);
   }
+
+  /// Content of a verified `admission0` cookie
+  ///
+  /// @param originalToken the admission whose expiry started the history
+  /// @param revisits how many expired admissions the history records, starting at 1
+  record History(String originalToken, long revisits) {}
 
   AdmissionCheck checkAdmissionCookie(HttpRequest request) {
     return checkAdmissionCookie(request, admissionClock.getAsLong());
   }
 
   /// Checks the admission cookie in the request against the current wall clock `nowMillis`, so
-  /// the age limits are testable without real time. A token is accepted only when its checksum
-  /// is valid, it is not older than the configured maximum age and its creation time is not
-  /// further in the future than the configured clock skew allowance.
+  /// the age limits are testable without real time, see [#checkAdmissionToken]. Verifies the
+  /// `admission0` history cookie only when the request carries one, so other requests pay no HMAC.
+  /// A verified history is set as [#ADMISSION_ORIGINAL_TOKEN_HEADER] and
+  /// [#ADMISSION_REVISITS_HEADER] on the request, so the request log has it.
   AdmissionCheck checkAdmissionCookie(HttpRequest request, long nowMillis) {
     String cookieHeader = request.headers().get(HttpHeaderNames.COOKIE);
-    if (cookieHeader != null) {
-      Set<Cookie> cookies = ServerCookieDecoder.LAX.decode(cookieHeader);
-      for (Cookie c : cookies) {
-        if (c.name().equals(TOKEN_COOKIE_NAME)) {
-          String admissionToken = c.value();
-          if (admissionToken == null || admissionToken.isEmpty()) {
-            return AdmissionCheck.REJECTED;
-          }
-          AdmissionTokenGenerator generator = tokenGenerators.get(admissionToken.charAt(0));
-          if (generator == null) {
-            return AdmissionCheck.REJECTED;
-          }
-          long creationMillis = generator.checkAdmission(admissionToken);
-          if (creationMillis == 0 || admissionTooFarFuture(creationMillis, nowMillis)) {
-            return AdmissionCheck.REJECTED;
-          }
-          if (admissionExpired(creationMillis, nowMillis)) {
-            return new AdmissionCheck(false, admissionToken);
-          }
-          request.headers().set(ADMISSION_TOKEN_HEADER, admissionToken);
-          return AdmissionCheck.ACCEPTED;
-        }
+    if (cookieHeader == null) {
+      return AdmissionCheck.REJECTED;
+    }
+    String admissionToken = null;
+    History history = null;
+    for (Cookie c : ServerCookieDecoder.LAX.decode(cookieHeader)) {
+      if (c.name().equals(TOKEN_COOKIE_NAME)) {
+        admissionToken = c.value();
+      } else if (c.name().equals(HISTORY_COOKIE_NAME)) {
+        history = verifyHistory(c.value());
       }
     }
-    return AdmissionCheck.REJECTED;
+    AdmissionCheck check = checkAdmissionToken(request, admissionToken, nowMillis);
+    if (history == null) {
+      return check;
+    }
+    setHistoryHeaders(request, history);
+    return new AdmissionCheck(check.accepted(), check.expiredToken(), history);
+  }
+
+  /// Checks the token of the admission cookie. A token is accepted only when its checksum is
+  /// valid, it is not older than the configured maximum age and its creation time is not further
+  /// in the future than the configured clock skew allowance.
+  ///
+  /// @param admissionToken the cookie value, `null` if there is no admission cookie
+  private AdmissionCheck checkAdmissionToken(
+      HttpRequest request, String admissionToken, long nowMillis) {
+    if (admissionToken == null || admissionToken.isEmpty()) {
+      return AdmissionCheck.REJECTED;
+    }
+    AdmissionTokenGenerator generator = tokenGenerators.get(admissionToken.charAt(0));
+    if (generator == null) {
+      return AdmissionCheck.REJECTED;
+    }
+    long creationMillis = generator.checkAdmission(admissionToken);
+    if (creationMillis == 0 || admissionTooFarFuture(creationMillis, nowMillis)) {
+      return AdmissionCheck.REJECTED;
+    }
+    if (admissionExpired(creationMillis, nowMillis)) {
+      return new AdmissionCheck(false, admissionToken, null);
+    }
+    request.headers().set(ADMISSION_TOKEN_HEADER, admissionToken);
+    return AdmissionCheck.ACCEPTED;
+  }
+
+  /// Parses an `admission0` cookie value, `original-token.count.tag`, and checks its signature
+  /// with the secret of the token generator its prefix names.
+  ///
+  /// @return the history, `null` if malformed, forged or signed with a retired key
+  private History verifyHistory(String value) {
+    int tokenEnd = DefaultAdmissionTokenGenerator.TOKEN_CHARS;
+    int signatureStart = value.lastIndexOf('.');
+    if (signatureStart <= tokenEnd + 1 || value.charAt(tokenEnd) != '.') {
+      return null;
+    }
+    DefaultAdmissionTokenGenerator signer = tokenGenerators.get(value.charAt(0));
+    String payload = value.substring(0, signatureStart);
+    if (signer == null || !signer.verifyHistory(payload, value.substring(signatureStart + 1))) {
+      return null;
+    }
+    return new History(
+        value.substring(0, tokenEnd), Long.parseLong(payload.substring(tokenEnd + 1)));
   }
 
   /// @return `true` if the token is older than the configured maximum admission age

@@ -81,7 +81,6 @@ its standalone deployment check in CI.
   - The default maximum age is five days with five seconds of future clock skew. On expiry,
     the challenge records the original token and revisit count in a signed `admission0` cookie.
     Fresh admissions preserve the history. See [PoW admission design](doc/design/pow-admission.md).
-- add the historic admission token to the log
 - [ ] bypass config should be in the protection and not in the protection providers => we need a
   proper API for the protection provider
   - P3: define provider-independent bypass semantics and migration of existing configuration.
@@ -384,6 +383,10 @@ the failure threshold for upstreams is under Upstream.
 - [ ] add CONTRIBUTING.md
 
 ## Done
+
+- [x] Add the historic admission token to the log (2026-11-20). JSON and OTLP logs include the
+  original token and revisit count from verified `admission0` history. See
+  [PoW admission design](doc/design/pow-admission.md).
 
 - [x] Upstream informational responses (1xx, e.g. `100 Continue`) (2026-11-20). `ForwardHandler`
   keeps the upstream attached to the downstream and `DownstreamHandler` keeps the exchange active

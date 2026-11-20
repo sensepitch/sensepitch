@@ -55,6 +55,15 @@ public final class SensepitchLogFields {
   /// for an accepted challenge answer
   public static final String ADMISSION_TOKEN = "sensepitch.protection.admission_token";
 
+  /// Original admission token of the verified `admission0` history: the admission whose expiry
+  /// started the history, see [Deflector#ADMISSION_ORIGINAL_TOKEN_HEADER]
+  public static final String ADMISSION_ORIGINAL_TOKEN =
+      "sensepitch.protection.admission_original_token";
+
+  /// Revisit count of the verified `admission0` history, how many admissions expired since the
+  /// original one was issued, see [Deflector#ADMISSION_REVISITS_HEADER]
+  public static final String ADMISSION_REVISITS = "sensepitch.protection.admission_revisits";
+
   /// Reason the protection was bypassed, set by [BypassCheck#setBypassReason], e.g.
   /// [BypassCheck#REASON_CONFIG_URI_MATCH]
   public static final String BYPASS = "sensepitch.protection.bypass";

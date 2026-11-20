@@ -193,6 +193,8 @@ class RequestLogFieldsWriterTest {
         .headers()
         .set(Ja4HeaderHandler.JA4_HEADER, "t13d1516h2_8daaf6152771_02713d6af862");
     info.request().headers().set(Deflector.ADMISSION_TOKEN_HEADER, "token");
+    info.request().headers().set(Deflector.ADMISSION_ORIGINAL_TOKEN_HEADER, "original");
+    info.request().headers().set(Deflector.ADMISSION_REVISITS_HEADER, "2");
     info.request().headers().set(BypassCheck.HEADER, "uri");
     info.request().headers().set(Deflector.TRAFFIC_TYPE_HEADER, "human");
     info.request().headers().set(HttpHeaderNames.COOKIE, "a=b");
@@ -204,6 +206,8 @@ class RequestLogFieldsWriterTest {
         .containsEntry("sensepitch.client.asn", 64496L)
         .containsEntry("sensepitch.tls.client.ja4", "t13d1516h2_8daaf6152771_02713d6af862")
         .containsEntry("sensepitch.protection.admission_token", "token")
+        .containsEntry("sensepitch.protection.admission_original_token", "original")
+        .containsEntry("sensepitch.protection.admission_revisits", 2L)
         .containsEntry("sensepitch.protection.bypass", "uri")
         .containsEntry("sensepitch.traffic.type", "human")
         .containsEntry("sensepitch.request.cookie_present", true)
