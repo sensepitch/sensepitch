@@ -81,13 +81,11 @@ its standalone deployment check in CI.
   [PoW admission design](doc/design/pow-admission.md)
   - P2: define the replay threat and permitted reuse, whether enforcement is per node
     or cluster-wide, and the state, lifetime and coordination cost.
-- [ ] expire granted admissions and preserve the original token across revisits
-  - P3. Enforce a server-side maximum age of five days by default, with five seconds of clock
-    skew allowed between servers. Require a fresh challenge when admission expires.
-  - Completion requires a signed `admission0` cookie carrying the original expired token and a
-    revisit count, for example `original-token-count-signature`. On a later expiry, if a valid
-    `admission0` cookie already exists, retain its original token and increment its count.
-    Issuing a fresh admission must preserve this history.
+- [x] expire granted admissions and preserve the original token across revisits
+  - The default maximum age is five days with five seconds of future clock skew. On expiry,
+    the challenge records the original token and revisit count in a signed `admission0` cookie.
+    Fresh admissions preserve the history. See [PoW admission design](doc/design/pow-admission.md).
+- add the historic admission token to the log
 - [ ] bypass config should be in the protection and not in the protection providers => we need a
   proper API for the protection provider
   - P3: define provider-independent bypass semantics and migration of existing configuration.

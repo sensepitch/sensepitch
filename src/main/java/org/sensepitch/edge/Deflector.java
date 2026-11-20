@@ -16,6 +16,7 @@ import io.netty.handler.codec.http.cookie.DefaultCookie;
 import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
 import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
 import io.netty.util.CharsetUtil;
+import java.math.BigInteger;
 import java.net.Inet4Address;
 import java.net.SocketException;
 import java.net.UnknownHostException;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.LongSupplier;
 
 /// @author Jens Wilke
 public class Deflector {
@@ -36,6 +38,8 @@ public class Deflector {
   public static final String htmlTemplate = ResourceLoader.loadTextFile("challenge/challenge.html");
   public static final String TOKEN_COOKIE_NAME = "sensepitch-tk";
   public static final String CHALLENGE_COOKIE_NAME = "sensepitch-ch";
+  private static final long COOKIE_MAX_AGE_SECONDS = 30L * 24 * 60 * 60;
+  private static final String HISTORY_COOKIE_NAME = "admission0";
   private static final ResourceFiles challengeFiles = new ResourceFiles("challenge/files/");
 
   /// Request header containing the validated or newly issued admission token
@@ -58,14 +62,26 @@ public class Deflector {
   private final NoBypassCheck noBypassCheck;
   private final BypassCheck bypassCheck;
   private final AdmissionTokenGenerator tokenGenerator;
-  private final Map<Character, AdmissionTokenGenerator> tokenGenerators = new HashMap<>();
+  private final Map<Character, DefaultAdmissionTokenGenerator> tokenGenerators = new HashMap<>();
   private final int powMaxIterations;
+  private final long admissionMaxAgeMillis;
+  private final long admissionClockSkewMillis;
+
+  private final LongSupplier admissionClock;
 
   /// @param files reads the secrets of the token generators, see [SecretConfig]
   Deflector(DeflectorConfig cfg, ConfigFiles files) {
+    this(cfg, files, System::currentTimeMillis);
+  }
+
+  /// Uses a supplied clock for admission expiry checks.
+  Deflector(DeflectorConfig cfg, ConfigFiles files, LongSupplier admissionClock) {
+    this.admissionClock = admissionClock;
     challengeVerification =
         new ChallengeGenerationAndVerification(new TimeBasedChallenge(), cfg.hashTargetPrefix());
     powMaxIterations = cfg.powMaxIterations();
+    admissionMaxAgeMillis = cfg.admissionMaxAgeMillis();
+    admissionClockSkewMillis = cfg.admissionClockSkewMillis();
     if (cfg.noBypass() != null) {
       noBypassCheck = new DefaultNoBypassCheck(cfg.noBypass());
     } else {
@@ -171,7 +187,7 @@ public class Deflector {
     ctx.writeAndFlush(response);
   }
 
-  void outputChallengeHtml(ChannelHandlerContext ctx) {
+  void outputChallengeHtml(ChannelHandlerContext ctx, HttpRequest request, String expiredToken) {
     String challenge = challengeVerification.generateChallenge();
     String msg = htmlTemplate;
     msg = msg.replaceAll("files/", CHALLENGE_RESOURCES_URL + "/");
@@ -195,14 +211,51 @@ public class Deflector {
     response.headers().set(HttpHeaderNames.EXPIRES, "0");
     response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/html; charset=UTF-8");
     response.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, buf.readableBytes());
-    Cookie cookie = new DefaultCookie(CHALLENGE_COOKIE_NAME, challenge);
-    cookie.setHttpOnly(true);
+    addCookie(response, CHALLENGE_COOKIE_NAME, challenge, true, COOKIE_MAX_AGE_SECONDS);
+    if (expiredToken != null) {
+      addHistoryCookie(response, request, expiredToken);
+      // A challenge page reload must not count the same expired admission again.
+      addCookie(response, TOKEN_COOKIE_NAME, "", false, 0);
+    }
+    ctx.writeAndFlush(response);
+  }
+
+  /// Advances authenticated history or starts it with the admission that just expired.
+  private void addHistoryCookie(
+      FullHttpResponse response, HttpRequest request, String expiredToken) {
+    String original = expiredToken;
+    BigInteger count = BigInteger.ONE;
+    for (Cookie cookie :
+        ServerCookieDecoder.LAX.decode(request.headers().get(HttpHeaderNames.COOKIE))) {
+      if (!cookie.name().equals(HISTORY_COOKIE_NAME)) {
+        continue;
+      }
+      String value = cookie.value();
+      int tokenEnd = DefaultAdmissionTokenGenerator.TOKEN_CHARS;
+      int signatureStart = value.lastIndexOf('.');
+      if (signatureStart > tokenEnd + 1 && value.charAt(tokenEnd) == '.') {
+        DefaultAdmissionTokenGenerator signer = tokenGenerators.get(value.charAt(0));
+        String payload = value.substring(0, signatureStart);
+        if (signer != null && signer.verifyHistory(payload, value.substring(signatureStart + 1))) {
+          original = value.substring(0, tokenEnd);
+          count = new BigInteger(payload.substring(tokenEnd + 1)).add(BigInteger.ONE);
+        }
+      }
+    }
+    String payload = original + "." + count;
+    String value = payload + "." + tokenGenerators.get(original.charAt(0)).signHistory(payload);
+    addCookie(response, HISTORY_COOKIE_NAME, value, true, COOKIE_MAX_AGE_SECONDS);
+  }
+
+  /// Appends a host-only cookie so the challenge and history can travel in the same response.
+  private static void addCookie(
+      FullHttpResponse response, String name, String value, boolean httpOnly, long maxAge) {
+    Cookie cookie = new DefaultCookie(name, value);
+    cookie.setHttpOnly(httpOnly);
     cookie.setSecure(true);
     cookie.setPath("/");
-    cookie.setMaxAge(60 * 60 * 24 * 30);
-    String encodedCookie = ServerCookieEncoder.STRICT.encode(cookie);
-    response.headers().set(HttpHeaderNames.SET_COOKIE, encodedCookie);
-    ctx.writeAndFlush(response);
+    cookie.setMaxAge(maxAge);
+    response.headers().add(HttpHeaderNames.SET_COOKIE, ServerCookieEncoder.STRICT.encode(cookie));
   }
 
   /// Sends the admission cookie for a correct answer or status 400.
@@ -227,20 +280,17 @@ public class Deflector {
   /// Responds to a challenge answer: issues the admission cookie if it was correct, see
   /// [#verifyChallengeAnswer]. The issued token is also set as [#ADMISSION_TOKEN_HEADER] on the
   /// request, so the request log has it.
-  void respondToChallengeAnswer(ChannelHandlerContext ctx, HttpRequest request, boolean correct) {
+  void respondToChallengeAnswer(
+      ChannelHandlerContext ctx, HttpRequest request, boolean correct, String expiredToken) {
     FullHttpResponse response;
     if (correct) {
       response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
       String cookieValue = tokenGenerator.newAdmission();
       request.headers().set(ADMISSION_TOKEN_HEADER, cookieValue);
-      Cookie cookie = new DefaultCookie(TOKEN_COOKIE_NAME, cookieValue);
-      // since its not a session, its ok to expose
-      // cookie.setHttpOnly(true);
-      cookie.setSecure(true);
-      cookie.setPath("/");
-      cookie.setMaxAge(60 * 60 * 24 * 30);
-      String encodedCookie = ServerCookieEncoder.STRICT.encode(cookie);
-      response.headers().set(HttpHeaderNames.SET_COOKIE, encodedCookie);
+      if (expiredToken != null) {
+        addHistoryCookie(response, request, expiredToken);
+      }
+      addCookie(response, TOKEN_COOKIE_NAME, cookieValue, false, COOKIE_MAX_AGE_SECONDS);
     } else {
       response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.BAD_REQUEST);
     }
@@ -256,7 +306,20 @@ public class Deflector {
     return values.getFirst();
   }
 
-  boolean checkAdmissionCookie(HttpRequest request) {
+  record AdmissionCheck(boolean accepted, String expiredToken) {
+    static final AdmissionCheck ACCEPTED = new AdmissionCheck(true, null);
+    static final AdmissionCheck REJECTED = new AdmissionCheck(false, null);
+  }
+
+  AdmissionCheck checkAdmissionCookie(HttpRequest request) {
+    return checkAdmissionCookie(request, admissionClock.getAsLong());
+  }
+
+  /// Checks the admission cookie in the request against the current wall clock `nowMillis`, so
+  /// the age limits are testable without real time. A token is accepted only when its checksum
+  /// is valid, it is not older than the configured maximum age and its creation time is not
+  /// further in the future than the configured clock skew allowance.
+  AdmissionCheck checkAdmissionCookie(HttpRequest request, long nowMillis) {
     String cookieHeader = request.headers().get(HttpHeaderNames.COOKIE);
     if (cookieHeader != null) {
       Set<Cookie> cookies = ServerCookieDecoder.LAX.decode(cookieHeader);
@@ -264,20 +327,36 @@ public class Deflector {
         if (c.name().equals(TOKEN_COOKIE_NAME)) {
           String admissionToken = c.value();
           if (admissionToken == null || admissionToken.isEmpty()) {
-            return false;
+            return AdmissionCheck.REJECTED;
           }
           AdmissionTokenGenerator generator = tokenGenerators.get(admissionToken.charAt(0));
           if (generator == null) {
-            return false;
+            return AdmissionCheck.REJECTED;
           }
-          long t = generator.checkAdmission(c.value());
-          if (t > 0) {
-            request.headers().set(ADMISSION_TOKEN_HEADER, admissionToken);
-            return true;
+          long creationMillis = generator.checkAdmission(admissionToken);
+          if (creationMillis == 0 || admissionTooFarFuture(creationMillis, nowMillis)) {
+            return AdmissionCheck.REJECTED;
           }
+          if (admissionExpired(creationMillis, nowMillis)) {
+            return new AdmissionCheck(false, admissionToken);
+          }
+          request.headers().set(ADMISSION_TOKEN_HEADER, admissionToken);
+          return AdmissionCheck.ACCEPTED;
         }
       }
     }
-    return false;
+    return AdmissionCheck.REJECTED;
+  }
+
+  /// @return `true` if the token is older than the configured maximum admission age
+  private boolean admissionExpired(long creationMillis, long nowMillis) {
+    return nowMillis - creationMillis > admissionMaxAgeMillis;
+  }
+
+  /// @return `true` if the token creation time lies further in the future than the configured
+  ///   clock skew allowance, which happens when issuing and verifying servers disagree on the
+  ///   wall clock
+  private boolean admissionTooFarFuture(long creationMillis, long nowMillis) {
+    return creationMillis - nowMillis > admissionClockSkewMillis;
   }
 }

@@ -23,7 +23,8 @@ Protection runs before upstream forwarding. A protection-wide bypass skips both 
 and the deflector; otherwise configured cookie gates run first. Within the deflector, the order
 is:
 
-1. A valid `sensepitch-tk` admission cookie passes the request, including methods other than GET.
+1. A valid `sensepitch-tk` admission cookie within its server-side age limit passes the request,
+   including methods other than GET.
 2. A configured deflector bypass or accepted crawler passes without solving a challenge.
    `noBypass` suppresses this deflector bypass for matching URIs; it does not invalidate an
    admission or override the protection-wide bypass.
@@ -76,8 +77,35 @@ Removing an entry stops acceptance of its tokens; there is no individual token r
 
 The admission cookie is Secure, has path `/`, no explicit Domain, and a 30-day `Max-Age`. It is
 readable by JavaScript because HttpOnly is not set. The server validates the token checksum and
-returns its creation time, but currently does not enforce an age limit. Cookie expiration is
-therefore a browser retention policy, not server-enforced token expiry.
+returns its creation time, then enforces a server-side age limit, see
+[Server-enforced admission expiry](#server-enforced-admission-expiry). The 30-day cookie `Max-Age`
+is therefore a browser retention policy, while the server-side limit bounds how long a retained
+token stays valid.
+
+### Server-enforced admission expiry
+
+A granted admission expires server-side. The token carries its creation time, so verification
+compares that time with the current wall clock and rejects a token that is older than
+`admissionMaxAgeMillis` (default 5 days) or whose creation time lies more than
+`admissionClockSkewMillis` (default 5 seconds) in the future. The future allowance tolerates clock
+skew between the issuing and verifying servers of a distributed fleet. Tokens are second-granular
+and the comparisons are strict, so a token exactly at a boundary is still accepted. A rejected
+token is handled like an absent admission: the browser is re-challenged and receives a fresh token
+after solving, and the request is reported with the `challenge_sent` outcome.
+
+### Preserve revisit history in a separate signed cookie
+
+When an authentic expired admission triggers a challenge page, the response clears that admission
+and sets the Secure, HttpOnly, host-only `admission0` cookie for 30 days at path `/`. Clearing the
+expired token prevents a page reload from counting it again. The answer endpoint preserves history when
+it issues a fresh admission. If the answer presents an expired admission, it records that expiry
+as well.
+
+The value is `original-token.count.tag`. The original token's generator prefix selects the secret.
+HMAC-SHA-256 covers the token and decimal count with a key derived specifically for `admission0`.
+A missing, unverified or retired-key history starts again at one with the currently expired token.
+The count describes the signed history the client presented. A client can discard or replay an
+older cookie, and concurrent requests can carry the same history.
 
 ### Outcomes identify the protection path
 
@@ -96,8 +124,8 @@ human identity.
   including timestamps slightly in the future. There is no single-use accounting or binding to
   the challenge cookie, client or site.
 - **Admission reuse:** an admission can be copied and shared wherever its prefix and secret are
-  accepted. No per-token request budget, abnormal-use enforcement or server-side maximum age is
-  implemented. A retained token can outlive the cookie's advertised 30 days.
+  accepted until it reaches the server-side maximum age (default 5 days). No per-token request
+  budget or abnormal-use enforcement is implemented.
 - **Checksum strength:** only four bytes of the SHA-256 digest are kept as the token checksum.
   This is a 32-bit check, not a full-length authentication tag; its forgery resistance is limited
   by that size. The current construction is a secret-suffixed hash, not HMAC.
@@ -110,6 +138,6 @@ human identity.
 
 ## Planned improvements
 
-Server-side admission expiry, restrictions on admissions per solved challenge and abnormal-use
-detection remain separate tasks in [TODO.md](../../TODO.md). This overview does not choose their
-enforcement or cluster coordination policies.
+Restrictions on admissions per solved challenge and abnormal-use detection remain separate
+tasks in [TODO.md](../../TODO.md). This overview does not choose their enforcement or cluster
+coordination policies.

@@ -26,7 +26,8 @@ public class DeflectorHandler implements ProtectionPlugin {
 
   @Override
   public boolean mightIntercept(HttpRequest request, ChannelHandlerContext ctx) {
-    if (deflector.checkAdmissionCookie(request)) {
+    Deflector.AdmissionCheck admission = deflector.checkAdmissionCookie(request);
+    if (admission.accepted()) {
       request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_HUMAN);
       metrics.countDeflectorRequest(request, DeflectorOutcome.PASSED);
       report(ctx, DeflectorOutcome.PASSED);
@@ -73,12 +74,12 @@ public class DeflectorHandler implements ProtectionPlugin {
           correct ? DeflectorOutcome.ANSWER_ACCEPTED : DeflectorOutcome.ANSWER_REJECTED;
       metrics.countDeflectorRequest(request, outcome);
       report(ctx, outcome);
-      deflector.respondToChallengeAnswer(ctx, request, correct);
+      deflector.respondToChallengeAnswer(ctx, request, correct, admission.expiredToken());
     } else {
       request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_UNKNOWN);
       metrics.countDeflectorRequest(request, DeflectorOutcome.CHALLENGE_SENT);
       report(ctx, DeflectorOutcome.CHALLENGE_SENT);
-      deflector.outputChallengeHtml(ctx);
+      deflector.outputChallengeHtml(ctx, request, admission.expiredToken());
     }
     return true;
   }

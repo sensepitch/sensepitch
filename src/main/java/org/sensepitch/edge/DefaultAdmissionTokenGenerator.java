@@ -2,8 +2,13 @@ package org.sensepitch.edge;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 /// @author Jens Wilke
 public class DefaultAdmissionTokenGenerator implements AdmissionTokenGenerator {
@@ -55,6 +60,27 @@ public class DefaultAdmissionTokenGenerator implements AdmissionTokenGenerator {
     this.prefixChar = prefixChar;
     this.secret = secret;
     this.serverIp4address = serverIpv4Address;
+  }
+
+  /// Authenticates the original token and revisit count with a key specific to history cookies.
+  String signHistory(String payload) {
+    byte[] key =
+        ChallengeGenerationAndVerification.sha256(
+            ("admission0\0" + secret).getBytes(StandardCharsets.UTF_8));
+    try {
+      Mac mac = Mac.getInstance("HmacSHA256");
+      mac.init(new SecretKeySpec(key, "HmacSHA256"));
+      return HexFormat.of().formatHex(mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)));
+    } catch (GeneralSecurityException ex) {
+      throw new IllegalStateException(ex);
+    }
+  }
+
+  /// Verifies a history signature before its token or count is used.
+  boolean verifyHistory(String payload, String signature) {
+    return MessageDigest.isEqual(
+        signHistory(payload).getBytes(StandardCharsets.US_ASCII),
+        signature.getBytes(StandardCharsets.US_ASCII));
   }
 
   public long checkAdmission(String token) {
