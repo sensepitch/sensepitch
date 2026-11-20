@@ -73,10 +73,21 @@ its standalone deployment check in CI.
 
 ## Protection, admission
 
-- [ ] restrict admissions per solved challenge; see
+- [ ] restrict admissions per solved challenge; see the
+  [replay draft](doc/design/admission-replay-draft.md) and
   [PoW admission design](doc/design/pow-admission.md)
-  - P2: define the replay threat and permitted reuse, whether enforcement is per node
-    or cluster-wide, and the state, lifetime and coordination cost.
+  - P3: today a challenge is a bare timestamp and an answer can be replayed for five minutes,
+    each replay minting another admission. The draft's recommendation, not a decision: sign a
+    random, host-bound challenge and derive one admission token deterministically from it, so a
+    replay and every replica return the same token without shared state. Tick the open choices
+    before implementing:
+    - [ ] enforcement: stateless idempotent token, node-local consumed-challenge set, or
+      cluster-wide shared store
+    - [ ] replay handling: idempotent success, or strict rejection plus a replay metric
+    - [ ] permitted reuse: unlimited requests per admission until expiry, or a per-token budget
+    - [ ] bind the admission token to the site as well, or keep the challenge binding only
+    - [ ] challenge lifetime and clock-skew window; key rotation and overlap period
+    - [ ] migration policy for the current unsigned challenge and token format
 - [x] expire granted admissions and preserve the original token across revisits
   - The default maximum age is five days with five seconds of future clock skew. On expiry,
     the challenge records the original token and revisit count in a signed `admission0` cookie.

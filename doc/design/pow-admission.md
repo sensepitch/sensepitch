@@ -151,6 +151,7 @@ human identity.
 
 ## Planned improvements
 
-Restrictions on admissions per solved challenge and abnormal-use detection remain separate
-tasks in [TODO.md](../../TODO.md). This overview does not choose their enforcement or cluster
+Restrictions on admissions per solved challenge are researched in
+[admission-replay-draft.md](admission-replay-draft.md); abnormal-use detection remains a separate
+task in [TODO.md](../../TODO.md). This overview does not choose their enforcement or cluster
 coordination policies.
