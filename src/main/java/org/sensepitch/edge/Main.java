@@ -55,7 +55,11 @@ public class Main {
     }
     AdminServer admin =
         config.admin() != null
-            ? AdminServer.start(config.admin(), reload, proxy::isShuttingDown)
+            ? AdminServer.start(
+                config.admin(),
+                reload,
+                proxy::isShuttingDown,
+                new UpstreamReadinessProbe(proxy::upstreamTargets)::isReady)
             : null;
     Shutdown shutdown =
         new Shutdown(

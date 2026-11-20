@@ -108,7 +108,13 @@ for smoke testing. Configure your sites and protection before serving production
 The Deployment uses the admin port for all three probes:
 
 - startup and liveness: `GET /healthz`
-- readiness: `GET /readyz`, which turns `503` when shutdown starts
+- readiness: `GET /readyz`, which turns `503` when shutdown starts or when no configured network
+  upstream accepts a plain TCP connection; a configuration with only static-response sites is
+  ready immediately
+
+Upstream connect attempts run sequentially with a one-second timeout per target. Several slow
+targets can exhaust the chart's two-second readiness probe timeout before a reachable target is
+checked.
 
 `terminationGracePeriodSeconds` defaults to 30. The default `config` limits shutdown to 10
 seconds (`shutdownTimeoutMillis`), of which 5 seconds may be spent accepting requests after

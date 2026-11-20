@@ -262,6 +262,12 @@ public class Proxy implements ProxyContext {
     return state.get();
   }
 
+  /// The distinct network targets of the active state's upstreams, for the readiness probe. Read
+  /// per call, so a reload applies to the next probe.
+  public Set<String> upstreamTargets() {
+    return state.get().upstreams().networkTargets();
+  }
+
   /// The files the active configuration read: TLS keys and certificates, secrets, response pages
   /// and IP databases, with their fingerprints when they were read. [ConfigFileWatcher] reloads
   /// when one of them changes. After a rejected reload also the files the rejected configuration

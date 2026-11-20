@@ -1,6 +1,6 @@
 # Gap Analysis: Existing Edge versus Gateway API
 
-This compares the current code (state of commit `4336764`, runtime rows updated 2026-11-14)
+This compares the current code (state of commit `4336764`, runtime rows updated 2026-11-20)
 with what `2-gateway-api-scope.md` needs. The next steps are tracked in `TODO.md`, section
 "Kubernetes". Source paths are relative to
 `src/main/java/org/sensepitch/edge/`.
@@ -32,7 +32,7 @@ same loader can read JSON snapshots.
 | Metrics | Done: `MetricsServer` and collectors are created once per `Proxy`; a reload swaps the state and registers nothing twice | — |
 | Crawler DB | `DetectCrawler` parses the TSV on each `Deflector` construction | Cache it across rebuilds |
 | Upstream connections | No pooling (pool code disabled in `DefaultUpstream`), DNS via Netty `Bootstrap` | Endpoint selection by weight; pooling optional |
-| Health | Done: admin endpoint (`AdminServer`, opt-in, loopback by default) with `/healthz`, `/readyz` and `POST /reload` | `/readyz` does not check the upstreams |
+| Health | Done: admin endpoint (`AdminServer`, opt-in, loopback by default) with `/healthz`, `/readyz` and `POST /reload`; `/readyz` probes each distinct network upstream with a short-timeout plain TCP connect and answers `200` when at least one accepts, short-circuiting on the first success | Done |
 | Shutdown | Done: SIGTERM keeps accepting for `shutdownAcceptGraceMillis`, then closes the listener, drains the connections, then the request log, within `shutdownTimeoutMillis` (see README) | Done: `/readyz` answers 503 from the start of the shutdown |
 | Client IP | TCP peer, `X-Forwarded-For` set; no PROXY protocol | PROXY protocol v1/v2 per listener; incoming `X-Forwarded-For` / `-Proto` accepted only from trusted proxy CIDRs (load balancer terminating TLS) |
 | Bind address | One `listen.address` for all listeners | Bind address per listener, so one node can serve several IPs (one IP per Gateway in HostNetwork mode) |

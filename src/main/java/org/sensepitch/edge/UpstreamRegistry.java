@@ -1,8 +1,10 @@
 package org.sensepitch.edge;
 
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.BiFunction;
 
 /// Creates the upstreams of one configuration and takes over unchanged upstreams from the
@@ -48,6 +50,20 @@ public class UpstreamRegistry {
   Upstream lookup(String name) {
     Entry entry = entries.get(name);
     return entry != null ? entry.upstream : null;
+  }
+
+  /// The distinct configured network targets of the upstreams in use, for the readiness probe.
+  /// Upstreams without a target, e.g. static responses, are skipped; a configuration with only
+  /// static-response sites returns an empty set.
+  Set<String> networkTargets() {
+    LinkedHashSet<String> targets = new LinkedHashSet<>();
+    for (Entry entry : entries.values()) {
+      String target = entry.upstream.target();
+      if (target != null) {
+        targets.add(target);
+      }
+    }
+    return Set.copyOf(targets);
   }
 
   /// Closes the upstreams of the previous registry that this registry did not take over.

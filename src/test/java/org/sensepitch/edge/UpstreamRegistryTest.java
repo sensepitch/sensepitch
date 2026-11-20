@@ -61,6 +61,16 @@ class UpstreamRegistryTest {
   }
 
   @Test
+  void networkTargetsAreDistinctAndSkipUpstreamsWithoutTarget() {
+    UpstreamRegistry registry = registry(null);
+    ((TestUpstream) registry.get("upstreams.a", ONE)).target = "one:80";
+    ((TestUpstream) registry.get("upstreams.b", ONE)).target = "one:80";
+    ((TestUpstream) registry.get("upstreams.c", TWO)).target = "two:80";
+    registry.get("sites.static.upstream", TWO);
+    assertThat(registry.networkTargets()).containsExactlyInAnyOrder("one:80", "two:80");
+  }
+
+  @Test
   void rejectedBuildLeavesPreviousUntouched() {
     UpstreamRegistry first = registry(null);
     first.get("upstream", ONE);
@@ -73,6 +83,7 @@ class UpstreamRegistryTest {
 
   static class TestUpstream implements Upstream {
     final String name;
+    String target;
     boolean closed;
 
     TestUpstream(String name) {
@@ -82,6 +93,11 @@ class UpstreamRegistryTest {
     @Override
     public Future<Channel> connect(ChannelHandlerContext downstreamContext) {
       throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public String target() {
+      return target;
     }
 
     @Override

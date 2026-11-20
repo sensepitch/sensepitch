@@ -66,10 +66,12 @@ its standalone deployment check in CI.
   See `6-phases.md` "Development order" item 5 and
   `7-testing-and-release.md`.
   - P2: needed before the end-to-end routing test of item 7.
-- [ ] `/readyz` answers `200` only after the upstreams were probed and at least one configured
+- [x] `/readyz` answers `200` only after the upstreams were probed and at least one configured
   upstream is available
-  - P3: today it answers `200` from the start until the shutdown begins. Decide what probes an
-    upstream (a request, a connect) and whether it reuses the upstream circuit breaker.
+  - P3: probed with a short-timeout plain TCP connect, short-circuiting on the first success; a
+    configuration with only static-response sites is ready immediately. Reusing an upstream
+    circuit breaker is N/A: upstreams are plain HTTP with one connect per request and no pool or
+    breaker exists today.
 
 ## Protection, admission
 
@@ -142,13 +144,11 @@ Decisions, alternatives and limitations are in
 
 - [ ] upstream connection pool with keep-alive (an earlier version was disabled 2025-09-20 and
   removed, see git history); then expose pool metrics via Prometheus
-  - P2: define connection lifetime, reuse, error handling and metrics. Coordinate
-    with multiple upstream servers and their health policy.
+  - P2: do a draft design first, researching what parameters are needed, looking at other proxy products
 - [ ] cache upstream responses with cache2k in netty buffers
 - [ ] Allow cache to be tiered on disk and Redis
   - P2 relatively important so we don't have restart spikes
-- [ ] transparent compression
-  - all responses are compressed with low overhead brotli, add benchmarks
+- [ ] transparent compression: all responses to the client are compressed with low overhead brotli, add benchmarks
 - [ ] best compression for cached content
   - first do low overhead brotli and cache it, recompress with more efficient compression with half
     of the available CPUs in niced priority, priotising hot resources
@@ -158,7 +158,8 @@ Decisions, alternatives and limitations are in
 - [ ] upstream health and circuit breaker:
   [`CircuitBreaker`](src/main/java/org/sensepitch/edge/CircuitBreaker.java) exists for the request
   log, it opens on the first failure; for upstreams it needs a failure threshold (consecutive
-  failures or a failure rate window, as in Armeria or resilience4j)
+  failures or a failure rate window, as in Armeria or resilience4j). This breaker replaces the TCP readiness probe.
+  - P2: do research and design draft and give decisions here
   - P3: specify thresholds, recovery probes, per-server versus per-upstream state and retry policy.
   - Keep the backoff, `Retry-After`, single probe and metrics, the request log keeps a threshold
     of one, see [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md).

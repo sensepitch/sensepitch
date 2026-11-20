@@ -656,8 +656,11 @@ admin:
 curl -X POST http://127.0.0.1:9401/reload
 ````
 
-`/healthz` answers `200` while the admin server runs. `/readyz` answers `200` until shutdown
-starts, then `503`; it does not wait for the proxy listener to start.
+`/healthz` answers `200` while the admin server runs. `/readyz` answers `200` while not
+shutting down and at least one configured network upstream accepts a plain TCP connection (the
+probe short-circuits on the first success), and `503` otherwise; it does not wait for the proxy
+listener to start. A configuration with only static-response sites has no network upstream and is
+ready immediately.
 
 `POST /reload` answers `200` if the configuration was applied, `422` with the reason if it was
 rejected (invalid configuration, missing `#END`), and `409` if the configuration comes from
