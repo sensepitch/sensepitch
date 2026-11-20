@@ -20,7 +20,8 @@ import org.junit.jupiter.api.Test;
 class SanitizeHostHandlerTest {
 
   final SanitizeHostHandler handler =
-      new SanitizeHostHandler(List.of("example.com", "[2001:db8::1]", "192.0.2.1"));
+      new SanitizeHostHandler(
+          List.of("example.com", "[2001:db8::1]", "192.0.2.1", "*.example.net"));
 
   HttpRequest pass(HttpRequest request) {
     EmbeddedChannel channel = new EmbeddedChannel(handler);
@@ -47,6 +48,8 @@ class SanitizeHostHandlerTest {
   /// The TLS server name of the connection, sanitized like the host header when asked for
   @Test
   void serverName() {
+    assertThat(sanitize("Tenant.Example.net.:443")).isEqualTo("tenant.example.net");
+    assertThat(serverName(new SniCompletionEvent("tenant.example.net"))).isEqualTo("*.example.net");
     assertThat(serverName(null)).isEqualTo(NIL_HOST);
     assertThat(serverName(new SniCompletionEvent((String) null))).isEqualTo(MISSING_HOST);
     assertThat(serverName(new SniCompletionEvent("Example.COM"))).isEqualTo("example.com");

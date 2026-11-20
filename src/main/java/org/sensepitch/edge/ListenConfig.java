@@ -50,9 +50,10 @@ public record ListenConfig(
           .build();
 
   /// The key and certificate files of a host in the Let's Encrypt directory layout, see
-  /// [#letsEncrypt()]
+  /// [#letsEncrypt()]. A wildcard uses the directory named for its suffix.
   public SslConfig letsEncryptSsl(String host) {
-    return new SslConfig(
-        letsEncryptPrefix + host + "/privkey.pem", letsEncryptPrefix + host + "/fullchain.pem");
+    SanitizeHostHandler.requireValidWildcard(host);
+    String directory = letsEncryptPrefix + (host.startsWith("*.") ? host.substring(2) : host);
+    return new SslConfig(directory + "/privkey.pem", directory + "/fullchain.pem");
   }
 }

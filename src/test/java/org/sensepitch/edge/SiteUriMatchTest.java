@@ -1,13 +1,17 @@
 package org.sensepitch.edge;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.sensepitch.edge.ConfigReloadTest.CONFIG;
 import static org.sensepitch.edge.ConfigReloadTest.sites;
 
 import io.netty.handler.codec.http.HttpResponseStatus;
+import java.util.Map;
 import net.serenitybdd.junit5.SerenityJUnit5Extension;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /// Selecting a site by host and [SiteConfig#uri()] prefix, see [SiteSelector#getSuppliers]
 ///
@@ -36,6 +40,56 @@ class SiteUriMatchTest {
     steps =
         new CompleteTest.Steps()
             .given_initialized_proxy_with(CONFIG.toBuilder().sites(sites(keyAndSite)).build());
+  }
+
+  @Test
+  void exactHostSelectsItsOwnUriTreeBeforeWildcard() {
+    given_sites(
+        "*.example.com",
+        ConfigReloadTest.response("WILD"),
+        "api",
+        site("/api/*", "EXACT").toBuilder().host("api.example.com").build());
+    steps.when_requesting("Other.Example.com.:443", "/").then_expect_content("WILD");
+    steps
+        .when_requesting_with_headers(
+            "two.example.com", "/", Map.of(SanitizeHostHandler.INGRESS_PATTERN_HEADER, "forged"))
+        .then_expect_content("WILD");
+    steps
+        .when_requesting_with_headers(
+            "api.example.com",
+            "/api/items",
+            Map.of(SanitizeHostHandler.INGRESS_PATTERN_HEADER, "forged"))
+        .then_expect_content("EXACT");
+    var completed = steps.proxy.metrics().ingressRequestsCompleted;
+    assertThat(completed.collect().getDataPoints()).hasSize(2);
+    assertThat(completed.labelValues("*.example.com").get()).isEqualTo(2);
+    assertThat(completed.labelValues("api.example.com").get()).isEqualTo(1);
+    steps
+        .when_requesting("api.example.com", "/")
+        .then_the_response_status_is(HttpResponseStatus.NOT_FOUND);
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "example.com",
+        "a.b.example.com",
+        "*.example.com",
+        "-bad.example.com",
+        ".example.com"
+      })
+  void wildcardMissIsUnserviced(String host) {
+    given_sites("*.example.com", ConfigReloadTest.response("WILD"));
+    steps.when_requesting(host, "/").then_the_response_status_is(HttpResponseStatus.BAD_REQUEST);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"*", "x.*.com", "*.*.com", "*..com", "*.bad-.com"})
+  void malformedWildcardIsRejected(String pattern) {
+    new ProxyConstructBDDTest.Steps()
+        .given_the_configuration(
+            CONFIG.toBuilder().sites(sites(pattern, ConfigReloadTest.response("X"))).build())
+        .then_expect_exception_with_message("Invalid wildcard host");
   }
 
   @Test

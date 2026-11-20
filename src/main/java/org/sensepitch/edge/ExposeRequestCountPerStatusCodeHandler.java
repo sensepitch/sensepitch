@@ -1,6 +1,5 @@
 package org.sensepitch.edge;
 
-import io.netty.handler.codec.http.HttpHeaderNames;
 import io.prometheus.metrics.core.metrics.Counter;
 import io.prometheus.metrics.core.metrics.Histogram;
 import io.prometheus.metrics.model.registry.Collector;
@@ -68,7 +67,7 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
 
   @Override
   public void logRequest(RequestLogInfo info) {
-    String ingress = info.request().headers().get(HttpHeaderNames.HOST);
+    String ingress = ProxyMetrics.ingress(info.request());
     int statusCode = info.response().status().code();
     // timeout before request was received, ignore
     if (statusCode == 408 && info.request().method().equals(RequestLogInfo.NIL_METHOD)) {

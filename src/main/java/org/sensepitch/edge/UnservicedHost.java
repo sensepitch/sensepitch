@@ -65,7 +65,7 @@ public class UnservicedHost {
             || SanitizeHostHandler.UNKNOWN_HOST.equals(host)) {
           rejectRequest(ctx, HttpResponseStatus.BAD_REQUEST);
           return;
-        } else if (!current.servicedDomains.contains(host)) {
+        } else if (SanitizeHostHandler.matchingHost(current.servicedDomains, host) == null) {
           String target = current.redirectToWWW.get(host);
           HttpResponseStatus status;
           if (target != null) {

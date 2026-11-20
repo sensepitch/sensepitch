@@ -79,11 +79,11 @@ class ProxyRejectedConfigBDDTest {
                     .build()),
             "protection scheme"),
         rejected(
-            "host wildcard",
+            "wildcard inside a host label",
             upstreamSite.toBuilder()
-                .sites(Map.of("*.example.com", upstreamSite.sites().get("example.com")))
+                .sites(Map.of("app*.example.com", upstreamSite.sites().get("example.com")))
                 .build(),
-            "Host wildcards are not yet supported"),
+            "Invalid wildcard host"),
         rejected(
             "site uri not a prefix",
             routingConfig(SiteConfig.builder().uri("/api").upstream(LOCAL).build()),

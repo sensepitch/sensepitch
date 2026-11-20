@@ -99,9 +99,7 @@ public class SiteSelector {
               if (host == null) {
                 throw new IllegalArgumentException("Site requires host or key");
               }
-              if (host.contains("*")) {
-                throw new IllegalArgumentException("Host wildcards are not yet supported");
-              }
+              SanitizeHostHandler.requireValidWildcard(host);
               String uriPrefix = uriPrefix(site.uri());
               var tree = sitesByHost.computeIfAbsent(host, k -> new PrefixTree<>());
               if (tree.put(uriPrefix, routing) != null) {
@@ -331,7 +329,7 @@ public class SiteSelector {
   ///
   /// @return the handler suppliers, or `null` if no site matches
   public Suppliers getSuppliers(HttpRequest request, String host) {
-    var tree = sitesByHost.get(host);
+    var tree = sitesByHost.get(SanitizeHostHandler.matchingHost(sitesByHost.keySet(), host));
     var routing = tree != null ? tree.lookup(request.uri()) : null;
     return routing != null ? routing.select(request) : null;
   }

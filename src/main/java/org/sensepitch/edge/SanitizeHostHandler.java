@@ -9,11 +9,13 @@ import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.ssl.SniCompletionEvent;
 import io.netty.util.AttributeKey;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /// Augments the host header and sets only well-known values.
@@ -56,6 +58,50 @@ public class SanitizeHostHandler extends ChannelInboundHandlerAdapter {
 
   public static final Set<String> UNSUPPORTED_HTTP_METHODS = Set.of("CONNECT", "TRACE");
 
+  private static final Pattern DNS_LABEL =
+      Pattern.compile("[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", Pattern.CASE_INSENSITIVE);
+
+  /// Added after [StripEdgeHeadersHandler] only for wildcard matches. The concrete host is
+  /// forwarded in `Host` and this configured pattern is used for the ingress metric label.
+  static final String INGRESS_PATTERN_HEADER = SensepitchHeaders.PREFIX + "Ingress-Pattern";
+
+  private static final int MAX_DNS_NAME_LENGTH = 253;
+
+  /// Finds the configured metric or routing key for a normalized, concrete host.
+  static String matchingHost(Set<String> patterns, String host) {
+    if (host == null || host.indexOf('*') >= 0) {
+      return null;
+    }
+    if (patterns.contains(host)) {
+      return host;
+    }
+    int dot = host.indexOf('.');
+    if (dot <= 0) {
+      return null;
+    }
+    String wildcard = "*" + host.substring(dot);
+    return patterns.contains(wildcard) && validWildcardLabel(host) ? wildcard : null;
+  }
+
+  /// Checks the concrete label matched by a wildcard in the HTTP or SNI mapping.
+  static boolean validWildcardLabel(String host) {
+    int dot = host.indexOf('.');
+    return dot > 0
+        && host.length() <= MAX_DNS_NAME_LENGTH
+        && DNS_LABEL.matcher(host).region(0, dot).matches();
+  }
+
+  /// Validates wildcard configuration before building HTTP or TLS routing tables.
+  static void requireValidWildcard(String host) {
+    if (host.contains("*")
+        && !(host.startsWith("*.")
+            && host.length() <= MAX_DNS_NAME_LENGTH
+            && Arrays.stream(host.substring(2).split("\\.", -1))
+                .allMatch(label -> DNS_LABEL.matcher(label).matches()))) {
+      throw new IllegalArgumentException("Invalid wildcard host: " + host);
+    }
+  }
+
   private final Supplier<Set<String>> knownHosts;
 
   public SanitizeHostHandler(Collection<String> knownHosts) {
@@ -85,6 +131,7 @@ public class SanitizeHostHandler extends ChannelInboundHandlerAdapter {
   /// @throws IllegalArgumentException if the host is not normalized, e.g. contains upper case
   ///   letters
   public static void requireNormalizedHost(String host) {
+    requireValidWildcard(host);
     if (!host.equals(normalizeHost(host))) {
       throw new IllegalArgumentException(
           "Host needs to be lower case, without port and trailing dot: " + host);
@@ -172,14 +219,14 @@ public class SanitizeHostHandler extends ChannelInboundHandlerAdapter {
   /// Sanitizes a host name sent by the client, the host header or the TLS server name (SNI), so it
   /// can be used as label value
   ///
-  /// @return the normalized host if it is known, [#MISSING_HOST] for `null`, otherwise
+  /// @return the configured host or wildcard if it matches, [#MISSING_HOST] for `null`, otherwise
   ///     [#UNKNOWN_HOST]
   public String sanitize(String host) {
     if (host == null) {
       return MISSING_HOST;
     }
-    String normalized = normalizeHost(host);
-    return normalized != null && knownHosts.get().contains(normalized) ? normalized : UNKNOWN_HOST;
+    String match = matchingHost(knownHosts.get(), normalizeHost(host));
+    return match != null ? match : UNKNOWN_HOST;
   }
 
   @Override
@@ -193,7 +240,12 @@ public class SanitizeHostHandler extends ChannelInboundHandlerAdapter {
         // RFC 9112, 3.2: more than one host header must be rejected, see UnservicedHost
         host = UNKNOWN_HOST;
       } else {
-        host = sanitize(hosts.get(0));
+        String normalized = normalizeHost(hosts.get(0));
+        String pattern = matchingHost(knownHosts.get(), normalized);
+        host = pattern == null ? UNKNOWN_HOST : normalized;
+        if (pattern != null && pattern.startsWith("*.")) {
+          request.headers().set(INGRESS_PATTERN_HEADER, pattern);
+        }
       }
       // always set, so no other host header than the checked one reaches the upstream
       request.headers().set(HttpHeaderNames.HOST, host);

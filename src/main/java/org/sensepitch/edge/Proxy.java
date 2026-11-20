@@ -369,6 +369,7 @@ public class Proxy implements ProxyContext {
     }
     if (cfg.snis() != null) {
       for (SniConfig sni : cfg.snis()) {
+        SanitizeHostHandler.requireValidWildcard(sni.host());
         contexts.put(sni.host(), createSslContext(sni.ssl(), files));
         certificates.put(sni.host(), Certificates.describe(sni.ssl(), files));
       }
@@ -384,14 +385,21 @@ public class Proxy implements ProxyContext {
     if (defaultContext == null) {
       throw new IllegalArgumentException("SSL setup missing");
     }
-    var builder = new DomainWildcardMappingBuilder<>(defaultContext);
-    contexts
-        .entrySet()
-        .forEach(
-            entry -> {
-              builder.add(entry.getKey(), entry.getValue());
-            });
-    return builder.build();
+    // Netty normalizes exact SNI names (including IDNs). Check wildcard matches against the
+    // same DNS label rules as HTTP before returning their context.
+    SslContext fallback = defaultContext;
+    var builder = new DomainWildcardMappingBuilder<Mapping<String, SslContext>>(host -> fallback);
+    contexts.forEach(
+        (pattern, context) -> {
+          if (pattern.startsWith("*.")) {
+            builder.add(
+                pattern, host -> SanitizeHostHandler.validWildcardLabel(host) ? context : fallback);
+          } else {
+            builder.add(pattern, host -> context);
+          }
+        });
+    var mapping = builder.build();
+    return host -> mapping.map(host).map(host);
   }
 
   /// @param files reads the key and certificate, see [ConfigFiles#open(String)]
@@ -575,8 +583,8 @@ public class Proxy implements ProxyContext {
       new StripEdgeHeadersHandler();
 
   void addHttpHandlers(ChannelPipeline pipeline) {
-    pipeline.addLast(sanitizeHostHandler);
     pipeline.addLast(STRIP_EDGE_HEADERS_HANDLER);
+    pipeline.addLast(sanitizeHostHandler);
     // logger sits between codec and rest so it sees header modifications
     // from timeout and keep alive below
     pipeline.addLast(

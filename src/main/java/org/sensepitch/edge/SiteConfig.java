@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Map;
 import lombok.Builder;
 
+/// @param host normalized host or wildcard such as `*.example.com`, defaulting to the site key.
+///   A wildcard matches a single DNS label. An exact host wins before URI selection.
 /// @param uri request path prefix ending with `*` that selects this site among the sites of the
 ///   same host, the longest matching prefix wins. Unset, `*` or `/*` serves the whole host, i.e.
 ///   every request no prefix of another site matches. Two sites with the same host and prefix are

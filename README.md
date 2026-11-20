@@ -372,6 +372,7 @@ a client cannot pretend to be a crawler or human traffic.
 | Header | Content |
 |---|---|
 | `Sp-Traffic-Type` | `human`: valid admission cookie or accepted challenge answer; `bot`: detected crawler; `unknown`: a configured bypass. Absent if no protection handled the request |
+| `Sp-Ingress-Pattern` | the configured wildcard when the host matched one |
 | `Sp-Admission-Token` | the validated admission token |
 | `Sp-Protection-Bypass` | reason the protection was bypassed, see `sensepitch.protection.bypass` |
 | `Sp-Ip-Traits`, `Sp-Country`, `Sp-Asn` | traits of the client address, if the IP lookup knows it |
@@ -530,6 +531,18 @@ sites:
 | `/api/v2/x` with cookie `beta` | `api-beta` |
 
 ### Several sites for one host
+
+Quote wildcard hosts in YAML, for example `"*.example.com"`. The wildcard matches one DNS
+label, so it serves `shop.example.com` and excludes both `example.com` and `a.b.example.com`.
+An exact host takes precedence across all paths. Upstreams receive the normalized concrete
+`Host` header. For a wildcard match, the edge sets `Sp-Ingress-Pattern` to the configured pattern
+and uses it for the ingress metric label.
+
+Supply a certificate whose subject alternative names cover the requested hosts. Set
+`listen.ssl` for a shared certificate or use `listen.snis` with the wildcard as the host
+to select its certificate. An exact SNI entry takes precedence. With `listen.letsEncrypt`,
+`*.example.com` reads `privkey.pem` and `fullchain.pem` from the `example.com` directory
+under `letsEncryptPrefix`. Provision the wildcard certificate there before loading the config.
 
 The site key is the host, unless the site sets `host`. Several sites can share a host and split
 it by `uri` prefix, e.g. to give a part of the host its own protection or fallback, which `paths`

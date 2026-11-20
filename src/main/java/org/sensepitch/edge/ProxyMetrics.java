@@ -21,7 +21,7 @@ import java.util.function.Supplier;
 /// Metrics of the proxy core: ingress requests and errors, deflector, request outcomes.
 ///
 /// Every ingress metric (`sensepitch_ingress_*`, and every metric counting ingress requests, e.g.
-/// `sensepitch_deflector_requests`) has the label `ingress`, the `Host` header as sanitized by
+/// `sensepitch_deflector_requests`) has the label `ingress`, the host pattern selected by
 /// [SanitizeHostHandler]: a known host or one of [SanitizeHostHandler#SPECIAL_HOSTS], so the
 /// number of label values is bounded. Take it with [#ingress(HttpRequest)], or with
 /// [#ingress(ChannelHandlerContext)] where the request is not at hand; before a request was read
@@ -264,6 +264,10 @@ public class ProxyMetrics implements HasMultipleMetrics {
   /// The `ingress` label value of a request, see the class doc. The host header is missing only
   /// when [SanitizeHostHandler] is not in the pipeline, e.g. in tests.
   static String ingress(HttpRequest request) {
+    String pattern = request.headers().get(SanitizeHostHandler.INGRESS_PATTERN_HEADER);
+    if (pattern != null) {
+      return pattern;
+    }
     String ingress = request.headers().get(HttpHeaderNames.HOST);
     return ingress != null ? ingress : SanitizeHostHandler.MISSING_HOST;
   }

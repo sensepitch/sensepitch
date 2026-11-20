@@ -142,6 +142,36 @@ class ExternalTcpIT {
     TestingParameters.stop(upstream);
   }
 
+  @Test
+  void handshakePresentsWildcardCertificateOnlyForMatchingSni() throws Exception {
+    ProxyConfig config = proxy.state().config();
+    SslConfig exact = config.listen().ssl();
+    var wildcard = exact.toBuilder().certPath("classpath:ssl/wildcard.crt").build();
+    var listen =
+        config.listen().toBuilder()
+            .snis(
+                List.of(
+                    new SniConfig("*.example.org", wildcard),
+                    new SniConfig("api.example.org", exact)))
+            .build();
+    assertThat(proxy.reload(config.toBuilder().listen(listen).build()).applied()).isTrue();
+    assertThat(peerSubject("shop.example.org")).isEqualTo("CN=*.example.org");
+    assertThat(peerSubject("api.example.org")).isEqualTo("CN=localhost");
+    assertThat(peerSubject("nested.shop.example.org")).isEqualTo("CN=localhost");
+  }
+
+  /// Completes a handshake with the requested SNI and reads the certificate from the wire.
+  private String peerSubject(String host) throws Exception {
+    try (SSLSocket socket = tlsSocket()) {
+      SSLParameters parameters = socket.getSSLParameters();
+      parameters.setServerNames(List.of(new SNIHostName(host)));
+      socket.setSSLParameters(parameters);
+      socket.startHandshake();
+      var cert = (X509Certificate) socket.getSession().getPeerCertificates()[0];
+      return cert.getSubjectX500Principal().getName();
+    }
+  }
+
   /// The upstream receives the trace context the edge assigned, and the request log reports the
   /// same span id, plus the data only a real TLS connection has
   @Test

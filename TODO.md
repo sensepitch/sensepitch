@@ -209,8 +209,8 @@ the failure threshold for upstreams is under Upstream.
 - [ ] Implement server-timing, https://www.w3.org/TR/server-timing/
   - P3: enable/disable forward of upstream Server-Timing info, log all of it, add own timing info,
     e.g. upstream connect latency
-- [ ] `SiteSelector`: support wildcard hosts (rejected at config load for now)
-  - P3: define precedence, matching boundaries and certificate requirements.
+- [x] `SiteSelector`: support single-label wildcard hosts
+  - Exact hosts win before URI selection. See [routing and certificates](README.md#several-sites-for-one-host).
 
 ## Metrics, logging
 
@@ -218,12 +218,10 @@ the failure threshold for upstreams is under Upstream.
 
 ## Configuration, operations
 
-- [ ] default configs / layer configuration / overwrite config tree
-  - P3: Define source precedence, map/list merge rules, deletion and reload semantics.
 - [ ] warmup before ready
   - P3: makes sense after cache is implemented, reload a previous cache content or define some URLs
     to spider through
-- [ ] documentation, nice examples are: Envoy
+- [ ] have good documentation, nice examples are: Envoy
   - Choose audience and deliverables: operator setup, reference configuration or architecture.
 
 ## Build, tests
