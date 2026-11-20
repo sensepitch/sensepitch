@@ -291,6 +291,27 @@ public class FlowAndExceptionTest {
     assertThat(logs.errors()).isEmpty();
   }
 
+  @Test
+  public void writabilityChangeAfterResponseIsIgnored() {
+    EmbeddedChannel downstream = new EmbeddedChannel();
+    EmbeddedChannel upstream =
+        new EmbeddedChannel(new ForwardHandler(downstream, proxyMetrics, "upstream"));
+    try {
+      logs.warnProblems();
+      upstream.writeInbound(LastHttpContent.EMPTY_LAST_CONTENT);
+      assertThat((Object) downstream.readOutbound()).isSameAs(LastHttpContent.EMPTY_LAST_CONTENT);
+
+      upstream.pipeline().fireChannelWritabilityChanged();
+
+      assertThat(upstream.isOpen()).isTrue();
+      assertThat(upstreamErrors("exception_without_request")).isZero();
+      assertThat(logs.messages(ForwardHandler.class)).isEmpty();
+    } finally {
+      upstream.finishAndReleaseAll();
+      downstream.finishAndReleaseAll();
+    }
+  }
+
   /// An exception after the response reaches no ingress handler, so it is counted here
   @Test
   public void upstreamExceptionAfterTheResponseIsCounted() {

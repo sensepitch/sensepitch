@@ -355,6 +355,9 @@ the failure threshold for upstreams is under Upstream.
 
 ## Done
 
+- [x] Ignore upstream writability changes after the final response content has been forwarded
+  (2026-11-20). A late notification no longer closes the upstream or reports an upstream error.
+
 - [x] Cleanup: first occurrence logging per metric series, counted by the logger (2026-11-20).
   `LOG.incrementAndWarnOnce(counter, labelValues, channel, message, cause)` replaces
   `requestProblem` and its `RequestProblem` record: it counts the event and logs it in one call.

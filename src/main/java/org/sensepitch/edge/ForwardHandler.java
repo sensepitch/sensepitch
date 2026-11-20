@@ -88,6 +88,9 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
   /// Flush if output buffer is full and apply back pressure to downstream
   @Override
   public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
+    if (downstream == null) {
+      return;
+    }
     if (ctx.channel().isWritable()) {
       downstream.setOption(ChannelOption.AUTO_READ, true);
     } else {
