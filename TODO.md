@@ -62,12 +62,13 @@ The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
   [PoW admission design](doc/design/pow-admission.md)
   - P2: define the replay threat and permitted reuse, whether enforcement is per node
     or cluster-wide, and the state, lifetime and coordination cost.
-- [ ] expiry of granted admissions: the token carries its creation time, but only the cookie
-  `Max-Age` (30 days) limits it
-  - P2: 5 days default maximum, 5s clock skew allowance for distributed servers, expired cookie
-    is set to a another cookie  (with '0' suffix), if previous expired cookie is present reset
-    with the same and add a counter, e.g. `admission0: origtoken-n-signature`. so we encode
-    always the original token and how many revisits we have seen.
+- [ ] expire granted admissions and preserve the original token across revisits
+  - P3. Enforce a server-side maximum age of five days by default, with five seconds of clock
+    skew allowed between servers. Require a fresh challenge when admission expires.
+  - Completion requires a signed `admission0` cookie carrying the original expired token and a
+    revisit count, for example `original-token-count-signature`. On a later expiry, if a valid
+    `admission0` cookie already exists, retain its original token and increment its count.
+    Issuing a fresh admission must preserve this history.
 - [ ] bypass config should be in the protection and not in the protection providers => we need a
   proper API for the protection provider
   - P3: define provider-independent bypass semantics and migration of existing configuration.
