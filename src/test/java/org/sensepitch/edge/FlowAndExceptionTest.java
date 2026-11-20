@@ -37,6 +37,8 @@ import java.net.SocketAddress;
 import java.net.SocketException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /// @author Jens Wilke
 public class FlowAndExceptionTest {
@@ -289,6 +291,33 @@ public class FlowAndExceptionTest {
     assertThat(upstreamErrors("unexpected_data")).isOne();
     assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.COMPLETED);
     assertThat(logs.errors()).isEmpty();
+  }
+
+  /// Finishing the response releases only a read pause imposed by this exchange.
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  public void earlyResponseRestoresClientReadState(boolean initiallyReading) {
+    EmbeddedChannel downstream = new EmbeddedChannel();
+    EmbeddedChannel upstream = (EmbeddedChannel) upstreamChannel(downstream);
+    try {
+      downstream.config().setAutoRead(initiallyReading);
+      upstream.config().setWriteBufferWaterMark(new WriteBufferWaterMark(1000, 2000));
+      upstreamFlushBlocker.blocked = true;
+      upstream.writeAndFlush(Unpooled.wrappedBuffer(new byte[5000]));
+      upstream.runPendingTasks();
+      assertThat(upstream.isWritable()).isFalse();
+      assertThat(downstream.config().isAutoRead()).isFalse();
+
+      upstream.writeInbound(LastHttpContent.EMPTY_LAST_CONTENT);
+
+      assertThat((Object) downstream.readOutbound()).isSameAs(LastHttpContent.EMPTY_LAST_CONTENT);
+      assertThat(upstream.isWritable()).isFalse();
+      assertThat(downstream.config().isAutoRead()).isEqualTo(initiallyReading);
+    } finally {
+      upstreamFlushBlocker.release(upstream);
+      upstream.finishAndReleaseAll();
+      downstream.finishAndReleaseAll();
+    }
   }
 
   @Test

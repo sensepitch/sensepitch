@@ -355,6 +355,9 @@ the failure threshold for upstreams is under Upstream.
 
 ## Done
 
+- [x] Resume client reads paused by upstream backpressure when the response finishes before
+  the upstream becomes writable again (2026-11-20).
+
 - [x] Ignore upstream writability changes after the final response content has been forwarded
   (2026-11-20). A late notification no longer closes the upstream or reports an upstream error.
 

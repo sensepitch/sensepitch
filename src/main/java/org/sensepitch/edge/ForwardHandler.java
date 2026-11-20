@@ -33,6 +33,7 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
   private final ProxyMetrics metrics;
   private final String upstream;
   private Channel downstream;
+  private boolean pausedDownstreamReads;
 
   /// @param upstream name of the upstream, the label of [ProxyMetrics#upstreamErrorCounter]
   public ForwardHandler(Channel ingress, ProxyMetrics metrics, String upstream) {
@@ -79,6 +80,7 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
       // the connection already. Maybe introduce error handling for non empty last contents and
       // requests only.
       downstream.writeAndFlush(msg, downstream.voidPromise());
+      resumeDownstreamReads();
       downstream = null;
     } else if (msg instanceof HttpContent) {
       downstream.write(msg, downstream.voidPromise());
@@ -92,10 +94,21 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
       return;
     }
     if (ctx.channel().isWritable()) {
-      downstream.setOption(ChannelOption.AUTO_READ, true);
+      resumeDownstreamReads();
     } else {
-      downstream.setOption(ChannelOption.AUTO_READ, false);
+      if (downstream.config().isAutoRead()) {
+        pausedDownstreamReads = true;
+        downstream.setOption(ChannelOption.AUTO_READ, false);
+      }
       flush(ctx);
+    }
+  }
+
+  /// Release this exchange's backpressure when the upstream catches up or finishes responding.
+  private void resumeDownstreamReads() {
+    if (pausedDownstreamReads) {
+      pausedDownstreamReads = false;
+      downstream.setOption(ChannelOption.AUTO_READ, true);
     }
   }
 
