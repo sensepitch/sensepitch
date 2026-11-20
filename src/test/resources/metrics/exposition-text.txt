@@ -35,9 +35,10 @@ sensepitch_circuitbreaker_transitions_total{component="requestLog",from="open",n
 # TYPE sensepitch_deflector_requests_total counter
 sensepitch_deflector_requests_total{ingress="example.com",outcome="challenge_sent"} 2.0
 sensepitch_deflector_requests_total{ingress="example.com",outcome="passed"} 1.0
-# HELP sensepitch_edge_server_live Always 1, might be 0 in the future when the server is not accepting connections, e.g. warming up
+# HELP sensepitch_edge_server_live Always 1 per ingress the server knows, might be 0 in the future when the server is not accepting connections, e.g. warming up
 # TYPE sensepitch_edge_server_live gauge
-sensepitch_edge_server_live 1.0
+sensepitch_edge_server_live{ingress="b.example.com"} 1.0
+sensepitch_edge_server_live{ingress="example.com"} 1.0
 # HELP sensepitch_ingress_connections_active Number of currently active connections (opened - closed)
 # TYPE sensepitch_ingress_connections_active gauge
 sensepitch_ingress_connections_active 1.0

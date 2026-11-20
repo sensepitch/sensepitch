@@ -165,9 +165,7 @@ the failure threshold for upstreams is under Upstream.
 
 ## Metrics, logging
 
-- [ ] `ProxyMetrics`: one `sensepitch_edge_server_live` per ingress, to drill down per ingress
-  and know how many servers it has
-  - P3: define ingress identity and expected behavior for multiple servers and reloads.
+- [ ] Consolidate all sensepitch metrics prefixes as constants into one place including their descritpion
 
 ## Configuration, operations
 
@@ -337,6 +335,16 @@ the failure threshold for upstreams is under Upstream.
 - [ ] add CONTRIBUTING.md
 
 ## Done
+
+- [x] `sensepitch_edge_server_live` per ingress (2026-11-19): one series with the value 1 and the
+  label `ingress` per known host, the hosts `SanitizeHostHandler` accepts (sites and
+  `listen.hosts`, without the special hosts), sorted. Ingress identity is the sanitized host, as on
+  every ingress metric; summed by `ingress` over all instances it gives the number of servers of an
+  ingress. Read from the current `EdgeState` at every scrape, so a reload adds and removes series
+  without a restart. No series without known hosts. Incompatible for queries that match the
+  former series without labels exactly; aggregate first, e.g. `max without (ingress)`. Covered by
+  `MetricsExportTest.serverLivePerIngress`/`serverLiveFollowsReload` and the exposition golden
+  files.
 
 - [x] Failed response writes are logged as aborted deliveries (2026-11-18):
   `RequestLoggingHandler` reports 499 and `CLIENT_ABORTED` when the final write fails, counts the

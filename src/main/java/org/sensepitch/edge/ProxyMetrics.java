@@ -10,10 +10,13 @@ import io.prometheus.metrics.model.snapshots.GaugeSnapshot;
 import io.prometheus.metrics.model.snapshots.Labels;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /// Metrics of the proxy core: ingress requests and errors, deflector, request outcomes.
 ///
@@ -28,10 +31,32 @@ import java.util.function.Consumer;
 /// label. A connection is counted before its server name is known, and sanitizing the name of
 /// every connection would cost on every connection for a breakdown that is rarely needed.
 ///
+/// `sensepitch_edge_server_live` has one series with the value 1 per known host, labelled
+/// `ingress`, the hosts [SanitizeHostHandler] accepts, without the special hosts. Summed by
+/// `ingress` over all instances it gives the number of servers of an ingress. The hosts are read at
+/// every scrape, so a configuration reload adds and removes series without a restart. Incompatible
+/// for queries that match the former series without labels exactly, e.g.
+/// `sensepitch_edge_server_live == 1` in a join; aggregate first, e.g. `max without (ingress)`.
+/// Without any known host there is no series.
+///
 /// @author Jens Wilke
 public class ProxyMetrics implements HasMultipleMetrics {
 
   private final MetricSet metricSet = new MetricSet();
+
+  /// The current known hosts, see [#registerCollectors]
+  private final Supplier<? extends Set<String>> knownHosts;
+
+  /// Metrics without known hosts, so without `sensepitch_edge_server_live` series, for tests
+  public ProxyMetrics() {
+    this(Set::of);
+  }
+
+  /// @param knownHosts supplies the current known hosts, as passed to [SanitizeHostHandler],
+  ///   read at every scrape
+  public ProxyMetrics(Supplier<? extends Set<String>> knownHosts) {
+    this.knownHosts = knownHosts;
+  }
 
   /// Exceptions on the ingress connection by ingress, phase and type, see [ExceptionHandler]. The
   /// types are `ssl`, `reset`, `timeout` (upstream response or response write timeout, also in
@@ -268,17 +293,24 @@ public class ProxyMetrics implements HasMultipleMetrics {
   @Override
   public void registerCollectors(Consumer<Collector> consumer) {
     metricSet.forEach(consumer);
-    consumer.accept(
-        () ->
-            GaugeSnapshot.builder()
-                .name("sensepitch_edge_server_live")
-                .help(
-                    "Always 1, might be 0 in the future when the server is not accepting connections, e.g. warming up")
-                .dataPoint(
-                    GaugeSnapshot.GaugeDataPointSnapshot.builder()
-                        .value(1)
-                        .labels(Labels.EMPTY)
-                        .build())
-                .build());
+    consumer.accept(this::serverLive);
+  }
+
+  /// One data point with the value 1 per known host, sorted for a stable export, see class doc
+  private GaugeSnapshot serverLive() {
+    GaugeSnapshot.Builder builder =
+        GaugeSnapshot.builder()
+            .name("sensepitch_edge_server_live")
+            .help(
+                "Always 1 per ingress the server knows, might be 0 in the future when the server is"
+                    + " not accepting connections, e.g. warming up");
+    for (String ingress : new TreeSet<>(knownHosts.get())) {
+      builder.dataPoint(
+          GaugeSnapshot.GaugeDataPointSnapshot.builder()
+              .value(1)
+              .labels(Labels.of("ingress", ingress))
+              .build());
+    }
+    return builder.build();
   }
 }

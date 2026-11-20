@@ -18,6 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
@@ -82,7 +83,7 @@ class MetricsExpositionTest {
   static PrometheusRegistry proxyMetricsRegistry() {
     PrometheusRegistry registry = new PrometheusRegistry();
 
-    ProxyMetrics proxyMetrics = new ProxyMetrics();
+    ProxyMetrics proxyMetrics = new ProxyMetrics(() -> Set.of("example.com", "b.example.com"));
     proxyMetrics.registerCollectors(registry::register);
     HttpRequest deflected = TestRequestLogInfo.of(HttpMethod.GET, 200).request();
     for (int i = 0; i < 5; i++) {

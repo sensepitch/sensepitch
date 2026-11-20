@@ -7,8 +7,14 @@ import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
+import io.prometheus.metrics.model.snapshots.DataPointSnapshot;
+import io.prometheus.metrics.model.snapshots.GaugeSnapshot;
 import io.prometheus.metrics.model.snapshots.HistogramSnapshot;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import net.serenitybdd.junit5.SerenityJUnit5Extension;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -108,6 +114,55 @@ class MetricsExportTest {
     assertThat(otherSnapshots.containsSnapshot("sensepitch_deflector_requests").getDataPoints())
         .isEmpty();
     other.proxy.shutdown();
+  }
+
+  /// One series per known host, read at every scrape, so a changed host set changes the series
+  @Test
+  void serverLivePerIngress() {
+    AtomicReference<Set<String>> hosts = new AtomicReference<>(Set.of("b.com", "c.com", "a.com"));
+    PrometheusRegistry registry = new PrometheusRegistry();
+    new ProxyMetrics(hosts::get).registerCollectors(registry::register);
+    assertThat(serverLive(registry))
+        .containsExactly(Map.entry("a.com", 1.0), Map.entry("b.com", 1.0), Map.entry("c.com", 1.0));
+    hosts.set(Set.of("d.com", "a.com"));
+    assertThat(serverLive(registry))
+        .containsExactly(Map.entry("a.com", 1.0), Map.entry("d.com", 1.0));
+    hosts.set(Set.of());
+    assertThat(serverLive(registry)).isEmpty();
+  }
+
+  /// The proxy reports its known hosts, the sites and the listen hosts without the special hosts,
+  /// and a reload adds and removes series
+  @Test
+  void serverLiveFollowsReload() {
+    assertThat(serverLive(steps.proxy.metricsRegistry()))
+        .containsExactly(
+            Map.entry("example.com", 1.0),
+            Map.entry("unserviced-domain.com", 1.0),
+            Map.entry("withprotection.com", 1.0));
+    var sites = new HashMap<>(COMMON_CONFIG.sites());
+    sites.remove("withprotection.com");
+    sites.put("second.com", COMMON_CONFIG.sites().get("example.com"));
+    assertThat(steps.proxy.reload(COMMON_CONFIG.toBuilder().sites(sites).build()).applied())
+        .isTrue();
+    assertThat(serverLive(steps.proxy.metricsRegistry()))
+        .containsExactly(
+            Map.entry("example.com", 1.0),
+            Map.entry("second.com", 1.0),
+            Map.entry("unserviced-domain.com", 1.0));
+  }
+
+  /// `ingress` label and value of the `sensepitch_edge_server_live` data points, in export order
+  static List<Map.Entry<String, Double>> serverLive(PrometheusRegistry registry) {
+    return registry.scrape().stream()
+        .filter(s -> s.getMetadata().getName().equals("sensepitch_edge_server_live"))
+        .flatMap(s -> s.getDataPoints().stream())
+        .map(
+            p ->
+                Map.entry(
+                    ((DataPointSnapshot) p).getLabels().get("ingress"),
+                    ((GaugeSnapshot.GaugeDataPointSnapshot) p).getValue()))
+        .toList();
   }
 
   @Test

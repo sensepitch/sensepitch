@@ -61,7 +61,6 @@ public class Proxy implements ProxyContext {
 
   private final Dummy404Handler dummy404Handler = new Dummy404Handler();
   private final TrackIngressConnectionsHandler trackIngressConnectionsHandler;
-  private final ProxyMetrics metrics = new ProxyMetrics();
   private final ProxyConfig config;
   private final ConnectionConfig connectionConfig;
 
@@ -73,6 +72,10 @@ public class Proxy implements ProxyContext {
 
   // replacements guarded by lock after construction; readers use the atomic reference
   private final AtomicReference<EdgeState> state = new AtomicReference<>();
+
+  /// Reads the known hosts of the current state at every scrape, the state is set before the
+  /// metrics server starts
+  private final ProxyMetrics metrics = new ProxyMetrics(() -> state.get().knownHosts());
 
   /// Delegates to the current state, so the SNI handler picks up reloaded certificates
   private final Mapping<String, SslContext> sniMapping = host -> state.get().sniMapping().map(host);
