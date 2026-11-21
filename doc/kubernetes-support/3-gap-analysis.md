@@ -1,9 +1,9 @@
 # Gap Analysis: Existing Edge versus Gateway API
 
 This compares the current code (state of commit `4336764`, runtime rows updated 2026-11-20)
-with what `2-gateway-api-scope.md` needs. The next steps are tracked in `TODO.md`, section
-"Kubernetes". Source paths are relative to
-`src/main/java/org/sensepitch/edge/`.
+with what `2-gateway-api-scope.md` needs. The next steps for the standalone edge are tracked in
+`TODO.md`, section "Kubernetes, direct node ingress", the Gateway API work in `NOT-YET.md`.
+Source paths are relative to `src/main/java/org/sensepitch/edge/`.
 
 ## Configuration model
 

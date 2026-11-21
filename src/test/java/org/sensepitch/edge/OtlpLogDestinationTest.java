@@ -47,7 +47,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 ///
 /// New scenarios belong here. [OtlpLogDestinationIT] repeats covered scenarios against real
 /// HTTP and timers, using this class as its fixture. The remaining server tests add unit coverage;
-/// see `TODO.md` for the fake clock that makes them fast.
+/// see `NOT-YET.md` for the fake clock that makes them fast.
 ///
 /// @author Jens Wilke
 @Timeout(value = 30, unit = TimeUnit.SECONDS)

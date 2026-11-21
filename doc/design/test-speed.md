@@ -3,7 +3,8 @@
 Design notes for how the build runs the tests and why it is set up this way: what was measured,
 what was changed, and what was tried and dropped. The rules for writing tests are in
 [`AGENTS.md`](../../AGENTS.md); this document records the reasoning behind them. Open work is in
-[`TODO.md`](../../TODO.md), section "Build, tests".
+[`TODO.md`](../../TODO.md) (the load sensitive assertions) and
+[`NOT-YET.md`](../../NOT-YET.md), both in section "Build, tests".
 
 All numbers were measured on 2026-11-14 on one developer machine (16 cores, Java 25) with
 `./mvnw clean ...`. Runs vary by about ±1 s, so differences below 2 s are noise unless they were
@@ -180,7 +181,7 @@ took 62.72 / 75.85 seconds. `ShadedJarIT` rose from 10.34 to 29.83 seconds; its 
 The wider collector teardown grace is the inferred cause; an HTTP server can consume its grace
 while a connection is still ending. Both gates passed with identical coverage. These single
 runs establish the observed cost, not a stable performance estimate. A grace that is consumed in
-full every run is a defect; finding its cause is in [`TODO.md`](../../TODO.md).
+full every run is a defect; finding its cause is in [`NOT-YET.md`](../../NOT-YET.md).
 
 ### Move only redundant server scenarios
 
@@ -363,4 +364,4 @@ build.
 - **The Serenity report mode**: make the reports useful, or drop the mode together with the
   byte-buddy agent it needs.
 
-Both are entries in [`TODO.md`](../../TODO.md).
+Both are entries in [`NOT-YET.md`](../../NOT-YET.md).

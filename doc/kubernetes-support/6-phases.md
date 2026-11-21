@@ -1,5 +1,9 @@
 # Implementation Phases
 
+Parked (2026-11-21): the current focus is the standalone edge on Kubernetes with direct node
+ingress, see `TODO.md`, section "Kubernetes, direct node ingress". The controller work below is
+in `NOT-YET.md`.
+
 Estimates assume one experienced developer who knows the Java/Netty code base. One day is
 about eight hours. The ranges add up; parallel work does not reduce total effort.
 

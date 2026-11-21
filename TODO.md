@@ -3,27 +3,44 @@
 Open work, grouped by area. Moved here from the README roadmap and from the `TODO`/`FIXME`
 comments in the code; an entry from the code names the class and method it is about.
 
+Current focus (2026-11-21): run the standalone edge on Kubernetes as the ingress of our own
+infrastructure, terminating TLS directly on the nodes, without a provider load balancer. Optional
+work outside this focus is parked in [NOT-YET.md](NOT-YET.md), among it the Gateway API
+controller; bugs and robustness issues stay here.
+
 Ordered by priority: bugs first, then Kubernetes, then the other areas. Priority suggestions:
-P1 = bugs and running the standalone edge on Kubernetes (items 2-4 and the drain delay); P2 = the
-M1 path, observability, admission lifetime; P3 = features and measured performance work. Confirm
-priorities against current production needs. Notes below record decisions to make before
-implementation.
+P1 = bugs and what the direct node ingress on Kubernetes needs; P2 = robustness and test
+reliability; P3 = the rest. Notes below record decisions to make before implementation.
 
 ## Bugs
 
 - [ ] Flaky, not investigated: `ProxyShutdownIT`,
   `ShadedJarIT.sigtermSendsTheRequestLogAndExits`
   - P2: also the `SIGTERM` path.
+- [ ] The challenge page shows a fixed host: `challenge/challenge.html` has
+  `Connecting to: www.packingpanic.com` hard-coded, so every protected site names that host to
+  its visitors. Fill in the requested host with the template placeholders `Deflector` already
+  replaces (`{{ENDPOINT}}`, `{{PREFIX}}`), escaped for HTML, or drop the line; test it.
+  - P1: visible to every challenged visitor of every site.
 
-## Kubernetes
+## Kubernetes, direct node ingress
 
-The plan is in [doc/kubernetes-support/](doc/kubernetes-support/), the gaps in
-`3-gap-analysis.md`. Items 1-4 run today's `config.yml` edge on Kubernetes without a controller;
-5-6 are also part of M1. Open Kubernetes items after item 3 are blocked until item 3 passes
-its standalone deployment check in CI.
+The target: cloud hosts, each with its own public IPv4 and IPv6 address on its network
+interface, no NAT and no load balancer in front; certificates come from an ACME client on the
+host (HTTP-01), the edge reads its Let's Encrypt directory. On Kubernetes the edge runs as a
+DaemonSet on the ingress nodes, binds 80 and 443 on the node addresses, and DNS lists the node
+addresses (DNS spreading, see "Exposure variants" in
+[1-architecture.md](doc/kubernetes-support/1-architecture.md)). The TCP peer stays the client,
+so `bypass.remotes` and the IP traits keep working without PROXY protocol. The edge runs today's
+`config.yml` from the [standalone chart](charts/sensepitch-edge/README.md); the Gateway API
+controller (Kubernetes items 6 to 8, milestones M1 to M3) is in [NOT-YET.md](NOT-YET.md).
+
+The numbers are kept from the earlier plan, other documents refer to them. Items after item 3
+build on its kind deployment check in CI.
 
 - [ ] 2. OCI image: Dockerfile with a Java 25 runtime, non-root, `java` as PID 1 so `SIGTERM`
   arrives (exec form); CI builds and pushes it
+  - P1.
   - Decided: Temurin JRE (glibc, same vendor as build), registry
     `ghcr.io/sensepitch/sensepitch-edge`, shaded jar kept; see
     [doc/design/oci-image.md](doc/design/oci-image.md).
@@ -32,7 +49,7 @@ its standalone deployment check in CI.
 - [ ] 3. manifests or a minimal Helm chart for a standalone edge: Deployment with probes and
   `terminationGracePeriodSeconds` above `shutdownTimeoutMillis`, Service, PodDisruptionBudget,
   config from a ConfigMap, secrets from Secrets, scrape annotations or ServiceMonitor
-  - P1: production on Kubernetes before M1; becomes the base of the provisioner (phase 6).
+  - P1: production on Kubernetes; the node ingress mode is item 9.
   - The standalone chart is in [charts/sensepitch-edge](charts/sensepitch-edge/README.md).
   - Completion requires `helm template` and `kubeconform` validation plus a passing deployment
     test in GitHub Actions on a hosted Ubuntu runner. Create a disposable single-node kind
@@ -49,23 +66,70 @@ its standalone deployment check in CI.
   See [doc/design/config-files.md](doc/design/config-files.md).
 - [ ] 5. plain HTTP listener and several listeners (`ListenConfig` has one HTTPS port), with the
   HTTP to HTTPS forward (there is no plain HTTP listener yet)
-  - P2: confirm the redirect status and host/port behavior. Needed for HTTP to HTTPS redirects,
-    cert-manager HTTP-01 and Gateway listeners; define the listener model with the Gateway API
-    records to avoid doing it twice.
-- [ ] 6. PROXY protocol v1/v2 per listener and `X-Forwarded-For`/`-Proto` only from trusted
-  proxy CIDRs
-  - P2: behind a cloud load balancer the client IP is lost today, and the deflector and IP traits
-    depend on it.
-- [ ] 7. M1 path, see `6-phases.md` "Development order": Gateway API Java records and snapshot
-  schema, then the `config.yml` converter run against the production configurations, then the
-  Go controller
-  - P2: start once 1-4 are done; the converter shows early whether the model covers production.
-    Gateway API hostnames use wildcards, see the `SiteSelector` entry under Ingress.
-- [ ] 8. extend the kind environment from item 3 with pinned Gateway API standard-channel CRDs,
-  the controller image, an echo backend, and cloud-provider-kind for LoadBalancer Services.
-  See `6-phases.md` "Development order" item 5 and
-  `7-testing-and-release.md`.
-  - P2: needed before the end-to-end routing test of item 7.
+  - P1: with direct node ingress the edge owns port 80 on the node, no other server answers it.
+    Confirm the redirect status and host/port behavior. Also needed for an HTTP-01 challenge
+    (item 12). The listener model should stay compatible with the Gateway API listeners
+    (NOT-YET.md), without waiting for them.
+- [ ] 9. node ingress mode in the chart: DaemonSet on labelled ingress nodes, ports 80 and 443 on
+  the node addresses. Decide how the ports are bound:
+  - P1.
+  - [ ] `hostNetwork: true`: the edge binds the node addresses itself. Ports below 1024 as
+    non-root need a capability; `capabilities.add: [NET_BIND_SERVICE]` is not effective for a
+    non-root process without file capabilities on `java`, and the
+    `net.ipv4.ip_unprivileged_port_start` sysctl is the node's in the host network namespace
+    (inferred from the Kubernetes and Linux capability rules, verify on the cluster).
+    `1-architecture.md` assumes the capability is enough.
+  - [ ] `hostPort` 80/443 to container ports 17080/17443: the pod stays non-root in its own
+    network namespace; the CNI `portmap` plugin forwards with DNAT, which keeps the client
+    address (verify with the chosen CNI). The scheduler allows one pod per host port and node,
+    which rules out the overlap of item 10.
+  - The node firewall must let 80 and 443 through to the chosen path.
+- [ ] 10. restart on a node without refused connections: with host ports a DaemonSet update
+  stops the old pod before the new one binds (`maxSurge: 0`), and the node refuses connections
+  in between. Tick one:
+  - P1, decide together with item 9.
+  - [ ] accept it: browsers try the next address of the name; check the clients that matter,
+    e.g. payment provider webhooks, which may not retry
+  - [ ] `SO_REUSEPORT` and DaemonSet `maxSurge: 1`: the new pod binds next to the old one, which
+    stops accepting once the new one is ready (`shutdownAcceptGraceMillis`). Needs
+    `hostNetwork` and the Netty epoll or io_uring transport (today NIO, `Proxy`).
+- [ ] 11. dual stack: the default `listen.address` `0.0.0.0` accepts IPv4 only, the nodes have
+  IPv6 as well. Verify that `address: "::"` accepts both on one socket, and that an IPv4 client
+  then appears as IPv4, not `::ffff:` mapped, in `bypass.remotes`, the IP traits, the request log
+  and `X-Forwarded-For`. With `hostPort` the cluster and CNI need dual stack too.
+  - P1, before AAAA records point to the nodes.
+- [ ] 12. certificates on Kubernetes: an ACME client on the host writes the Let's Encrypt directory
+  `listen.letsEncrypt` reads today. Tick one:
+  - P1.
+  - [ ] cert-manager with DNS-01, one Secret per host or wildcard, mounted through `snis`;
+    renewal reloads (item 4). Needs a DNS provider with an API cert-manager supports
+  - [ ] cert-manager with HTTP-01: its solver publishes the challenge through Ingress or
+    HTTPRoute objects, which only a controller serves; the standalone edge would need a fixed
+    route for `/.well-known/acme-challenge/` to the solver (item 5)
+  - [ ] an ACME client in the edge, with the account and keys shared by all nodes
+  - Also: the chart mounts one TLS Secret (`tls.existingSecret`); many hosts need a list of
+    Secrets or the `letsEncrypt` directory layout from one volume.
+- [ ] 13. IP database on the pods: production reads the IPinfo database (`ipLookup.ipInfoPath`).
+  A Secret or ConfigMap holds at most 1 MiB (`extraSecretMounts` in the chart), the database is
+  larger (inferred, check the file size). Decide the volume: init container download, image
+  layer, or hostPath; and the update without a restart (check whether `ConfigFileWatcher`
+  watches it).
+  - P1.
+- [ ] 14. draining with DNS spreading: a node's address stays in client caches for the DNS TTL
+  after it is removed from DNS. Decide who maintains the records without the controller (by hand
+  or external-dns with a node source), the TTL, and the order for
+  a node drain or upgrade: remove from DNS, wait the TTL, then drain.
+  `terminationGracePeriodSeconds` cannot cover a TTL of minutes.
+  - P2: until then, drain at quiet times.
+- [ ] 15. operator documentation for the direct node ingress: chart values, DNS, certificates,
+  firewall, the restart and drain procedure, in the chart README
+  - P1, with items 9 to 14.
+- [ ] 16. port the two production configurations (shop production, staging and demo, see
+  "Production configurations versus Gateway API" in
+  [3-gap-analysis.md](doc/kubernetes-support/3-gap-analysis.md)) to the chart: `localhost:<port>`
+  upstreams become Service names, the upstream still served by old infrastructure
+  (`127.0.0.1:3080`) a host address on the private network; list what does not fit.
+  - P1: shows early what the chart or the edge lacks.
 - [x] `/readyz` answers `200` only after the upstreams were probed and at least one configured
   upstream is available
   - P3: probed with a short-timeout plain TCP connect, short-circuiting on the first success; a
@@ -90,97 +154,37 @@ its standalone deployment check in CI.
     - [ ] bind the admission token to the site as well, or keep the challenge binding only
     - [ ] challenge lifetime and clock-skew window; key rotation and overlap period
     - [ ] migration policy for the current unsigned challenge and token format
+  - Stays here as a security issue. With several nodes a node-local set lets a replay succeed
+    once per node.
 - [x] expire granted admissions and preserve the original token across revisits
   - The default maximum age is five days with five seconds of future clock skew. On expiry,
     the challenge records the original token and revisit count in a signed `admission0` cookie.
     Fresh admissions preserve the history. See [PoW admission design](doc/design/pow-admission.md).
-- [ ] bypass config should be in the protection and not in the protection providers => we need a
-  proper API for the protection provider
-  - P3: define provider-independent bypass semantics and migration of existing configuration.
-- [ ] minimise + compress challenge resources
-  - P3: measure transfer and CPU costs; decide build-time compression and cache behavior.
-- [ ] abnormal admission usage detection
-  - P3: Define abnormal behavior, data sources, alerting versus enforcement, and privacy/retention.
-    Needs a stream per admission token
-- [ ] Admission performance: skip validation for keep-alive connections
-  - P3: benchmark first; define behavior when requests on one connection have different cookies
-    or a token expires or configuration reloads.
-- [ ] Admission performance: deliver the challenge via cookie and serve static HTML
-  (`Deflector.outputChallengeHtml` renders the page per request, only the challenge changes)
-  - P3: benchmark and define caching, cookie scope and security semantics.
-- [ ] improve bypass matching (maybe ASN, geo)
-  - Define which traits grant bypass, rule precedence and behavior for unknown or stale data.
-- [ ] `TrieIpLabelLookup`: consolidate into `IpTraitsLookup`
-  - P3, no operator-visible effect: clarify the desired API and whether collector composition
-    already covers the use case.
-- [ ] naming: the deflector is one component of the protection system, next to cookie gates and
-  the bypass. Decide whether to rename the metric `sensepitch_deflector_requests_total` to
-  `sensepitch_protection_requests_total` (with a label for the component, once more components
-  report outcomes) and "deflector" to "protection" in general, or keep it as is. A metric rename
-  breaks dashboards and alerts.
-  - P3: decide ownership and migration/deprecation before renaming.
 
 ## Request log
 
 Decisions, alternatives and limitations are in
 [doc/design/request-log.md](doc/design/request-log.md); retry backoff is described in
-[doc/design/circuit-breaker.md](doc/design/circuit-breaker.md).
+[doc/design/circuit-breaker.md](doc/design/circuit-breaker.md). Failover endpoints and the disk
+spool are in [NOT-YET.md](NOT-YET.md).
 
 - [x] compression budget: gzip runs on the common pool at a fixed level (`BEST_SPEED`)
   - Done: one bounded compression thread per OTLP destination, `otlp.compressionLevel` from 1 (the
     former `BEST_SPEED`, default) to 9. CPU and size measurements are in
     [the request log design](doc/design/request-log.md#gzip-on-one-dedicated-compression-thread).
     zstd remains contingent on the target log servers accepting it.
-- [ ] failover endpoints: several endpoints per OTLP destination, each with its own breaker, see
-  the `Endpoint` record in `HttpBatchSender`
-  - P3: decide failover order versus round robin; shares the design with "multiple servers per
-    upstream".
-- [ ] disk spool: waiting batches are lost when the proxy restarts during a log server outage or
-  hits the shutdown deadline
-  - P3: only if deployments ask for it; needs a volume, a disk budget, fsync policy and replay
-    order.
-
-## Upstream
-
-- [ ] upstream connection pool with keep-alive (an earlier version was disabled 2025-09-20 and
-  removed, see git history); then expose pool metrics via Prometheus
-  - P2: do a draft design first, researching what parameters are needed, looking at other proxy products
-- [ ] cache upstream responses with cache2k in netty buffers
-- [ ] Allow cache to be tiered on disk and Redis
-  - P2 relatively important so we don't have restart spikes
-- [ ] transparent compression: all responses to the client are compressed with low overhead brotli, add benchmarks
-- [ ] best compression for cached content
-  - first do low overhead brotli and cache it, recompress with more efficient compression with half
-    of the available CPUs in niced priority, priotising hot resources
-- [ ] multiple servers per upstream
-  - P3: decide load balancing, retry safety, failover and configuration semantics.
-  - One circuit breaker per server, see the `Endpoint` record in `HttpBatchSender`.
-- [ ] upstream health and circuit breaker:
-  [`CircuitBreaker`](src/main/java/org/sensepitch/edge/CircuitBreaker.java) exists for the request
-  log, it opens on the first failure; for upstreams it needs a failure threshold (consecutive
-  failures or a failure rate window, as in Armeria or resilience4j). This breaker replaces the TCP readiness probe.
-  - P2: do research and design draft and give decisions here
-  - P3: specify thresholds, recovery probes, per-server versus per-upstream state and retry policy.
-  - Keep the backoff, `Retry-After`, single probe and metrics, the request log keeps a threshold
-    of one, see [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md).
 
 ## Circuit breaker
 
-Limitations and the reasoning are in [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md);
-the failure threshold for upstreams is under Upstream.
+Limitations and the reasoning are in [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md).
+Slow calls and the failure threshold for upstreams are in [NOT-YET.md](NOT-YET.md).
 
-- [ ] slow calls count as failures, as resilience4j's slow call rate
-  - P3: for upstreams, once latency targets are known.
 - [x] manual control: force a breaker open, e.g. for maintenance of a log server or upstream
   - P3: through the admin server, `POST /circuit-breakers/<component>/<name>/open` and `/close`
     (2026-11-20), see [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md).
 
 ## Ingress, HTTP
 
-- [ ] HTTP/2 support, downstream
-  - P3: scope protocol negotiation, stream lifecycle, backpressure and compatibility tests.
-- [ ] quic support
-  - P3
 - [ ] Request size limits: decide the options below, then implement the chosen ones. Research,
   measurements and sources in the draft
   [request-body-limit-draft.md](doc/design/request-body-limit-draft.md)
@@ -216,80 +220,14 @@ the failure threshold for upstreams is under Upstream.
     - [ ] total request receive timeout in `listen.connection`, answered with 408
     - [ ] minimum upload rate
     - [ ] only correct the `ConnectionConfig` doc, which says a byte does not reset the timeout
-- [ ] Implement server-timing, https://www.w3.org/TR/server-timing/
-  - P3: enable/disable forward of upstream Server-Timing info, log all of it, add own timing info,
-    e.g. upstream connect latency
 - [x] `SiteSelector`: support single-label wildcard hosts
   - Exact hosts win before URI selection. See [routing and certificates](README.md#several-sites-for-one-host).
 
-## Metrics, logging
-
-- [ ] Cleanup: Consolidate all sensepitch metrics prefixes as constants into one place including their descritpion P3
-
-## Configuration, operations
-
-- [ ] warmup before ready
-  - P3: makes sense after cache is implemented, reload a previous cache content or define some URLs
-    to spider through
-- [ ] have good documentation, nice examples are: Envoy
-  - Choose audience and deliverables: operator setup, reference configuration or architecture.
-
 ## Build, tests
 
-- [ ] google-java-format 2, https://github.com/google/google-java-format/releases#release-v2.0.0
-  (stuck at 1.36.1: Spotless cannot load 1.37+, 2.x changes the lambda layout). Impact: one-time
-  reformat of about 40 files / 930 lines, lambda bodies hug the call (`.forEach(t -> {`) and indent
-  less. P3, no operator-visible effect: verify formatter/tool compatibility first. Done in its own
-  commit, `formatJavadoc` stays off so the `///` comments remain untouched.
-- [ ] Serenity reports (`-Dserenity.reports`) are of little use: no step is recorded for any
-  class, the reports list tests only. The byte-buddy agent (`-javaagent` copy step) and
-  `net.bytebuddy.nexus.disabled` are kept for that mode; whether they are needed with the
-  listener off was not tried.
-  - P3, no operator-visible effect: decide whether to make the reports useful or drop the report
-    mode and the agent.
-- [ ] Timing related tests: fake clock and a scheduler the test moves forward, then back into
-  the test scope. Measurements and what was tried are in
-  [doc/design/test-speed.md](doc/design/test-speed.md).
-  Today these tests wait on real timers and for completions on other threads,
-  which makes them slow, load sensitive, and forces `LogCapture.ofAllThreads()` with `@Isolated`.
-  The pattern exists in cache2k (simulated clock with a scheduler that advances) and should be
-  taken from there; `CircuitBreaker` already takes a `Ticker` and `CircuitBreakerBDDTest` drives
-  it with a mock.
-  - Seams needed in `HttpBatchSender` (under the 100% coverage rule): the timer, now
-    `CompletableFuture.delayedExecutor` in `scheduleFlush` and `scheduleProbe`; the clock, now
-    `System.nanoTime()` for the age of a batch; and the transport, now `httpClient.sendAsync` in
-    `post`, so a test completes a request itself with a status, a `Retry-After` or an
-    `IOException`. Production defaults stay as they are, no config change.
-  - Candidates: `OtlpLogDestinationTest` (3.6 s and `@Isolated`; 27 of its 34 tests run against a
-    log server, about 20 of them test sender logic: retry, give up, outage, buffer limit,
-    breaker probes, aging, slow start, concurrency limit), `ReloadableRequestLoggerTest` (3.3 s
-    on 2026-11-16; since 2026-11-18 it sets 10 to 50 ms retry delays, real time still),
-    `RequestLoggerFactoryTest`,
-    `HttpBatchSenderTest`,
-    `AsyncRequestLogWriterTest`, `ConfigFileWatcherTest`, and the durations in `ProxyShutdownIT`.
-  - The tests stay in the test scope meanwhile, see the coverage rule in `AGENTS.md`. Moving
-    `OtlpLogDestinationTest`'s 27 server tests to an `*IT` was tried 2026-11-14 and undone: it
-    saved about 4 s in `./mvnw test`, but the unit tests alone lost coverage, lines 95.1 % ->
-    94.5 %, branches 89.8 % -> 89.0 % (`HttpBatchSender` +20 lines and +11 branches missed,
-    `ThreadBatcher`, `OtlpBatchPayload`, `OtlpLogDestination`, `OtlpConfig`).
-  - On the fake clock a test needs no `@Isolated` any more. Keep a few real ones in addition, as
-    `*IT`: the wire format (headers, content type, gzip, body parsed by the OTLP classes), a
-    refused connection, and one multi threaded end to end run. They may only repeat what a unit
-    test covers.
-  - Write the converted tests as step chains (`*BDDTest`).
-  - New scenarios for the configurable retry delays, on the simulated clock only: the nominal
-    delay stops at `initialRetryDelayMillis × 2^20` below a larger `maxRetryDelayMillis` (see
-    Limitations in [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md)); with
-    `maxRetryDelayMillis` above `maximumUnsentLogAgeMillis` the batches age out between two
-    probes, are counted as dropped, and the next probe still comes.
-  - P2.
-- [ ] Component level config tests, against the rule in `AGENTS.md`
-  - P3, no operator visible effect: `RequestLoggerFactoryTest.environmentVariables` loads
-    destinations from env vars; `environmentVariableMapEntryNeedsValue` tests the env loader
-    itself; `ConfigTest` has cases built on component configs (`configDeflector`,
-    `readRoutingFromYaml`, `readRoutingFromEnvironment`).
-  - Remove a case if `./mvnw clean test jacoco:report` shows no coverage loss; a case that
-    covers a loader path moves to `ConfigTest` with a generic record.
+The test speed and clarity work (fake clock, event driven waits, instance scoped logging and
+more) is in [NOT-YET.md](NOT-YET.md).
+
 - [ ] Load sensitive timing assertions in tests, against the rules for concurrent tests in
   `AGENTS.md`
   - P2: each one can fail on a loaded machine although the code is right.
@@ -309,50 +247,13 @@ the failure threshold for upstreams is under Upstream.
     `OtlpLogDestinationTest` and `ReloadableRequestLoggerTest.awaitReceived`, `Thread.sleep(200)`
     before `isNotDone()` in `ProxyShutdownIT.shutdownWaitsForReload`.
   - Remedy for the timers, ages, backoff and the probe rate: the simulated clock, see "Timing
-    related tests". The `TimeBox` of cache2k pinpoint (below) for maximum times is not needed
-    any more, maximum times are not asserted at all.
-- [ ] Event driven waits instead of polling
-  - P2, test speed and clarity: `LogCapture`/`LogSink` and `RequestLogCapture` cannot wait for
-    an entry, so `ExternalTcpIT` (`awaitLogged`, `awaitRequestLog`, `awaitHandshakeErrors`),
-    `ShadedJarIT.awaitOutput` (reads the stderr file) and the counter and gauge `await`s in
-    `OtlpLogDestinationTest` and `ReloadableRequestLoggerTest` poll, as does
-    `ConfigFileWatcherTest.waitUntilReloads`.
-  - Remedy: a blocking wait for an entry on the captures, see "Instance scoped diagnostic
-    logging" below; test log servers that signal each post with a `Semaphore` or queue (several
-    have a `received` queue already), a latch in the reload callback. `TestingParameters.await`
-    stays where no hook exists.
-- [ ] Instance scoped diagnostic logging, plan in
-  [plans/instance-scoped-logging.md](plans/instance-scoped-logging.md)
-  - P2, test speed and clarity, no operator visible change: non-trace loggers become instance
-    fields owned by a `LogScope` (proxy instance and component), trace stays on a `static final`
-    `TraceLogger`. Tests capture by scope instead of by thread, so `LogCapture.ofAllThreads()`
-    and the `@Isolated` it forces go away, and `LogCapture.await` waits for a record without
-    polling.
-- [ ] `ShadedJarIT` waits the full stop grace of its test servers
-  - P2: with `TestingParameters.stop(HttpServer)` the class went from 10.3 s to 29.8 s, about
-    12.85 s per `sigtermKeepsFinalShutdownDiagnostic` case, see
-    [test speed design](doc/design/test-speed.md#asynchronous-waits-share-one-upper-bound). A
-    connection of the child JVM is the suspected cause, not verified.
-  - The wait for the child JVM to listen went from 30 s to the 10 s `TIMEOUT`. A JVM start is
-    many steps, not one action, so it needs its own bound, a multiple of `TIMEOUT` in
-    `TestingParameters`.
-- [ ] Investigate cache2k pinpoint for the test patterns
-  - P3: `cache2k-pinpoint` (module of cache2k, 2.6.1) has `PinpointParameters.TIMEOUT`,
-    `Await` with a `TimeoutError` naming the condition, `TimeBox` (timing assertions only count when
-    run within the time box, for "no retry within 100 ms" and the duration ranges in
-    `ProxyShutdownIT`), and `SupervisedExecutor`/`TaskSuccessGuardian` for exceptions of worker
-    threads. It is not on Maven Central (its deploy is skipped), so decide: publish it with a
-    cache2k release, or copy the needed classes.
-- [ ] Unify request level logging and metrics, so a request problem is reported with one method
-    call that logs and counts, see `ProxyLogger.requestProblem`, and unify it with the instance
-    level logging change. The `RequestProblem` constants already name the metric that counts them.
-    `RequestLoggingHandler` now reports request-log failures with a `RequestProblem` and
-    increments the error counter separately. P3
+    related tests" in [NOT-YET.md](NOT-YET.md). The `TimeBox` of cache2k pinpoint for maximum
+    times is not needed any more, maximum times are not asserted at all.
 
 ## Evergreen / Cleanups
 
 - [ ] Scrutinise the todos listed here and suggest removals or lower prio for things that have no
-  visible effect to the operator
+  visible effect to the operator; move optional work to [NOT-YET.md](NOT-YET.md)
 - [ ] Check on GitHub CI actions and add a TODO or fix right away if something is broken
 - [ ] Improve code according to styling rules
   - Ongoing review principle; record concrete inconsistencies as separate tasks.
@@ -363,30 +264,11 @@ the failure threshold for upstreams is under Upstream.
     is cancelled in `channelInactive`, so the return may be reachable only between `close` and
     the inactive event; decide whether to test it or remove it (not verified).
     - P3
-- [ ] Move a test case that is doing real socket connections or sleeps from test to verify and
-  maintain code coverage
-  - Goal: `./mvnw test` at about 5 s wall time. The classes run in parallel, the methods of a
-    class in order, so one slow class sets the wall time and a few hundred ms count.
-  - Move only what adds no coverage of its own: compare `target/site/jacoco/jacoco.csv` of
-    `./mvnw clean test jacoco:report` with and without the test (exclude with
-    `-Dtest='**/*Test,**/*BDDTest,!Class#method'`, a bare exclusion pulls in the `*IT`s). One
-    branch of `AsyncRequestLogWriter` varies between runs, rerun before reading a difference.
-  - Done 2026-11-16: `ReloadableRequestLoggerTest.noRecordIsLostWhileReloading` (0.3 s, no own
-    coverage) to `ReloadableRequestLoggerIT`, which uses the unit test class as its fixture.
-  - Next: `ReloadableRequestLoggerTest` still takes 3.3 s in the full run (2026-11-16):
-    `finishCoversDrainingDestinations` 1.4 s, `finishedDestinationEndsWhenItsRecordsAgedOut`
-    0.3 s, `disableAndEnableByReload` 0.2 s, `removedDestinationDoesNotBlockTheReload` 0.15 s.
-    Probably real timers (retry backoff after 503, age limit), not verified. What cannot move
-    for coverage gets a fake clock instead, see "Timing related tests" under Build, tests.
-- [ ] Performance test: different Netty allocators, leak detection,
-  `-XX:NativeMemoryTracking=summary`
-  - P3: compare representative workloads and record throughput, latency and memory before choosing.
 
 ## Governance
 
 - [ ] add LICENSE
   - P2 before an image is published (Kubernetes item 2): a public image needs a license.
-- [ ] add CONTRIBUTING.md
 
 ## Done
 

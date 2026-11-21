@@ -271,7 +271,7 @@ None of these is decided. The choices are ticked in `TODO.md`.
 
 - No end-to-end test with a real slow client; the slow upload exposure is inferred from the code
   and the decoder experiment.
-- HTTP/1.1 only. HTTP/2 and QUIC (open entries in `TODO.md`) have their own frame and flow
+- HTTP/1.1 only. HTTP/2 and QUIC (open entries in `NOT-YET.md`) have their own frame and flow
   control limits.
 - The header thresholds of the other proxies were found by trying sizes; they are ranges, not
   exact values.

@@ -404,7 +404,7 @@ Known limits of the current implementation, checked against the code on 2026-11-
 
 ## Planned improvements
 
-In rough order of priority. Items 1, 2, 4, 5 and 7 are tracked in [TODO.md](../../TODO.md),
+In rough order of priority. Items 1, 2, 4, 5 and 7 are tracked in [TODO.md](../../TODO.md) and [NOT-YET.md](../../NOT-YET.md),
 section "Request log", item 3 (the backoff part) under "Circuit breaker"; item 6 is a proposal.
 
 1. **Shutdown report wording.** Done: report elapsed phase times and a still-running event loop

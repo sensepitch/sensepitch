@@ -114,8 +114,8 @@
   testable. `./mvnw verify` with the integration tests and the JaCoCo floor is the final check,
   it must not be the only place where code of ours is executed. So do not move a test to `*IT` to
   make `./mvnw test` faster when that takes coverage away from the unit tests; make the test fast
-  instead (fake clock, no real timers, see `TODO.md`). Check with `./mvnw clean test jacoco:report`
-  and `target/site/jacoco/jacoco.csv` before and after.
+  instead (fake clock, no real timers, see `NOT-YET.md`). Check with
+  `./mvnw clean test jacoco:report` and `target/site/jacoco/jacoco.csv` before and after.
 - Tests that mainly exercise the JDK, Netty or other libraries rather than our code (e.g. real TLS
   handshakes, GC or RSS behaviour) belong in `*IT`, so `./mvnw test` stays fast. An `*IT` may
   repeat what a unit test covers against the real thing, it does not replace the unit test.
@@ -141,7 +141,7 @@ up to `TestingParameters.TIMEOUT`.** A test is correct only if it passes under a
   not. A timer that must not fire during a test is set to `TestingParameters.OUT_OF_REACH_MILLIS`
   (10 × `TIMEOUT`), never a literal.
 - Until a class has the clock seam, its real time unit tests stay for coverage (see above) and
-  are listed under "Timing related tests" in `TODO.md`; do not add new ones.
+  are listed under "Timing related tests" in `NOT-YET.md`; do not add new ones.
 - A transient state can be missed. `await` only monotonic conditions (`>=` on a counter) or a
   state the test freezes by holding the other side (worker, server, upstream on a latch or
   semaphore); assert while it is held, then release.
@@ -173,12 +173,13 @@ up to `TestingParameters.TIMEOUT`.** A test is correct only if it passes under a
      were read, `## Alternatives considered` for approaches that were tried or dropped, each with
      the reason or the measurement that decided it.
   6. `## Limitations`: what the design does not do or does not guarantee.
-  7. `## Planned improvements`: short, the entries themselves live in `TODO.md`.
+  7. `## Planned improvements`: short, the entries themselves live in `TODO.md` or `NOT-YET.md`.
 - State where facts come from: a measurement with date, machine and how it was taken, a library
   with its version, and say when something is inferred and not verified.
 - Link sources relative to the document (`../../src/main/java/...`), wrap at 100 columns.
 - Keep the document current: a change that overturns a decision or a number updates the document
-  in the same commit. `TODO.md` links to the design document instead of repeating it.
+  in the same commit. `TODO.md` and `NOT-YET.md` link to the design document instead of
+  repeating it.
 
 ## Commit & Pull Request Guidelines
 - Recent commits use short, imperative summaries (e.g., “update crawlers”, “fix concurrency issues”).

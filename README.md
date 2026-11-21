@@ -136,7 +136,8 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 
 ## Roadmap / TODOs
 
-See [TODO.md](TODO.md).
+See [TODO.md](TODO.md) for the current focus and [NOT-YET.md](NOT-YET.md) for optional work
+parked for later.
 
 ## Resources
 

@@ -304,7 +304,7 @@ Known limits of the current implementation, checked against the code on 2026-11-
 
 ## Planned improvements
 
-In order of priority, all tracked in [TODO.md](../../TODO.md), sections "Circuit breaker" and
+In order of priority, all tracked in [NOT-YET.md](../../NOT-YET.md), sections "Circuit breaker" and
 "Upstream":
 
 1. **Failure threshold for upstreams.** Open after a number of consecutive failures, or on a
@@ -315,4 +315,4 @@ In order of priority, all tracked in [TODO.md](../../TODO.md), sections "Circuit
 2. **Slow calls for upstreams.** Count a response slower than a threshold as a failure, as
    resilience4j's slow call rate, once upstream latency targets are known.
 3. **Several endpoints.** One breaker per endpoint of a destination or upstream, see the
-   `Endpoint` record in `HttpBatchSender` and "multiple servers per upstream" in TODO.md.
+   `Endpoint` record in `HttpBatchSender` and "multiple servers per upstream" in NOT-YET.md.
