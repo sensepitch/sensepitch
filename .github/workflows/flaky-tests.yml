@@ -1,0 +1,89 @@
+name: Flaky tests
+
+# Runs the full gate several times in a row on the same commit to find flaky tests. A test that
+# fails in some runs and passes in others is flaky; the report in the run summary lists each failed
+# test with the number of runs it failed in, and an overview per run. The job fails if any test
+# failed, so GitHub notifies. The reports and logs of every run are kept as an artifact.
+on:
+  schedule:
+    # 20:27 Singapore time (UTC+8, no daylight saving time) is 12:27 UTC; GitHub cron runs in
+    # UTC, and GitHub may start a scheduled run late
+    - cron: '27 12 * * *'
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: 'Number of verify runs'
+        default: '10'
+
+# never two hunts at once, they would slow each other down and produce flakes of their own
+concurrency:
+  group: flaky-tests
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  RUNS: ${{ github.event.inputs.runs || '10' }}
+
+jobs:
+  hunt:
+    runs-on: ubuntu-latest
+    # about 2 to 3 minutes per verify run on a hosted runner, with a wide margin
+    timeout-minutes: 180
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+
+    - name: Set up JDK 25
+      uses: actions/setup-java@v6
+      with:
+        java-version: 25
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version: '22'
+
+    # every run a complete `clean verify`, as in CI; a failed test does not stop the run, so the
+    # integration tests run too, and a failed run does not stop the next one
+    - name: Verify runs
+      run: |
+        mkdir -p flaky-runs
+        for i in $(seq 1 "$RUNS"); do
+          dir="flaky-runs/run-$i"
+          mkdir -p "$dir"
+          echo "::group::run $i of $RUNS"
+          set +e
+          ./mvnw -B clean verify -Dmaven.test.failure.ignore=true 2>&1 | tee "$dir/maven.log"
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "::endgroup::"
+          echo "$code" > "$dir/exit-code"
+          echo "run $i: maven exit $code"
+          for reports in target/surefire-reports target/failsafe-reports; do
+            if [ -d "$reports" ]; then
+              cp -r "$reports" "$dir/"
+            fi
+          done
+        done
+
+    # fails the job if a test failed in any run; the report file is written first
+    - name: Report
+      if: always()
+      run: python3 .github/scripts/flaky_report.py flaky-runs flaky-runs/report.md
+
+    - name: Summary
+      if: always() && hashFiles('flaky-runs/report.md') != ''
+      run: cat flaky-runs/report.md >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload run reports
+      uses: actions/upload-artifact@v7
+      if: always()
+      with:
+        name: flaky-test-runs
+        path: flaky-runs/
+        retention-days: 14

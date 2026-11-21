@@ -14,9 +14,16 @@ reliability; P3 = the rest. Notes below record decisions to make before implemen
 
 ## Bugs
 
+- [ ] Check the nightly flaky test hunt, the workflow "Flaky tests":
+  https://github.com/sensepitch/sensepitch-edge/actions/workflows/flaky-tests.yml
+  - P1: a test that failed in any of its runs is a flaky test, and fixing it has priority over
+    all other work here. Its run summary lists each failed test with the number of runs it failed
+    in; add an entry below per flaky test until it is fixed.
 - [ ] Flaky, not investigated: `ProxyShutdownIT`,
   `ShadedJarIT.sigtermSendsTheRequestLogAndExits`
   - P2: also the `SIGTERM` path.
+  - The workflow "Flaky tests" (`.github/workflows/flaky-tests.yml`) counts failures over ten
+    runs each evening; take the failure rates from its run summary.
 - [ ] The challenge page shows a fixed host: `challenge/challenge.html` has
   `Connecting to: www.packingpanic.com` hard-coded, so every protected site names that host to
   its visitors. Fill in the requested host with the template placeholders `Deflector` already

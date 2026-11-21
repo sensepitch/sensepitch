@@ -30,6 +30,10 @@
   `@Tag("excessive")`: measurements of the JVM rather than of our code (allocation, timing), load
   sensitive, run nightly (`.github/workflows/nightly.yml`). Run them when working on performance.
   Such a test must add no coverage of its own; port a missing scenario to a unit test first.
+- `.github/workflows/flaky-tests.yml` runs `./mvnw clean verify` ten times in a row every evening
+  (20:27 Singapore time, 12:27 UTC, or by hand with the number of runs) and reports
+  in the run summary which tests failed in how many runs (`.github/scripts/flaky_report.py`).
+  A flaky test found there goes under Bugs in `TODO.md`.
 - How the tests are run and why (parallel execution, isolation, log capture, Serenity, what was
   tried and dropped) is in `doc/design/test-speed.md`. Update it when the test setup changes.
 - `./mvnw test` runs the unit test classes concurrently in one JVM (JUnit parallel execution, set
