@@ -56,7 +56,7 @@ class RequestLoggerFactoryTest {
   List<String> queuedDestinations() {
     PrometheusRegistry registry = new PrometheusRegistry();
     metrics.registerCollectors(registry::register);
-    return new MetricsAndMemoryTest.Snapshots(registry.scrape())
+    return new MetricsAndMemoryTestManually.Snapshots(registry.scrape())
         .containsSnapshot("sensepitch_request_log_queued").getDataPoints().stream()
             .map(point -> point.getLabels().get(RequestLogMetrics.DESTINATION_LABEL))
             .toList();

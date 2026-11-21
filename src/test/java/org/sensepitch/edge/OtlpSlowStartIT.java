@@ -111,7 +111,7 @@ class OtlpSlowStartIT {
     PrometheusRegistry registry = new PrometheusRegistry();
     destination.metrics().registerCollectors(registry::register);
     return (long)
-        new MetricsAndMemoryTest.Snapshots(registry.scrape())
+        new MetricsAndMemoryTestManually.Snapshots(registry.scrape())
             .counter(
                 "sensepitch_request_log_export_retries", "destination", destination.destination())
             .getValue();

@@ -15,15 +15,15 @@ import org.junit.jupiter.api.Test;
 
 /// JVM memory metrics that need garbage collection or a forked JVM. They check the behaviour of
 /// the JVM and Netty rather than our code, and are slow, so they run with `verify` only. The fast
-/// checks are in [MetricsAndMemoryTest].
+/// checks are in [MetricsAndMemoryTestManually].
 ///
 /// @author Jens Wilke
 class JvmMemoryMetricsIT {
 
   PrometheusRegistry reg = new PrometheusRegistry();
 
-  MetricsAndMemoryTest.Snapshots snapshots() {
-    return new MetricsAndMemoryTest.Snapshots(reg.scrape());
+  MetricsAndMemoryTestManually.Snapshots snapshots() {
+    return new MetricsAndMemoryTestManually.Snapshots(reg.scrape());
   }
 
   /// Preserve the positive JVM-pool and reclamation checks independently of Netty's cleaner choice.

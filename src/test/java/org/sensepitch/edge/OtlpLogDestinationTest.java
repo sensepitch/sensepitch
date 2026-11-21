@@ -202,15 +202,15 @@ class OtlpLogDestinationTest {
     PrometheusRegistry registry = new PrometheusRegistry();
     destination.metrics().registerCollectors(registry::register);
     return (long)
-        new MetricsAndMemoryTest.Snapshots(registry.scrape())
+        new MetricsAndMemoryTestManually.Snapshots(registry.scrape())
             .counter(name, "destination", destination.destination())
             .getValue();
   }
 
-  MetricsAndMemoryTest.Snapshots scrape() {
+  MetricsAndMemoryTestManually.Snapshots scrape() {
     PrometheusRegistry registry = new PrometheusRegistry();
     destination.metrics().registerCollectors(registry::register);
-    return new MetricsAndMemoryTest.Snapshots(registry.scrape());
+    return new MetricsAndMemoryTestManually.Snapshots(registry.scrape());
   }
 
   /// A circuit breaker counter of this destination, e.g. `calls` with `kind`, `successful`
@@ -426,7 +426,7 @@ class OtlpLogDestinationTest {
     PrometheusRegistry registry = new PrometheusRegistry();
     destination.metrics().registerCollectors(registry::register);
     return (long)
-        new MetricsAndMemoryTest.Snapshots(registry.scrape())
+        new MetricsAndMemoryTestManually.Snapshots(registry.scrape())
             .gauge(
                 "sensepitch_request_log_buffered_bytes", "destination", destination.destination())
             .getValue();

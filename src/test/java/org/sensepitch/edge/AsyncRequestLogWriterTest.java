@@ -177,7 +177,7 @@ public class AsyncRequestLogWriterTest {
     for (int i = 0; i < 10; i++) {
       writer.writeLine("x".repeat(AsyncRequestLogWriter.BUFFER_SIZE + 1));
     }
-    var snapshots = new MetricsAndMemoryTest.Snapshots(registry.scrape());
+    var snapshots = new MetricsAndMemoryTestManually.Snapshots(registry.scrape());
     // labelled with the destination, since the proxy can have several
     assertThat(
             snapshots.counter("sensepitch_request_log_dropped", "destination", "stdout").getValue())

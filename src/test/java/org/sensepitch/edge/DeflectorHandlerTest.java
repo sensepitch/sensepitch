@@ -180,7 +180,7 @@ public class DeflectorHandlerTest {
     request("/default", TWITTER);
     PrometheusRegistry registry = new PrometheusRegistry();
     metrics.registerCollectors(registry::register);
-    var snapshots = new MetricsAndMemoryTest.Snapshots(registry.scrape());
+    var snapshots = new MetricsAndMemoryTestManually.Snapshots(registry.scrape());
     Map<String, Double> expected =
         Map.of(
             "challenge_sent", 1.0,

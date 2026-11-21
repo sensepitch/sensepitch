@@ -42,10 +42,13 @@ import org.junit.jupiter.api.parallel.Isolated;
 /// The slow checks of plain JVM behaviour, garbage collection and resident memory in a forked
 /// JVM, run as integration tests in [JvmMemoryMetricsIT].
 ///
+/// Tests here assert process and VM metrics to change, which may lag. We run these manually to
+/// verify our understanding of the metrics w.r.t. the Netty buffers.
+///
 /// @author Jens Wilke
 // alone: asserts on memory counters of the whole JVM
 @Isolated
-class MetricsAndMemoryTest {
+class MetricsAndMemoryTestManually {
 
   PrometheusRegistry reg = new PrometheusRegistry();
 
@@ -257,7 +260,7 @@ class MetricsAndMemoryTest {
         .isEqualTo(usedBefore);
   }
 
-  private static final Logger LOG = LogManager.getLogger(MetricsAndMemoryTest.class);
+  private static final Logger LOG = LogManager.getLogger(MetricsAndMemoryTestManually.class);
 
   /// Diagnostic output, enable with level `DEBUG` for this class in `log4j2-test.xml`
   private static void printMetrics(Snapshots s) {
@@ -275,6 +278,7 @@ class MetricsAndMemoryTest {
     return new Snapshots(reg.scrape());
   }
 
+  // FIXME: move this top level, used by other classes
   static class Snapshots {
 
     MetricSnapshots snapshots;

@@ -270,7 +270,7 @@ class ExternalTcpIT {
     await(
         "handshake error is counted for " + ingress,
         () ->
-            new MetricsAndMemoryTest.Snapshots(proxy.metricsRegistry().scrape())
+            new MetricsAndMemoryTestManually.Snapshots(proxy.metricsRegistry().scrape())
                 .getPrometheusExpositionText()
                 .contains(prefix));
   }
