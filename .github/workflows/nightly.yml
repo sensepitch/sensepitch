@@ -4,7 +4,9 @@ name: Nightly
 # pom.xml): measurements of the JVM rather than of our code, too load sensitive for every push.
 on:
   schedule:
-    - cron: '0 2 * * *'
+    # 21:47 Singapore time (UTC+8, no daylight saving time) is 13:47 UTC, so the result is in
+    # before 23:00 there; GitHub cron runs in UTC, and GitHub may start a scheduled run late
+    - cron: '47 13 * * *'
   workflow_dispatch:
 
 jobs:

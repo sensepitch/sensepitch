@@ -117,6 +117,12 @@ are listed under Bugs.
     all other work here. Its run summary lists each failed test with the number of runs it failed
     in; add an entry below per flaky test until it is fixed. The general remedies are in
     "Fast tests without flakiness" above.
+- [ ] Check the nightly build, the workflow "Nightly" (full gate plus the `@Tag("excessive")`
+  tests, 21:47 Singapore time):
+  https://github.com/sensepitch/sensepitch-edge/actions/workflows/nightly.yml
+  - P1: a failed run is a bug, fix it before other work. An excessive test that fails is load
+    sensitive or a real regression of allocation or timing; add an entry below per problem until
+    it is fixed. The failed run uploads `nightly-test-reports` (kept 7 days).
 - [ ] Flaky, not investigated: `ProxyShutdownIT`,
   `ShadedJarIT.sigtermSendsTheRequestLogAndExits`
   - P2: also the `SIGTERM` path.
