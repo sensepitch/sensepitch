@@ -1,8 +1,10 @@
 name: Flaky tests
 
-# Runs the full gate several times in a row on the same commit to find flaky tests. A test that
-# fails in some runs and passes in others is flaky; the report in the run summary lists each failed
-# test with the number of runs it failed in, and an overview per run. The job fails if any test
+# Runs the full gate many times on the same commit to find flaky tests, several runs at the same
+# time to overload the CPU, which makes timing dependent tests fail more often
+# (`.github/scripts/flaky_runs.sh`). A test that fails in some runs and passes in others is flaky;
+# the report in the run summary lists each failed test with the number of runs it failed in, and
+# an overview per run. The job fails if any test
 # failed, so GitHub notifies. The reports and logs of every run are kept as an artifact.
 on:
   schedule:
@@ -11,9 +13,12 @@ on:
     - cron: '27 12 * * *'
   workflow_dispatch:
     inputs:
-      runs:
-        description: 'Number of verify runs'
-        default: '10'
+      parallel:
+        description: 'Concurrent verify runs per round'
+        default: '5'
+      rounds:
+        description: 'Number of rounds'
+        default: '5'
 
 # never two hunts at once, they would slow each other down and produce flakes of their own
 concurrency:
@@ -24,13 +29,17 @@ permissions:
   contents: read
 
 env:
-  RUNS: ${{ github.event.inputs.runs || '10' }}
+  PARALLEL: ${{ github.event.inputs.parallel || '5' }}
+  ROUNDS: ${{ github.event.inputs.rounds || '5' }}
+  MAX_DELAY_SECONDS: '5'
 
 jobs:
   hunt:
     runs-on: ubuntu-latest
-    # about 2 to 3 minutes per verify run on a hosted runner, with a wide margin
-    timeout-minutes: 180
+    # about 80 s per verify run alone on the hosted runner (4 CPUs; measured 2026-11-21, 10 runs
+    # in a row took 13 min), so 25 runs five at a time should take about 30 to 35 min; not
+    # measured in parallel yet, more than double as margin
+    timeout-minutes: 90
 
     steps:
     - name: Checkout code
@@ -49,27 +58,9 @@ jobs:
         node-version: '22'
 
     # every run a complete `clean verify`, as in CI; a failed test does not stop the run, so the
-    # integration tests run too, and a failed run does not stop the next one
+    # integration tests run too, and a failed run does not stop the others
     - name: Verify runs
-      run: |
-        mkdir -p flaky-runs
-        for i in $(seq 1 "$RUNS"); do
-          dir="flaky-runs/run-$i"
-          mkdir -p "$dir"
-          echo "::group::run $i of $RUNS"
-          set +e
-          ./mvnw -B clean verify -Dmaven.test.failure.ignore=true 2>&1 | tee "$dir/maven.log"
-          code=${PIPESTATUS[0]}
-          set -e
-          echo "::endgroup::"
-          echo "$code" > "$dir/exit-code"
-          echo "run $i: maven exit $code"
-          for reports in target/surefire-reports target/failsafe-reports; do
-            if [ -d "$reports" ]; then
-              cp -r "$reports" "$dir/"
-            fi
-          done
-        done
+      run: .github/scripts/flaky_runs.sh flaky-runs
 
     # fails the job if a test failed in any run; the report file is written first
     - name: Report
