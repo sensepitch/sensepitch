@@ -23,6 +23,7 @@
     <jmh.version>1.37</jmh.version>
     <guava.version>33.8.0-jre</guava.version>
     <jackson.version>2.23.0</jackson.version>
+    <morimekta-testing.version>5.7.0</morimekta-testing.version>
     <!-- colon-free, so it can be part of a file name on any platform -->
     <maven.build.timestamp.format>yyyyMMddHHmmssSSS</maven.build.timestamp.format>
     <!-- overwritten by jacoco prepare-agent; empty default keeps surefire working when jacoco is skipped -->
@@ -172,6 +173,14 @@
       <groupId>org.assertj</groupId>
       <artifactId>assertj-core</artifactId>
       <version>${assertj.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <!-- fake clock and scheduler for the timing tests, see "Timing related tests" in TODO.md.
+         Only the core module: testing-junit5 pulls tomcat-jdbc, h2 and jdbi3 -->
+    <dependency>
+      <groupId>net.morimekta.utils</groupId>
+      <artifactId>testing</artifactId>
+      <version>${morimekta-testing.version}</version>
       <scope>test</scope>
     </dependency>
     <!-- Serenity-BDD integration for JUnit5 -->

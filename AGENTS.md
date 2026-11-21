@@ -145,7 +145,9 @@ up to `TestingParameters.TIMEOUT`.** A test is correct only if it passes under a
   not. A timer that must not fire during a test is set to `TestingParameters.OUT_OF_REACH_MILLIS`
   (10 × `TIMEOUT`), never a literal.
 - Until a class has the clock seam, its real time unit tests stay for coverage (see above) and
-  are listed under "Timing related tests" in `NOT-YET.md`; do not add new ones.
+  are listed under "Timing related tests" in `TODO.md`; do not add new ones. The fake clock is
+  morimekta's `FakeClock` with `ImmediateScheduledExecutor` (test scope), the production seams
+  take JDK or Netty types.
 - A transient state can be missed. `await` only monotonic conditions (`>=` on a counter) or a
   state the test freezes by holding the other side (worker, server, upstream on a latch or
   semaphore); assert while it is held, then release.

@@ -100,7 +100,7 @@ the component names the part (`listener`, `admin`, `metrics`, `config-watcher`, 
   instance fields from a `LogScope`, only `TraceLogger` is `static final`.
 - `doc/design/test-speed.md`: the `@Isolated` classes that become concurrent, with before/after
   `./mvnw test` time.
-- `NOT-YET.md`: log part of "Event driven waits instead of polling" to Done in `TODO.md`.
+- `TODO.md`: move the log part of "Event driven waits instead of polling" to Done.
 
 ## Order of work
 1. `LogScope`, `TraceLogger` split, `LogTarget` factory with scope, `LogSink`/`LogCapture` by

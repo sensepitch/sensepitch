@@ -333,6 +333,21 @@ identical. But the unit tests alone lost coverage, lines 95.1 % to 94.5 %, branc
 Would not make these tests fast. They are slow because they wait on real timers, and isolated
 because completions and log lines arrive on other threads. A transport mock changes neither.
 
+### cache2k-testing as the fake clock
+
+`SimulatedClock` of cache2k-testing (2.8-SNAPSHOT, checked 2026-11-21) was compared with
+morimekta `testing` and dropped:
+- Version 2.x is not published. Maven Central has only 1.1.1.Alpha, from 2018.
+- Its API is cache2k's `TimeReference` and `Scheduler`, so it would need adapters both ways.
+- Its POM pulls `cache2k-api`, `cache2k-pinpoint`, Mockito and the JUnit APIs without test scope.
+- In its non-deterministic mode the clock moves forward by itself after a number of readings,
+  and scheduled jobs run late on an executor. That suits cache stress tests, but here the test
+  should move the clock.
+
+What it does better: `wrapExecutor` counts the tasks in flight, so a test can wait until the
+asynchronous work has settled. With a transport seam the test completes the requests itself,
+so this is not needed.
+
 ### The Maven daemon
 
 `mvnd` 1.0.2 works with this build without changes, and per-build values such as the version in
@@ -356,12 +371,18 @@ build.
 
 ## Planned improvements
 
-- **A fake clock and a scheduler the test moves forward**, as in cache2k, for the tests that wait
-  on real timers. It needs three seams in `HttpBatchSender`: the timer, the clock and the
+- **A fake clock and a scheduler the test moves forward**, for the tests that wait on real
+  timers. Library: morimekta `net.morimekta.utils:testing` 5.7.0 (Maven Central, 2026-06-03),
+  `FakeClock` with `ImmediateScheduledExecutor`, which runs due tasks synchronously in the
+  thread that ticks, so a test stays single threaded and deterministic. Not its
+  `FakeScheduledExecutor`: that runs the tasks on real threads, and its own example sleeps after
+  the tick. The production seams take JDK or Netty types (`ScheduledExecutorService`, Netty
+  `Ticker`), a test adapts the `FakeClock` to a `Ticker`, so one time drives both. It needs three seams in `HttpBatchSender`: the timer, the clock and the
   transport. A test then completes requests and advances time from its own thread, which makes
   it fast and deterministic, lets it use the per thread log capture, and removes its
   `@Isolated`. This is the largest gain left. A few real tests stay as `*IT` in addition.
 - **The Serenity report mode**: make the reports useful, or drop the mode together with the
   byte-buddy agent it needs.
 
-Both are entries in [`NOT-YET.md`](../../NOT-YET.md).
+The fake clock is an entry in [`TODO.md`](../../TODO.md#fast-tests-without-flakiness), top
+priority since 2026-11-21; the report mode is in [`NOT-YET.md`](../../NOT-YET.md).

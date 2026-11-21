@@ -3,14 +3,111 @@
 Open work, grouped by area. Moved here from the README roadmap and from the `TODO`/`FIXME`
 comments in the code; an entry from the code names the class and method it is about.
 
-Current focus (2026-11-21): run the standalone edge on Kubernetes as the ingress of our own
-infrastructure, terminating TLS directly on the nodes, without a provider load balancer. Optional
-work outside this focus is parked in [NOT-YET.md](NOT-YET.md), among it the Gateway API
-controller; bugs and robustness issues stay here.
+Current focus (2026-11-21): first fast tests without flakiness, then run the standalone edge on
+Kubernetes as the ingress of our own infrastructure, terminating TLS directly on the nodes,
+without a provider load balancer. Optional work outside this focus is parked in
+[NOT-YET.md](NOT-YET.md), among it the Gateway API controller; bugs and robustness issues stay
+here.
 
-Ordered by priority: bugs first, then Kubernetes, then the other areas. Priority suggestions:
-P1 = bugs and what the direct node ingress on Kubernetes needs; P2 = robustness and test
-reliability; P3 = the rest. Notes below record decisions to make before implementation.
+Ordered by priority: fast tests without flakiness first, then bugs, then Kubernetes, then the
+other areas. Priority suggestions: P1 = fast and reliable tests, bugs, and what the direct node
+ingress on Kubernetes needs; P2 = robustness; P3 = the rest. Notes below record decisions to
+make before implementation.
+
+## Fast tests without flakiness
+
+First, because every other task depends on it: a quick test loop and a failure that always
+means a defect speed up and secure all work below. Measurements and what was tried are in
+[doc/design/test-speed.md](doc/design/test-speed.md). The flaky tests found by the nightly hunt
+are listed under Bugs.
+
+- [ ] Timing related tests: fake clock and a scheduler the test moves forward, then back into
+  the test scope.
+  Today these tests wait on real timers and for completions on other threads,
+  which makes them slow, load sensitive, and forces `LogCapture.ofAllThreads()` with `@Isolated`.
+  - P1.
+  - Library (decided 2026-11-21): morimekta `net.morimekta.utils:testing` (test scope, see
+    `pom.xml`), `FakeClock` with `ImmediateScheduledExecutor`, which runs due tasks in the thread
+    that ticks. Not `FakeScheduledExecutor`: it runs tasks on real threads and needs a sleep after
+    the tick. The production seams take JDK or Netty types (`ScheduledExecutorService`, Netty
+    `Ticker`, monotonic in production), never the library's; in tests a small `Ticker` adapter
+    over the `FakeClock` drives the breaker and the scheduler from one time. `CircuitBreaker`
+    already takes a `Ticker` and `CircuitBreakerBDDTest` drives it with a mock. Why not
+    cache2k-testing: see [doc/design/test-speed.md](doc/design/test-speed.md#alternatives-considered).
+  - The load sensitive assertions are listed in the next entry; this is the general remedy.
+  - Seams needed in `HttpBatchSender` (under the 100% coverage rule), the first user: the timer,
+    now `CompletableFuture.delayedExecutor` in `scheduleFlush` and `scheduleProbe`; the clock, now
+    `System.nanoTime()` for the age of a batch; and the transport, now `httpClient.sendAsync` in
+    `post`, so a test completes a request itself with a status, a `Retry-After` or an
+    `IOException`. Production defaults stay as they are, no config change.
+  - Candidates: `OtlpLogDestinationTest` (3.6 s and `@Isolated`; 27 of its 34 tests run against a
+    log server, about 20 of them test sender logic: retry, give up, outage, buffer limit,
+    breaker probes, aging, slow start, concurrency limit), `ReloadableRequestLoggerTest` (3.3 s
+    on 2026-11-16; since 2026-11-18 it sets 10 to 50 ms retry delays, real time still),
+    `RequestLoggerFactoryTest`,
+    `HttpBatchSenderTest`,
+    `AsyncRequestLogWriterTest`, `ConfigFileWatcherTest`, and the durations in `ProxyShutdownIT`.
+  - The tests stay in the test scope meanwhile, see the coverage rule in `AGENTS.md`. Moving
+    `OtlpLogDestinationTest`'s 27 server tests to an `*IT` was tried 2026-11-14 and undone: it
+    saved about 4 s in `./mvnw test`, but the unit tests alone lost coverage, lines 95.1 % ->
+    94.5 %, branches 89.8 % -> 89.0 % (`HttpBatchSender` +20 lines and +11 branches missed,
+    `ThreadBatcher`, `OtlpBatchPayload`, `OtlpLogDestination`, `OtlpConfig`).
+  - On the fake clock a test needs no `@Isolated` any more. Keep a few real ones in addition, as
+    `*IT`: the wire format (headers, content type, gzip, body parsed by the OTLP classes), a
+    refused connection, and one multi threaded end to end run. They may only repeat what a unit
+    test covers.
+  - Write the converted tests as step chains (`*BDDTest`).
+  - New scenarios for the configurable retry delays, on the simulated clock only: the nominal
+    delay stops at `initialRetryDelayMillis × 2^20` below a larger `maxRetryDelayMillis` (see
+    Limitations in [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md)); with
+    `maxRetryDelayMillis` above `maximumUnsentLogAgeMillis` the batches age out between two
+    probes, are counted as dropped, and the next probe still comes.
+- [ ] Load sensitive timing assertions in tests, against the rules for concurrent tests in
+  `AGENTS.md`
+  - P1: each one can fail on a loaded machine although the code is right.
+  - Maximum elapsed time, drop it: `ReloadableRequestLoggerTest`
+    `replacedDestinationSendsItsBacklog` and `removedDestinationDoesNotBlockTheReload` (reload
+    `< 500` ms, instead hold the log server on a latch during the reload), `ProxyShutdownIT`
+    (`< 5_000` twice, `< 2_500` in `slowRequestIsAbortedAndStillLogged`), `ShadedJarIT` (exit
+    `< 4_000` after `destroy()`). The minimum times in `*IT` (`>= 900`) stay.
+  - Short configured timings that race the test's own steps:
+    `ReloadableRequestLoggerTest.finishedDestinationEndsWhenItsRecordsAgedOut` (age 300 ms, then
+    `awaitAttempts(1)`: a pause over 300 ms may age the records out before the first attempt,
+    inferred, not reproduced), `OtlpLogDestinationTest.agedBatchIsDiscarded` (age 200 ms).
+  - Rate over a real time window: `OtlpLogDestinationTest` "probes in 500 ms, with 10 more
+    batches waiting" `<= 6` after `Thread.sleep(500)`.
+  - Sleep then assert, cannot fail but proves little and costs time: `Thread.sleep(100)` before
+    `maxInFlight` in `OtlpLogDestinationTest` and `OtlpSlowStartIT`, `poll(100 ms)` is null in
+    `OtlpLogDestinationTest` and `ReloadableRequestLoggerTest.awaitReceived`, `Thread.sleep(200)`
+    before `isNotDone()` in `ProxyShutdownIT.shutdownWaitsForReload`.
+  - Remedy for the timers, ages, backoff and the probe rate: the simulated clock, see "Timing
+    related tests" above. The `TimeBox` of cache2k pinpoint for maximum times is not needed any
+    more, maximum times are not asserted at all.
+- [ ] Event driven waits instead of polling
+  - P1, test speed and clarity: `LogCapture`/`LogSink` and `RequestLogCapture` cannot wait for
+    an entry, so `ExternalTcpIT` (`awaitLogged`, `awaitRequestLog`, `awaitHandshakeErrors`),
+    `ShadedJarIT.awaitOutput` (reads the stderr file) and the counter and gauge `await`s in
+    `OtlpLogDestinationTest` and `ReloadableRequestLoggerTest` poll, as does
+    `ConfigFileWatcherTest.waitUntilReloads`.
+  - Remedy: a blocking wait for an entry on the captures, see "Instance scoped diagnostic
+    logging" below; test log servers that signal each post with a `Semaphore` or queue (several
+    have a `received` queue already), a latch in the reload callback. `TestingParameters.await`
+    stays where no hook exists.
+- [ ] Instance scoped diagnostic logging, plan in
+  [plans/instance-scoped-logging.md](plans/instance-scoped-logging.md)
+  - P1, test speed and clarity, no operator visible change: non-trace loggers become instance
+    fields owned by a `LogScope` (proxy instance and component), trace stays on a `static final`
+    `TraceLogger`. Tests capture by scope instead of by thread, so `LogCapture.ofAllThreads()`
+    and the `@Isolated` it forces go away, and `LogCapture.await` waits for a record without
+    polling.
+- [ ] `ShadedJarIT` waits the full stop grace of its test servers
+  - P1: with `TestingParameters.stop(HttpServer)` the class went from 10.3 s to 29.8 s, about
+    12.85 s per `sigtermKeepsFinalShutdownDiagnostic` case, see
+    [test speed design](doc/design/test-speed.md#asynchronous-waits-share-one-upper-bound). A
+    connection of the child JVM is the suspected cause, not verified.
+  - The wait for the child JVM to listen went from 30 s to the 10 s `TIMEOUT`. A JVM start is
+    many steps, not one action, so it needs its own bound, a multiple of `TIMEOUT` in
+    `TestingParameters`.
 
 ## Bugs
 
@@ -18,7 +115,8 @@ reliability; P3 = the rest. Notes below record decisions to make before implemen
   https://github.com/sensepitch/sensepitch-edge/actions/workflows/flaky-tests.yml
   - P1: a test that failed in any of its runs is a flaky test, and fixing it has priority over
     all other work here. Its run summary lists each failed test with the number of runs it failed
-    in; add an entry below per flaky test until it is fixed.
+    in; add an entry below per flaky test until it is fixed. The general remedies are in
+    "Fast tests without flakiness" above.
 - [ ] Flaky, not investigated: `ProxyShutdownIT`,
   `ShadedJarIT.sigtermSendsTheRequestLogAndExits`
   - P2: also the `SIGTERM` path.
@@ -232,30 +330,9 @@ Slow calls and the failure threshold for upstreams are in [NOT-YET.md](NOT-YET.m
 
 ## Build, tests
 
-The test speed and clarity work (fake clock, event driven waits, instance scoped logging and
-more) is in [NOT-YET.md](NOT-YET.md).
-
-- [ ] Load sensitive timing assertions in tests, against the rules for concurrent tests in
-  `AGENTS.md`
-  - P2: each one can fail on a loaded machine although the code is right.
-  - Maximum elapsed time, drop it: `ReloadableRequestLoggerTest`
-    `replacedDestinationSendsItsBacklog` and `removedDestinationDoesNotBlockTheReload` (reload
-    `< 500` ms, instead hold the log server on a latch during the reload), `ProxyShutdownIT`
-    (`< 5_000` twice, `< 2_500` in `slowRequestIsAbortedAndStillLogged`), `ShadedJarIT` (exit
-    `< 4_000` after `destroy()`). The minimum times in `*IT` (`>= 900`) stay.
-  - Short configured timings that race the test's own steps:
-    `ReloadableRequestLoggerTest.finishedDestinationEndsWhenItsRecordsAgedOut` (age 300 ms, then
-    `awaitAttempts(1)`: a pause over 300 ms may age the records out before the first attempt,
-    inferred, not reproduced), `OtlpLogDestinationTest.agedBatchIsDiscarded` (age 200 ms).
-  - Rate over a real time window: `OtlpLogDestinationTest` "probes in 500 ms, with 10 more
-    batches waiting" `<= 6` after `Thread.sleep(500)`.
-  - Sleep then assert, cannot fail but proves little and costs time: `Thread.sleep(100)` before
-    `maxInFlight` in `OtlpLogDestinationTest` and `OtlpSlowStartIT`, `poll(100 ms)` is null in
-    `OtlpLogDestinationTest` and `ReloadableRequestLoggerTest.awaitReceived`, `Thread.sleep(200)`
-    before `isNotDone()` in `ProxyShutdownIT.shutdownWaitsForReload`.
-  - Remedy for the timers, ages, backoff and the probe rate: the simulated clock, see "Timing
-    related tests" in [NOT-YET.md](NOT-YET.md). The `TimeBox` of cache2k pinpoint for maximum
-    times is not needed any more, maximum times are not asserted at all.
+The test speed and flakiness work is the first section, "Fast tests without flakiness". The
+optional test work (cache2k pinpoint, component level config tests, unified request level
+logging) is in [NOT-YET.md](NOT-YET.md).
 
 ## Evergreen / Cleanups
 

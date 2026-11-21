@@ -126,6 +126,10 @@ the failure threshold for upstreams is under Upstream.
 
 ## Build, tests
 
+The test speed and flakiness work (fake clock, event driven waits, instance scoped logging,
+`ShadedJarIT` stop grace) moved to [TODO.md](TODO.md#fast-tests-without-flakiness) as top
+priority on 2026-11-21.
+
 - [ ] google-java-format 2, https://github.com/google/google-java-format/releases#release-v2.0.0
   (stuck at 1.36.1: Spotless cannot load 1.37+, 2.x changes the lambda layout). Impact: one-time
   reformat of about 40 files / 930 lines, lambda bodies hug the call (`.forEach(t -> {`) and indent
@@ -137,44 +141,6 @@ the failure threshold for upstreams is under Upstream.
   listener off was not tried.
   - P3, no operator-visible effect: decide whether to make the reports useful or drop the report
     mode and the agent.
-- [ ] Timing related tests: fake clock and a scheduler the test moves forward, then back into
-  the test scope. Measurements and what was tried are in
-  [doc/design/test-speed.md](doc/design/test-speed.md).
-  Today these tests wait on real timers and for completions on other threads,
-  which makes them slow, load sensitive, and forces `LogCapture.ofAllThreads()` with `@Isolated`.
-  The pattern exists in cache2k (simulated clock with a scheduler that advances) and should be
-  taken from there; `CircuitBreaker` already takes a `Ticker` and `CircuitBreakerBDDTest` drives
-  it with a mock.
-  - The load sensitive assertions themselves are robustness issues and stay in `TODO.md`, see
-    "Load sensitive timing assertions in tests"; this is the general remedy.
-  - Seams needed in `HttpBatchSender` (under the 100% coverage rule): the timer, now
-    `CompletableFuture.delayedExecutor` in `scheduleFlush` and `scheduleProbe`; the clock, now
-    `System.nanoTime()` for the age of a batch; and the transport, now `httpClient.sendAsync` in
-    `post`, so a test completes a request itself with a status, a `Retry-After` or an
-    `IOException`. Production defaults stay as they are, no config change.
-  - Candidates: `OtlpLogDestinationTest` (3.6 s and `@Isolated`; 27 of its 34 tests run against a
-    log server, about 20 of them test sender logic: retry, give up, outage, buffer limit,
-    breaker probes, aging, slow start, concurrency limit), `ReloadableRequestLoggerTest` (3.3 s
-    on 2026-11-16; since 2026-11-18 it sets 10 to 50 ms retry delays, real time still),
-    `RequestLoggerFactoryTest`,
-    `HttpBatchSenderTest`,
-    `AsyncRequestLogWriterTest`, `ConfigFileWatcherTest`, and the durations in `ProxyShutdownIT`.
-  - The tests stay in the test scope meanwhile, see the coverage rule in `AGENTS.md`. Moving
-    `OtlpLogDestinationTest`'s 27 server tests to an `*IT` was tried 2026-11-14 and undone: it
-    saved about 4 s in `./mvnw test`, but the unit tests alone lost coverage, lines 95.1 % ->
-    94.5 %, branches 89.8 % -> 89.0 % (`HttpBatchSender` +20 lines and +11 branches missed,
-    `ThreadBatcher`, `OtlpBatchPayload`, `OtlpLogDestination`, `OtlpConfig`).
-  - On the fake clock a test needs no `@Isolated` any more. Keep a few real ones in addition, as
-    `*IT`: the wire format (headers, content type, gzip, body parsed by the OTLP classes), a
-    refused connection, and one multi threaded end to end run. They may only repeat what a unit
-    test covers.
-  - Write the converted tests as step chains (`*BDDTest`).
-  - New scenarios for the configurable retry delays, on the simulated clock only: the nominal
-    delay stops at `initialRetryDelayMillis × 2^20` below a larger `maxRetryDelayMillis` (see
-    Limitations in [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md)); with
-    `maxRetryDelayMillis` above `maximumUnsentLogAgeMillis` the batches age out between two
-    probes, are counted as dropped, and the next probe still comes.
-  - P2.
 - [ ] Component level config tests, against the rule in `AGENTS.md`
   - P3, no operator visible effect: `RequestLoggerFactoryTest.environmentVariables` loads
     destinations from env vars; `environmentVariableMapEntryNeedsValue` tests the env loader
@@ -182,31 +148,6 @@ the failure threshold for upstreams is under Upstream.
     `readRoutingFromYaml`, `readRoutingFromEnvironment`).
   - Remove a case if `./mvnw clean test jacoco:report` shows no coverage loss; a case that
     covers a loader path moves to `ConfigTest` with a generic record.
-- [ ] Event driven waits instead of polling
-  - P2, test speed and clarity: `LogCapture`/`LogSink` and `RequestLogCapture` cannot wait for
-    an entry, so `ExternalTcpIT` (`awaitLogged`, `awaitRequestLog`, `awaitHandshakeErrors`),
-    `ShadedJarIT.awaitOutput` (reads the stderr file) and the counter and gauge `await`s in
-    `OtlpLogDestinationTest` and `ReloadableRequestLoggerTest` poll, as does
-    `ConfigFileWatcherTest.waitUntilReloads`.
-  - Remedy: a blocking wait for an entry on the captures, see "Instance scoped diagnostic
-    logging" below; test log servers that signal each post with a `Semaphore` or queue (several
-    have a `received` queue already), a latch in the reload callback. `TestingParameters.await`
-    stays where no hook exists.
-- [ ] Instance scoped diagnostic logging, plan in
-  [plans/instance-scoped-logging.md](plans/instance-scoped-logging.md)
-  - P2, test speed and clarity, no operator visible change: non-trace loggers become instance
-    fields owned by a `LogScope` (proxy instance and component), trace stays on a `static final`
-    `TraceLogger`. Tests capture by scope instead of by thread, so `LogCapture.ofAllThreads()`
-    and the `@Isolated` it forces go away, and `LogCapture.await` waits for a record without
-    polling.
-- [ ] `ShadedJarIT` waits the full stop grace of its test servers
-  - P2: with `TestingParameters.stop(HttpServer)` the class went from 10.3 s to 29.8 s, about
-    12.85 s per `sigtermKeepsFinalShutdownDiagnostic` case, see
-    [test speed design](doc/design/test-speed.md#asynchronous-waits-share-one-upper-bound). A
-    connection of the child JVM is the suspected cause, not verified.
-  - The wait for the child JVM to listen went from 30 s to the 10 s `TIMEOUT`. A JVM start is
-    many steps, not one action, so it needs its own bound, a multiple of `TIMEOUT` in
-    `TestingParameters`.
 - [ ] Investigate cache2k pinpoint for the test patterns
   - P3: `cache2k-pinpoint` (module of cache2k, 2.6.1) has `PinpointParameters.TIMEOUT`,
     `Await` with a `TimeoutError` naming the condition, `TimeBox` (timing assertions only count when
@@ -236,7 +177,8 @@ the failure threshold for upstreams is under Upstream.
     `finishCoversDrainingDestinations` 1.4 s, `finishedDestinationEndsWhenItsRecordsAgedOut`
     0.3 s, `disableAndEnableByReload` 0.2 s, `removedDestinationDoesNotBlockTheReload` 0.15 s.
     Probably real timers (retry backoff after 503, age limit), not verified. What cannot move
-    for coverage gets a fake clock instead, see "Timing related tests" under Build, tests.
+    for coverage gets a fake clock instead, see "Timing related tests" in
+    [TODO.md](TODO.md#fast-tests-without-flakiness).
 - [ ] Performance test: different Netty allocators, leak detection,
   `-XX:NativeMemoryTracking=summary`
   - P3: compare representative workloads and record throughput, latency and memory before choosing.
